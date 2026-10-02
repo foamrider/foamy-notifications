@@ -103,8 +103,10 @@ contain enough information to choose one. An exact mapping resolves that case:
 
 Mappings select one window class per origin. They cannot recover account identity
 that the sender did not supply. Ambiguous or unavailable targets display an error
-on the popup rather than selecting a random browser window. The clicked message
-is still marked handled and stays out of the center.
+on the popup rather than selecting a random browser window. Failed actions keep
+the message and its history available for retry. Successful actions mark it handled
+and remove it from the center. Structured shell commands are marked handled before
+launch because they may restart the shell.
 
 Up to two non-settings actions appear below the message. Settings (identified by
 the action ID `settings`) and remaining actions are available under ⋯. Expanding

@@ -155,6 +155,17 @@ try:
         # A failed/ambiguous target must keep the center entry available for retry.
         ctx=json.loads(context_path.read_text());ctx['clients'].append({'class':'Foamy Test','address':'0x456'})
         context_path.write_text(json.dumps(ctx))
+        send('Ambiguous popup focus')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'popup failure ingested')
+        ipc('notifications','invokeLast')
+        wait_for(lambda:bool(state()['lastError']) and not state()['busy'],'popup failure reports error')
+        assert state()['popups']==1
+        assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'failed popup lost center history'
+        assert len(list((home/'.local/state/omarchy/notifications').glob('*.json')))==1,'failed popup lost persistence'
+        ctx['clients']=ctx['clients'][:1];context_path.write_text(json.dumps(ctx))
+        ipc('notifications','invokeLast')
+        wait_for(lambda:state()['popups']==0 and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'popup retry succeeds')
+        ctx['clients'].append({'class':'Foamy Test','address':'0x456'});context_path.write_text(json.dumps(ctx))
         send('Ambiguous center focus')
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'ambiguous entry ingested')
         key=state()['groups'][0]['key']

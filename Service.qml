@@ -393,31 +393,40 @@ Item {
     var keys = group.keys.slice()
     var busy = Object.assign({}, busyKeys); busy[row.key] = true; busyKeys = busy
     actionErrors = ({})
-    // Commit handled state before actions that can tear down this shell.
-    enqueuePopupFileJob(["python3", helper, "forget"], function(ok) {
-      if (!ok) { finishAction(row.key, "Could not mark this notification handled. Try again."); return }
-      keys.forEach(function(key) { service.handledKeys[key] = true })
-      var argv = identifier === "default" ? NotificationLogic.parseExecArgv(row.execArgv) : null
-      var ref = !isRestoredRow(row) ? liveRefs[row.originalId] : null
-      var invoked = false
-      try {
-        if (argv) { Util.execArgv(argv); invoked = true }
-        else if (ref && ref.actions) {
-          for (var i = 0; i < ref.actions.length; i++) {
-            if (ref.actions[i].identifier === identifier) { ref.actions[i].invoke(); invoked = true; break }
-          }
+    lastError = ""
+    var argv = identifier === "default" ? NotificationLogic.parseExecArgv(row.execArgv) : null
+    if (argv) {
+      // Shell commands can restart Quickshell. Persist handling before launching them.
+      commitHandled(row, keys, function() { Util.execArgv(argv) })
+      return
+    }
+    var ref = !isRestoredRow(row) ? liveRefs[row.originalId] : null
+    var invoked = false
+    try {
+      if (ref && ref.actions) {
+        for (var i = 0; i < ref.actions.length; i++) {
+          if (ref.actions[i].identifier === identifier) { ref.actions[i].invoke(); invoked = true; break }
         }
-      } catch(e) { console.warn("foamy.notifications: notification action is no longer available") }
-      if (!invoked && identifier === "default") {
-        enqueuePopupFileJob(["python3", helper, "focus"], function(focused) {
-          if (focused) service.removeKeys(keys, "handled")
-          service.finishAction(row.key, focused ? "" : "Could not identify the window. Configure browserMappings or dismiss this popup.")
-        }, JSON.stringify({app:row.app, desktopEntry:row.desktopEntry, body:row.body, mappings:preferences.browserMappings}))
-      } else {
-        if (invoked) service.removeKeys(keys, "handled")
-        service.finishAction(row.key, invoked ? "" : "This action is no longer available.")
       }
+    } catch(e) { console.warn("foamy.notifications: notification action is no longer available") }
+    if (invoked) commitHandled(row, keys)
+    else if (identifier === "default") {
+      enqueuePopupFileJob(["python3", helper, "focus"], function(focused) {
+        // Failed focus must leave both popup persistence and center history retryable.
+        if (focused) service.commitHandled(row, keys)
+        else service.finishAction(row.key, "Could not identify the window. Configure browserMappings or dismiss this popup.")
+      }, JSON.stringify({app:row.app, desktopEntry:row.desktopEntry, body:row.body, mappings:preferences.browserMappings}))
+    } else finishAction(row.key, "This action is no longer available.")
+  }
+
+  function commitHandled(row, keys, beforeDismiss) {
+    enqueuePopupFileJob(["python3", helper, "forget"], function(ok) {
+      if (!ok) { service.finishAction(row.key, "Could not mark this notification handled. Try again."); return }
+      keys.forEach(function(key) { service.handledKeys[key] = true })
       service.notifyCenter(keys)
+      if (beforeDismiss) beforeDismiss()
+      service.removeKeys(keys, "handled")
+      service.finishAction(row.key, "")
     }, JSON.stringify({keys:keys}))
   }
 
