@@ -1,0 +1,13 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path')
+const source=fs.readFileSync(path.join(__dirname,'../Service.qml'),'utf8')
+test('pending snapshots coalesce without crossing reads, actions, or callback barriers',()=>{
+ const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){}})
+ const start=source.indexOf('  function enqueuePopupFileJob(')
+ vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
+ const put=(payload,key='1-1',done=null)=>state.enqueuePopupFileJob(['write'],done,payload,key)
+ put('old');put('new');assert.equal(state.popupFileQueue.length,1);assert.equal(state.popupFileQueue[0].payload,'new')
+ state.popupFileQueue.push({read:true});put('after read');assert.equal(state.popupFileQueue.length,3)
+ state.enqueuePopupFileJob(['delete'],null,'');put('after delete');assert.equal(state.popupFileQueue.length,5)
+ put('callback','1-1',()=>{});put('after callback');assert.equal(state.popupFileQueue.length,6)
+ assert.equal(state.popupFileQueue[4].payload,'callback');assert.equal(typeof state.popupFileQueue[4].done,'function')
+})
