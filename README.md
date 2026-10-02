@@ -1,195 +1,58 @@
 # Foamy Notifications
 
-Notification popups for Omarchy Quattro, styled to match Foamy Notification Center.
+Compact notification popups for Omarchy Quattro, styled to match
+[Foamy Notification Center](https://github.com/foamrider/foamy-notification-center).
 
-## Features
+![Foamy Notifications with sample messages, actions, and a critical alert](preview.png)
 
-- A slim header with a small app icon, app name, duplicate count, and time.
-- A rounded sender image beside the title and message, using the same layout for avatars and screenshots. Without a usable image, text takes the full width. Titles wrap to at most two lines; empty titles are omitted.
-- Configurable reading times, hover-to-pause, and duplicate counts.
-- A bounded popup stack; overflow goes to history.
-- Focused, pointer, named, or all-monitor placement.
-- Optional fullscreen suppression, with a separate critical-alert exception.
-- Live app action buttons and browser web-app window matching.
-- Left-click activates and handles a notification: it is removed from history and
-  Foamy Notification Center, including its unread badge. Right-click and × hide
-  the popup while keeping history. An action button also handles the notification.
+## Install
 
-## Requirements and installation
-
-Requires Omarchy Quattro, Quickshell, Python 3, and the standard Omarchy tools.
-Foamy Notification Center is optional. Its public `foamy.notification-center.store handled`
-IPC method is required for immediate unread-badge updates after a handled click.
-The helper commits removal first; this acknowledgement updates the UI without
-rewriting the archive again.
-
-Place this repository at `~/.config/omarchy/plugins/foamy.notifications`, or link
-that path to your checkout. Then run:
+Requires Omarchy Quattro, Quickshell, Python 3, and the standard Omarchy tools
+(including `hyprctl` and `omarchy-shell`). Notification Center is optional.
 
 ```sh
-omarchy plugin enable foamy.notifications
+omarchy plugin add https://github.com/foamrider/foamy-notifications.git --enable
 omarchy restart shell
 ```
 
-This plugin replaces `omarchy.notifications`; do not run another notification
-server beside it. Omarchy's existing `notifications` IPC commands and DND state
-continue to work. Removing the plugin restores the stock notification service.
+Enabling the plugin replaces `omarchy.notifications`. Run only one notification
+server. The existing Omarchy notification commands and do-not-disturb control
+continue to work.
 
-While the pointer is inside the popup stack, expired cards disappear but Qt
-keeps their layout space until the pointer leaves. The remaining cards then
-slide together. Only the hovered notification pauses its timeout.
+## Use
 
-## Settings
+- App icons stay in a slim header; sender images appear beside the message.
+- Hover to pause the timer. A smooth, optional line shows the remaining time.
+- Left-click or use an action to handle a notification and remove it from history.
+  Right-click or × hides the popup and keeps it in history.
+- Exact duplicates share a card. Overflow goes to history.
+- Critical alerts have a colored edge and stay until dismissed by default.
+- Cards fade in and out. While the pointer is inside the stack, expired cards
+  leave their space in place so the hovered card does not move away.
 
-Configure the `foamy.notifications` entry in `~/.config/omarchy/shell.json`.
-Changes are watched; invalid settings report an error and retain the last valid
-configuration. Settings are file-based, with no extra settings panel.
+Configure timeout, compact layout, images, monitor placement, fullscreen
+suppression, and browser app matching in `shell.json`. See
+[configuration and validation](CONFIGURATION.md) for all settings and checks.
 
-```json
-{
-  "id": "foamy.notifications",
-  "lowTimeoutSec": 5,
-  "normalTimeoutSec": 8,
-  "criticalTimeoutSec": 0,
-  "maxVisible": 3,
-  "groupDuplicates": true,
-  "monitor": "focused",
-  "monitorName": "",
-  "suppressFullscreen": false,
-  "fullscreenCritical": true,
-  "width": 390,
-  "restoreMaxAgeSec": 300,
-  "compact": true,
-  "showTimeoutIndicator": true,
-  "showImages": true,
-  "imageSize": 56,
-  "browserMappings": []
-}
-```
+Actions supplied by an app work while that app is connected. Restored messages
+cannot recover old app callbacks. Failed actions keep the notification available
+for retry. The center retains its own history and optional image previews.
 
-| Setting | Behavior |
-| --- | --- |
-| `lowTimeoutSec`, `normalTimeoutSec` | 1–120 seconds. Longer sender-requested reading times are honored up to 120 seconds. |
-| `criticalTimeoutSec` | 0 keeps critical alerts until dismissed; 1–120 sets an expiry. |
-| `maxVisible` | 1–10 groups. Screen space may reduce this further. Older groups go to history. |
-| `groupDuplicates` | Groups exact duplicates. Different actions or sending applications remain separate. |
-| `monitor` | `focused`, `pointer`, `named`, or `all`. Missing named outputs fall back to the focused output. Pointer placement updates when a notification arrives. |
-| `monitorName` | Output name used with `named`, for example `DP-1`. |
-| `suppressFullscreen` | Sends notifications directly to history when the target output is fullscreen. Existing popups are also archived when all their target outputs become fullscreen. |
-| `fullscreenCritical` | Allows critical alerts through fullscreen suppression. DND remains a separate control. |
-| `width` | 280–600 shell spacing units; constrained to the screen. |
-| `restoreMaxAgeSec` | 0–3600. Older popups go to history after a shell restart. |
-| `compact` | `true` (default) uses a slim header and tighter content spacing; `false` adds room around the header and message. Text and sender-image sizes stay unchanged. |
-| `showTimeoutIndicator` | `true` (default) shows a subtle 2 px straight line inset from the rounded bottom corners for timed popups. It shrinks smoothly with the shared frame-based expiry clock, pauses on hover, expanded actions or an action in progress, and is hidden for persistent notifications. `false` hides it without changing timeout behavior. |
-| `showImages` | Shows the sender image beside the message. Defaults to `true`. |
-| `imageSize` | 40–72 shell spacing units; defaults to 56. Images fit without stretching or cropping. |
-
-On `all` monitors, fullscreen outputs hide normal popups while other outputs can
-still show them. Group expiry has one shared clock, so it does not run faster on
-multiple monitors. Hovering any copy pauses the group.
-
-### Browser apps
-
-The plugin uses a browser notification's leading website origin to select its
-web-app window. It does not treat links inside the message as app identity.
-When multiple profiles have the same website open, the notification may not
-contain enough information to choose one. An exact mapping resolves that case:
-
-```json
-"browserMappings": [
-  {"origin": "teams.microsoft.com", "windowClass": "vivaldi-teams.microsoft.com__-Profile_1"}
-]
-```
-
-Mappings select one window class per origin. They cannot recover account identity
-that the sender did not supply. Ambiguous or unavailable targets display an error
-on the popup rather than selecting a random browser window. Failed actions keep
-the message and its history available for retry. Successful actions mark it handled
-and remove it from the center. Structured shell commands are marked handled before
-launch because they may restart the shell.
-
-Up to two non-settings actions appear below the message. Settings (identified by
-the action ID `settings`) and remaining actions are available under ⋯. Expanding
-that list pauses expiry until it closes. Labels come from the sender; a Reply
-action does not imply an inline text field. Critical alerts have a red edge that
-follows and tapers through both left corners.
-
-Sender images, such as Teams avatars and screenshot previews, share one rounded
-slot to the left of the message. The app icon stays in the header, with a glyph
-fallback. Missing, failed, or disabled images leave no empty slot. Clicking the
-image invokes the same default action as clicking the message. No browser-specific
-image classification is needed.
-
-Native actions work while their sender remains live. Restored notifications do
-not show dead action buttons. Omarchy's structured `omarchy-exec-argv` action
-continues to work; raw shell-command strings are not interpreted.
-
-Popups enter with a 180 ms fade and an 8 px upward movement, then fade out over
-120 ms. Stack gaps close over 140 ms after the pointer leaves the stack. Expired
-cards stop accepting input immediately; the final popup surface closes when its
-fade finishes. Replacements and duplicate updates keep the existing card.
-
-## State and privacy
-
-The plugin shares Omarchy's notification state under
-`$XDG_STATE_HOME/omarchy/notifications` (normally `~/.local/state/omarchy/notifications`).
-DND is stored in the adjacent `notifications.json` file. Foamy Notification Center
-continues to manage its own archive and retention.
-
-Notification content reaches persistence and window-matching helpers through
-standard input, not process arguments. Adjacent queued snapshots for the same notification are coalesced, while reads,
-actions, and deletes keep their ordering. Unchanged local image copies retain
-their inode and modification time so the center can reuse its thumbnails.
-
-New state files use private permissions
-and atomic replacement. Text and restore reads are bounded; optional image copies
-are limited to regular local files up to 5 MiB. Sender image tags are filtered
-before rendering. No network image retrieval is added.
-
-Critical alerts remain persistent by default, but restored popups are subject to
-the configured maximum age. No message content appears in the diagnostic IPC:
-
-```sh
-omarchy-shell notifications ping
-omarchy-shell foamy.notifications state
-```
-
-## Validation
-
-```sh
-omarchy plugin validate .
-node --test tests/*.test.cjs
-python3 -m unittest discover -s tests -p '*_test.py' -v
-python3 tests/render.py
-# In a Wayland desktop, verify GPU-rendered rounded image masks:
-python3 tests/render.py --desktop
-python3 tests/ui.py
-python3 tests/motion.py
-# In a Wayland desktop, verify animation frames on a real surface:
-python3 tests/motion.py --desktop
-# Requires Wayland; checks first-popup mapping and final-popup unmapping:
-python3 tests/layer.py
-python3 tests/runtime.py
-# Also exercise the center, if its checkout is available:
-FOAMY_CENTER_SOURCE=/path/to/foamy-notification-center python3 tests/runtime.py
-```
-
-The render test uses the real card with synthetic data at wide and narrow widths.
-The runtime test exercises actual notification D-Bus traffic on a private bus and
-home directory. Qt's offscreen platform cannot create layer-shell surfaces, so
-that test omits only the popup windows. Complete Wayland placement, hover, and
-fullscreen behavior must also be checked in a desktop session.
-
-## Removal
+## Remove
 
 ```sh
 omarchy plugin remove foamy.notifications
 omarchy restart shell
 ```
 
-Notification history and DND state remain in place. If the plugin was already
-disabled before removal, enable `omarchy.notifications` explicitly.
+Removing an enabled plugin restores stock notifications. If you disabled it
+first, explicitly enable `omarchy.notifications`. History and do-not-disturb
+state remain on disk. Omarchy manages the plugin entry in `shell.json`; packages
+and data outside the plugin directory remain in place.
 
 ## License
 
-MIT. Based on Omarchy's notification plugin; see `LICENSE-OMARCHY`.
+[MIT](LICENSE), with [Omarchy attribution](LICENSE-OMARCHY).
+The preview uses synthetic messages and an original sample avatar.
+
+Provided **as is**, without warranty or guaranteed support. Use at your own risk.
