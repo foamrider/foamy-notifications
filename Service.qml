@@ -1120,7 +1120,8 @@ Item {
       screen: modelData
       readonly property bool selected: service.targetMonitors.indexOf(screen.name) >= 0
       readonly property bool fullscreen: service.preferences.suppressFullscreen && service.fullscreenMonitors.indexOf(screen.name) >= 0
-      visible: selected && service.displayGroups.some(function(g) { return !popupWindow.fullscreen || (g.urgency === 2 && service.preferences.fullscreenCritical) })
+      // Keep the surface mapped until the final card finishes fading out.
+      visible: selected && (popupColumn.groups.length > 0 || popupColumn.implicitHeight > 0)
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -1151,9 +1152,22 @@ Item {
             required property string entryJson
             readonly property var modelData: JSON.parse(entryJson)
             property bool retired: false
-            ListView.delayRemove: popupColumn.holdPositions
-            ListView.onRemove: { retired = true; publishHover() }
-            opacity: retired ? 0 : 1
+            property real entranceOffset: 0
+            transform: Translate { y: card.entranceOffset }
+            ListView.delayRemove: exitFade.running || popupColumn.holdPositions
+            ListView.onRemove: {
+              // Stop an unfinished entrance before fading; both must not own opacity.
+              entrance.stop()
+              retired = true
+              exitFade.start()
+              publishHover()
+            }
+            ParallelAnimation {
+              id: entrance
+              NumberAnimation { target: card; property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
+              NumberAnimation { target: card; property: "entranceOffset"; from: Style.space(8); to: 0; duration: 180; easing.type: Easing.OutCubic }
+            }
+            NumberAnimation { id: exitFade; target: card; property: "opacity"; to: 0; duration: 120; easing.type: Easing.OutCubic }
             enabled: !retired
             width: popupColumn.width
             app: modelData.app
@@ -1187,7 +1201,7 @@ Item {
             }
             onHoveredChanged: publishHover()
             onModelDataChanged: publishHover()
-            Component.onCompleted: publishHover()
+            Component.onCompleted: { publishHover(); entrance.start() }
             Component.onDestruction: delete service.hoveredKeys[registeredHoverKey]
             onCloseRequested: service.removeKeys(modelData.keys,"dismiss")
             onCardClicked: service.activateGroup(modelData,"default")

@@ -3,7 +3,8 @@ import QtQuick
 ListView {
   id: root
   property var groups: []
-  readonly property bool holdPositions: pointer.hovered
+  // Once the final card leaves, do not keep an invisible input region under the pointer.
+  readonly property bool holdPositions: groups.length > 0 && pointer.hovered
   implicitHeight: Math.max(0, contentHeight)
   // A nonzero initial viewport lets ListView measure its first delegate.
   height: Math.max(1, implicitHeight)

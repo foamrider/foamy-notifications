@@ -124,6 +124,11 @@ Native actions work while their sender remains live. Restored notifications do
 not show dead action buttons. Omarchy's structured `omarchy-exec-argv` action
 continues to work; raw shell-command strings are not interpreted.
 
+Popups enter with a 180 ms fade and an 8 px upward movement, then fade out over
+120 ms. Stack gaps close over 140 ms after the pointer leaves the stack. Expired
+cards stop accepting input immediately; the final popup surface closes when its
+fade finishes. Replacements and duplicate updates keep the existing card.
+
 ## State and privacy
 
 The plugin shares Omarchy's notification state under
@@ -159,6 +164,11 @@ python3 tests/render.py
 # In a Wayland desktop, verify GPU-rendered rounded image masks:
 python3 tests/render.py --desktop
 python3 tests/ui.py
+python3 tests/motion.py
+# In a Wayland desktop, verify animation frames on a real surface:
+python3 tests/motion.py --desktop
+# Requires Wayland; checks first-popup mapping and final-popup unmapping:
+python3 tests/layer.py
 python3 tests/runtime.py
 # Also exercise the center, if its checkout is available:
 FOAMY_CENTER_SOURCE=/path/to/foamy-notification-center python3 tests/runtime.py

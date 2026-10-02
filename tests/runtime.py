@@ -91,7 +91,9 @@ ShellRoot {
   }
   function leave(): void { input.mouseMove(testWindow.contentItem,480,580) }
   function stackState(): string {
-   return JSON.stringify({count:popupColumn.count,held:popupColumn.holdPositions,
+   var settled=true
+   for(var i=0;i<popupColumn.count;i++){var card=popupColumn.itemAtIndex(i);if(!card || card.entranceOffset!==0)settled=false}
+   return JSON.stringify({count:popupColumn.count,settled:settled,held:popupColumn.holdPositions,
     y:testState.heldCard?testState.heldCard.mapToItem(popupColumn,0,0).y:-1,hovered:testState.heldCard?testState.heldCard.hovered:false,
     sameCard:popupColumn.count===1 && popupColumn.itemAtIndex(0)===testState.heldCard})
   }
@@ -267,7 +269,7 @@ try:
     send('Second card expires',('-u','normal'))
     send('First card expires',('-u','normal'))
     def stack_state():return json.loads(ipc('countdown-test','stackState'))
-    wait_for(lambda:stack_state()['count']==3,'stack lays out three cards')
+    wait_for(lambda:stack_state()['count']==3 and stack_state()['settled'],'stack entrance settles for three cards')
     ipc('countdown-test','hoverLast')
     wait_for(lambda:stack_state()['held'] and stack_state()['hovered'],'mouse hover holds stack')
     held_y=stack_state()['y'];assert held_y>0
