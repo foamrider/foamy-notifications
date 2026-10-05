@@ -27,6 +27,31 @@ class HelperTest(unittest.TestCase):
         with self.assertRaises(ValueError): h.select_window({'app':'.*'},[{'class':'anything','address':'0x1'}])
         with self.assertRaises(ValueError): h.select_window({'app':'Chat'},[{'class':'Chat','address':'0x1;evil'}])
 
+    def test_bare_browser_origin_selects_teams_instead_of_browser(self):
+        data={'app':'Vivaldi','desktopEntry':'vivaldi-stable','body':'teams.microsoft.com\nAlex: Hi'}
+        clients=[{'class':'vivaldi-stable','address':'0x10'},
+                 {'class':'vivaldi-teams.microsoft.com__-Profile_1','address':'0x11'}]
+        self.assertEqual(h.select_window(data,clients),'0x11')
+        # A recognized web app must not fall back to the general browser if absent.
+        with self.assertRaises(ValueError): h.select_window(data,clients[:1])
+        clients.append({'class':'vivaldi-teams.microsoft.com__-Profile_2','address':'0x12'})
+        with self.assertRaises(ValueError): h.select_window(data,clients)
+        data['mappings']=[{'origin':'teams.microsoft.com','windowClass':'vivaldi-teams.microsoft.com__-Profile_2'}]
+        self.assertEqual(h.select_window(data,clients),'0x12')
+
+    def test_bare_origin_requires_a_complete_hostname_line(self):
+        for body in ['teams.microsoft.com', '  TEAMS.MICROSOFT.COM\r\nAlex: Hi', 'teams.cloud.microsoft\nMessage']:
+            with self.subTest(body=body): self.assertEqual(h.origin_of(body),body.strip().splitlines()[0].lower())
+        for body in ['Alex says visit teams.microsoft.com', 'teams.microsoft.com is mentioned here',
+                     'Message\nteams.microsoft.com', 'teams.microsoft.com/path',
+                     'teams.microsoft.com@evil.invalid', '-teams.microsoft.com',
+                     'teams..microsoft.com', 'localhost', 'a'*64+'.com']:
+            with self.subTest(body=body): self.assertEqual(h.origin_of(body),'')
+
+    def test_non_browser_message_hostname_is_not_app_identity(self):
+        clients=[{'class':'Chat','address':'0x10'},{'class':'vivaldi-teams.microsoft.com__-Profile_1','address':'0x11'}]
+        self.assertEqual(h.select_window({'app':'Chat','body':'teams.microsoft.com\nMessage'},clients),'0x10')
+
     def test_atomic_private_persistence_and_handled_removal(self):
         with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d,'XDG_CONFIG_HOME':d+'/config'}):
             row={'timestamp':1000,'originalId':3,'summary':'Hello','body':'$(touch nope)'}

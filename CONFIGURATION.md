@@ -52,7 +52,11 @@ multiple monitors. Hovering any copy pauses the group.
 ### Browser apps
 
 The plugin uses a browser notification's leading website origin to select its
-web-app window. It does not treat links inside the message as app identity.
+web-app window. It accepts a leading HTTP(S) URL or link, and a bare hostname
+on its own first line, as supplied by Vivaldi. It does not treat links inside
+the message as app identity. This lookup is shared with Notification Center
+and is used by popups when no live default action is available. Live popup
+actions still go to the sender so it can open the specific conversation.
 When multiple profiles have the same website open, the notification may not
 contain enough information to choose one. An exact mapping resolves that case:
 

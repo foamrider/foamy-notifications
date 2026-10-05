@@ -117,7 +117,13 @@ def hypr(command):
 
 def origin_of(body):
     # Only a leading browser origin is an identity hint; URLs within message text are not.
-    match = re.match(r'^\s*(?:<a\s+[^>]*href=["\'](https?://[^"\']+)["\'][^>]*>|(https?://[^\s<]+))',str(body),re.I)
+    text = str(body).lstrip()
+    # Vivaldi supplies a bare hostname on its own first line, without a URL scheme.
+    first_line = text.split('\n', 1)[0].strip()
+    label = r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
+    if len(first_line) <= 253 and re.fullmatch(r'(?:' + label + r'\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?', first_line, re.I):
+        return first_line.lower()
+    match = re.match(r'^(?:<a\s+[^>]*href=["\'](https?://[^"\']+)["\'][^>]*>|(https?://[^\s<]+))',text,re.I)
     if not match: return ''
     parsed = urlparse(match.group(1) or match.group(2))
     return (parsed.hostname or '').lower()

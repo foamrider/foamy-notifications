@@ -35,8 +35,16 @@ config=home/'.config/omarchy';config.mkdir(parents=True)
 (config/'shell.json').write_text(json.dumps({'plugins':[{'id':'foamy.notifications','maxVisible':3}]}))
 bin_dir=base/'bin';bin_dir.mkdir()
 context_path=base/'context.json'
+dispatch_path=base/'dispatches.jsonl'
 context_path.write_text(json.dumps({'clients':[{'class':'Foamy Test','address':'0x123'}],'monitors':[{'name':'TEST-1','x':0,'y':0,'width':1920,'height':1080,'scale':1,'activeWorkspace':{'id':1}}],'cursorpos':{'x':100,'y':100}}))
-(bin_dir/'hyprctl').write_text('#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\ndata=json.loads(Path('+repr(str(context_path))+').read_text())\nprint(json.dumps(data[sys.argv[-1]]) if sys.argv[-1] in data else "ok")\n')
+(bin_dir/'hyprctl').write_text('''#!/usr/bin/env python3
+import json,sys
+from pathlib import Path
+data=json.loads(Path(CONTEXT_PATH).read_text())
+if sys.argv[1] == 'dispatch':
+    with Path(DISPATCH_PATH).open('a') as stream: stream.write(json.dumps(sys.argv[2:])+'\\n')
+print(json.dumps(data[sys.argv[-1]]) if sys.argv[-1] in data else "ok")
+'''.replace('CONTEXT_PATH',repr(str(context_path))).replace('DISPATCH_PATH',repr(str(dispatch_path))))
 (bin_dir/'hyprctl').chmod(0o755)
 if CENTER:
     shutil.copytree(CENTER,app/'center',ignore=shutil.ignore_patterns('.git','__pycache__'))
@@ -90,6 +98,7 @@ ShellRoot {
    input.mouseMove(testState.heldCard,100,50)
   }
   function leave(): void { input.mouseMove(testWindow.contentItem,480,580) }
+  function clickFirst(): void { input.mouseClick(popupColumn.itemAtIndex(0),100,50,Qt.LeftButton) }
   function stackState(): string {
    var settled=true
    for(var i=0;i<popupColumn.count;i++){var card=popupColumn.itemAtIndex(i);if(!card || card.entranceOffset!==0)settled=false}
@@ -124,8 +133,10 @@ def wait_for(predicate,message):
         time.sleep(.1)
     print('Failure state:',state(),flush=True)
     raise AssertionError(message+'\n'+(base/'runtime.log').read_text())
-def send(summary,extra=()):
-    return subprocess.run(['notify-send','-p','-a','Foamy Test','-u','critical',*extra,summary,'Sample body'],env=env,capture_output=True,text=True,timeout=3).stdout.strip()
+def send(summary,extra=(),body='Sample body'):
+    return subprocess.run(['notify-send','-p','-a','Foamy Test','-u','critical',*extra,summary,body],env=env,capture_output=True,text=True,timeout=3).stdout.strip()
+def dispatches():
+    return dispatch_path.read_text().splitlines() if dispatch_path.exists() else []
 try:
     wait_for(lambda:ipc('notifications','ping')=='ok','service startup')
     if CENTER:
@@ -184,6 +195,58 @@ try:
         assert json.loads(ipc('foamy.notification-center.test','state'))['listLoads']==reads,'idle center still polls the archive'
 
     assert not list((home/'.local/state/omarchy/notifications/history').glob('*.json')),'handled click entered history'
+    # Use Vivaldi's actual identity format through both consumers of the shared helper.
+    ctx=json.loads(context_path.read_text());original_clients=ctx['clients']
+    browser={'class':'vivaldi-stable','address':'0x100'}
+    teams={'class':'vivaldi-teams.microsoft.com__-Profile_1','address':'0x101'}
+    other_teams={'class':'vivaldi-teams.microsoft.com__-Profile_2','address':'0x102'}
+    cfg=json.loads((config/'shell.json').read_text())
+    for target in (['popup','center'] if CENTER else ['popup']):
+        for ambiguous in [False,True]:
+            ctx['clients']=[browser,teams]+([other_teams] if ambiguous else [])
+            context_path.write_text(json.dumps(ctx))
+            cfg['plugins'][0]['browserMappings']=[];(config/'shell.json').write_text(json.dumps(cfg))
+            wait_for(lambda:not state()['settings']['browserMappings'],'clear browser mapping')
+            send('Teams identity '+target,('-a','Vivaldi','-h','string:desktop-entry:vivaldi-stable'),body='teams.microsoft.com\nAlex: Hi')
+            wait_for(lambda:state()['popups']==1 and not state()['busy'],'Teams popup ready')
+            key=state()['groups'][0]['key']
+            if CENTER:
+                wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'Teams center entry ready')
+            if target=='center':
+                ipc('notifications','dismissAll')
+                wait_for(lambda:state()['popups']==0 and not state()['busy'],'archive Teams popup')
+            else:
+                wait_for(lambda:json.loads(ipc('countdown-test','stackState'))['settled'],'Teams card ready for click')
+            before=len(dispatches())
+            def click_teams():
+                if target=='popup':ipc('countdown-test','clickFirst')
+                else:ipc('foamy.notification-center.test','focus',key)
+            click_teams()
+            if ambiguous:
+                wait_for(lambda:bool(state()['lastError']) if target=='popup' else bool(json.loads(ipc('foamy.notification-center.test','state'))['focusError']),'ambiguous Teams target reports failure')
+                assert len(dispatches())==before,'ambiguous Teams click dispatched focus'
+                if CENTER:assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'ambiguous Teams click removed history'
+                cfg['plugins'][0]['browserMappings']=[{'origin':'teams.microsoft.com','windowClass':teams['class']}]
+                (config/'shell.json').write_text(json.dumps(cfg))
+                wait_for(lambda:bool(state()['settings']['browserMappings']),'Teams mapping loaded')
+                click_teams()
+            wait_for(lambda:len(dispatches())==before+1,'Teams focus dispatched once')
+            assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:0x101" })'],'Teams click focused the general browser or wrong profile'
+            if target=='popup':wait_for(lambda:state()['popups']==0 and not state()['busy'],'Teams popup handled')
+            if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'Teams history handled')
+            ipc('countdown-test','leave')
+    # Live default actions must reach the browser; local focus must not override its conversation routing.
+    before=len(dispatches())
+    action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open','Teams live callback','teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
+    wait_for(lambda:state()['popups']==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'native Teams popup ready')
+    ipc('countdown-test','clickFirst')
+    assert action.communicate(timeout=4)[0].strip()=='default','Teams default callback was not invoked'
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'native Teams popup handled')
+    assert len(dispatches())==before,'native Teams callback also dispatched fallback focus'
+    if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'native Teams click removes center history')
+    ipc('countdown-test','leave')
+    ctx['clients']=original_clients;context_path.write_text(json.dumps(ctx))
+    cfg['plugins'][0]['browserMappings']=[];(config/'shell.json').write_text(json.dumps(cfg))
     send('Dismiss me')
     wait_for(lambda:state()['popups']==1 and not state()['busy'],'new popup')
     ipc('notifications','dismissOne')
