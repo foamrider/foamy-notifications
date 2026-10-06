@@ -40,8 +40,8 @@ Item {
   // copy lives and dies with the JSON file whose stem it carries.
   readonly property string imagesDir: popupStateDir + "images/"
   // Corner radius is shared with the menu and shell panels.
-  // It mirrors Hyprland's current decoration:rounding value.
-  readonly property int cornerRadius: Style.space(14)
+  // It uses twice Hyprland's current decoration:rounding value.
+  readonly property int cornerRadius: Style.cornerRadius * 2
   // Toasts are fixed to the top-right corner. They only clear the omarchy bar
   // when the bar occupies the top or right edge, so left/bottom bars do not
   // pull notification popups away from the expected top-right location.

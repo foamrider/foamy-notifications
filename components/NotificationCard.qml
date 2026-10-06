@@ -55,7 +55,7 @@ Rectangle {
   signal actionRequested(string identifier)
   implicitWidth: cardWidth
   implicitHeight: content.implicitHeight + 2
-  radius: Style.space(10)
+  radius: Style.cornerRadius * 2
   color: urgency === 2 ? Qt.tint(Color.popups.background, Util.alpha(Color.urgent, 0.09)) : Color.popups.background
   border.width: 1
   border.color: Util.alpha(Color.popups.text, 0.18)
@@ -75,16 +75,18 @@ Rectangle {
     x: 1; y: 1
     width: parent.width - 2
     spacing: 0
-    Rectangle {
+    Item {
       Layout.fillWidth: true
       objectName: "notificationHeader"
       implicitHeight: header.implicitHeight + Style.space(root.compact ? 8 : 20)
-      color: Qt.tint(Color.popups.background, Util.alpha(Color.popups.text, 0.055))
-      radius: root.radius - 1
+      clip: true
+      // Give the background enough height that Qt does not shrink large corners.
       Rectangle {
-        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-        height: parent.height / 2
-        color: parent.color
+        width: parent.width
+        height: Math.max(parent.height, topLeftRadius * 2)
+        topLeftRadius: Math.max(0, root.radius - root.border.width)
+        topRightRadius: topLeftRadius
+        color: Qt.tint(Color.popups.background, Util.alpha(Color.popups.text, 0.055))
       }
       RowLayout {
         id: header
@@ -149,7 +151,7 @@ Rectangle {
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
           Accessible.name: root.actionsExpanded ? "Hide more actions" : "Show more actions"
-          background: Rectangle { radius: Style.space(5); color: moreButton.hovered || root.actionsExpanded ? Util.alpha(Color.popups.text, 0.09) : "transparent" }
+          background: Rectangle { radius: Style.cornerRadius * 2; color: moreButton.hovered || root.actionsExpanded ? Util.alpha(Color.popups.text, 0.09) : "transparent" }
           contentItem: Text { text: "⋯"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.title }
           onClicked: root.actionsExpanded = !root.actionsExpanded
         }
@@ -160,7 +162,7 @@ Rectangle {
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
           Accessible.name: "Dismiss notification"
-          background: Rectangle { radius: Style.space(5); color: closeButton.hovered ? Util.alpha(Color.popups.text, 0.09) : "transparent" }
+          background: Rectangle { radius: Style.cornerRadius * 2; color: closeButton.hovered ? Util.alpha(Color.popups.text, 0.09) : "transparent" }
           contentItem: Text { text: "×"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Util.alpha(Color.popups.text, 0.7); font.family: root.fontFamily; font.pixelSize: Style.font.title }
           onClicked: root.closeRequested()
         }
@@ -182,7 +184,7 @@ Rectangle {
           Layout.alignment: Qt.AlignTop
           visible: contentImage.status === Image.Ready
           color: Util.alpha(Color.popups.text, 0.055)
-          radius: Style.space(8)
+          radius: Style.cornerRadius * 2
           // Keep the mask layer stable while asynchronous loading and screen scaling settle.
           layer.enabled: true
           layer.effect: MultiEffect {
@@ -280,7 +282,7 @@ Rectangle {
   Rectangle {
     id: imageMask
     width: imageTile.width; height: imageTile.height
-    radius: Style.space(8)
+    radius: imageTile.radius
     color: "white"
     visible: false
     layer.enabled: true
@@ -294,7 +296,7 @@ Rectangle {
     enabled: !root.busy
     Accessible.name: actionData.text
     background: Rectangle {
-      radius: Style.space(5)
+      radius: Style.cornerRadius * 2
       color: Qt.tint(Color.popups.background, Util.alpha(Color.popups.text, actionButton.hovered ? 0.1 : 0.04))
       border.width: 1
       border.color: Util.alpha(Color.popups.text, 0.2)
@@ -329,9 +331,9 @@ Rectangle {
   Canvas {
     id: urgentEdge
     visible: root.urgency === 2
-    width: root.radius + 1; height: root.height
+    width: Math.max(curveRadius + 1, Style.space(3)); height: root.height
     property color accent: Color.urgent
-    property real curveRadius: root.radius
+    property real curveRadius: Math.min(root.radius, root.width / 2, root.height / 2)
     onAccentChanged: requestPaint()
     onCurveRadiusChanged: requestPaint()
     onWidthChanged: requestPaint()
@@ -342,6 +344,11 @@ Rectangle {
       ctx.reset()
       var r = curveRadius, h = height, thickness = Style.space(3)
       ctx.fillStyle = accent
+      // A square card needs a straight urgency stripe, with no zero-radius arcs.
+      if (r === 0) {
+        ctx.fillRect(0, 0, thickness, h)
+        return
+      }
       ctx.beginPath()
       // Follow the card outline; taper thickness to zero at each horizontal tangent.
       ctx.moveTo(r, 0)
