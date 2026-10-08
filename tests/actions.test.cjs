@@ -7,7 +7,7 @@ function fixture() {
   enqueuePopupFileJob:(argv,done,payload)=>jobs.push({command:argv[2],done,payload}),
   notifyCenter:()=>events.push('center'),removeKeys:()=>events.push('remove'),Util:{execArgv:()=>events.push('launch')}})
  state.service=state
- for(const name of ['activateGroup','commitHandled','finishAction']) {
+ for(const name of ['invokeLiveAction','invokeCenterDefault','activateGroup','commitHandled','finishAction']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
@@ -35,4 +35,33 @@ test('shell-restarting commands retain their persist-before-launch ordering',()=
  const {state,jobs,events,row}=fixture();row.execArgv='["omarchy","restart","shell"]'
  state.activateGroup(row,'default');assert.equal(jobs[0].command,'forget');assert.deepEqual(events,[])
  jobs.shift().done(true);assert.deepEqual(events,['center','launch','remove'])
+})
+
+function centerFixture(rows) {
+ const f=fixture()
+ f.state.popupModel={count:rows.length,get:i=>rows[i]}
+ f.state.NotificationLogic.imageStem=row=>`${row.timestamp}-${row.originalId}`
+ return f
+}
+test('center invokes only the exact live default action and handles one notification',()=>{
+ const {state,jobs,events}=centerFixture([{timestamp:10,originalId:1,execArgv:'["unsafe"]'}])
+ state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+ assert.equal(state.invokeCenterDefault('9-1'),'unavailable')
+ assert.equal(state.invokeCenterDefault('../bad'),'invalid')
+ assert.deepEqual(events,[])
+ assert.equal(state.invokeCenterDefault('10-1'),'invoked')
+ assert.deepEqual(events,['invoke'])
+ assert.equal(state.invokeCenterDefault('10-1'),'busy')
+ assert.deepEqual(JSON.parse(jobs[0].payload).keys,['10-1'])
+ jobs.shift().done(true)
+ assert.deepEqual(events,['invoke','center','remove'])
+})
+test('center does not replay archived commands or restored and expired callbacks',()=>{
+ for (const restored of [true,false]) {
+  const {state,jobs,events}=centerFixture([{timestamp:10,originalId:1,execArgv:'["unsafe"]'}])
+  state.isRestoredRow=()=>restored
+  if(restored)state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('wrong generation')}}]}
+  assert.equal(state.invokeCenterDefault('10-1'),'unavailable')
+  assert.deepEqual(events,[]);assert.equal(jobs.length,0)
+ }
 })

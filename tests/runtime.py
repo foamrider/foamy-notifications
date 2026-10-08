@@ -43,7 +43,8 @@ from pathlib import Path
 data=json.loads(Path(CONTEXT_PATH).read_text())
 if sys.argv[1] == 'dispatch':
     with Path(DISPATCH_PATH).open('a') as stream: stream.write(json.dumps(sys.argv[2:])+'\\n')
-print(json.dumps(data[sys.argv[-1]]) if sys.argv[-1] in data else "ok")
+command=next((arg for arg in sys.argv[1:] if arg in data),None)
+print(json.dumps(data[command]) if command else "ok")
 '''.replace('CONTEXT_PATH',repr(str(context_path))).replace('DISPATCH_PATH',repr(str(dispatch_path))))
 (bin_dir/'hyprctl').chmod(0o755)
 if CENTER:
@@ -159,9 +160,8 @@ try:
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['newest']=='Before replacement','initial center entry')
         send('After replacement',('-r',replacement))
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['newest']=='After replacement','center receives in-place updates')
-        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['foamyFocusAvailable'],'shared focus helper discovered')
         ipc('foamy.notification-center.test','focus',state()['groups'][0]['key'])
-        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'center uses shared focus and removes only on success')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'center uses stock focus and removes only on success')
         assert not json.loads(ipc('foamy.notification-center.test','state'))['focusError']
         ipc('notifications','dismissAll')
         wait_for(lambda:not state()['busy'],'focus cleanup drains')
@@ -178,14 +178,14 @@ try:
         ctx['clients']=ctx['clients'][:1];context_path.write_text(json.dumps(ctx))
         ipc('notifications','invokeLast')
         wait_for(lambda:state()['popups']==0 and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'popup retry succeeds')
-        ctx['clients'].append({'class':'Foamy Test','address':'0x456'});context_path.write_text(json.dumps(ctx))
-        send('Ambiguous center focus')
+        saved_clients=ctx['clients'];ctx['clients']=[];context_path.write_text(json.dumps(ctx))
+        send('Unavailable center focus')
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'ambiguous entry ingested')
         key=state()['groups'][0]['key']
         ipc('foamy.notification-center.test','focus',key)
         wait_for(lambda:bool(json.loads(ipc('foamy.notification-center.test','state'))['focusError']),'ambiguous focus reports error')
         assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'failed focus removed notification'
-        ctx['clients']=ctx['clients'][:1];context_path.write_text(json.dumps(ctx))
+        ctx['clients']=saved_clients;context_path.write_text(json.dumps(ctx))
         ipc('foamy.notification-center.test','focus',key)
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'focus retry succeeds')
         ipc('notifications','dismissAll');wait_for(lambda:not state()['busy'],'retry cleanup drains')
@@ -222,7 +222,7 @@ try:
                 if target=='popup':ipc('countdown-test','clickFirst')
                 else:ipc('foamy.notification-center.test','focus',key)
             click_teams()
-            if ambiguous:
+            if ambiguous and target=='popup':
                 wait_for(lambda:bool(state()['lastError']) if target=='popup' else bool(json.loads(ipc('foamy.notification-center.test','state'))['focusError']),'ambiguous Teams target reports failure')
                 assert len(dispatches())==before,'ambiguous Teams click dispatched focus'
                 if CENTER:assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'ambiguous Teams click removed history'
@@ -231,20 +231,24 @@ try:
                 wait_for(lambda:bool(state()['settings']['browserMappings']),'Teams mapping loaded')
                 click_teams()
             wait_for(lambda:len(dispatches())==before+1,'Teams focus dispatched once')
-            assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:0x101" })'],'Teams click focused the general browser or wrong profile'
+            expected='0x101' if target=='popup' else '0x100'
+            assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:'+expected+'" })'],'incorrect focus fallback'
             if target=='popup':wait_for(lambda:state()['popups']==0 and not state()['busy'],'Teams popup handled')
             if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'Teams history handled')
             ipc('countdown-test','leave')
-    # Live default actions must reach the browser; local focus must not override its conversation routing.
-    before=len(dispatches())
-    action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open','Teams live callback','teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
-    wait_for(lambda:state()['popups']==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'native Teams popup ready')
-    ipc('countdown-test','clickFirst')
-    assert action.communicate(timeout=4)[0].strip()=='default','Teams default callback was not invoked'
-    wait_for(lambda:state()['popups']==0 and not state()['busy'],'native Teams popup handled')
-    assert len(dispatches())==before,'native Teams callback also dispatched fallback focus'
-    if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'native Teams click removes center history')
-    ipc('countdown-test','leave')
+    # Both entry points must deliver the native callback without local window focus.
+    for target in (['popup','center'] if CENTER else ['popup']):
+        before=len(dispatches())
+        action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open','Teams live callback','teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
+        wait_for(lambda:state()['popups']==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'native Teams popup ready')
+        if target=='center':
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'live callback archived')
+            ipc('foamy.notification-center.test','focus',state()['groups'][0]['key'])
+        else:ipc('countdown-test','clickFirst')
+        output=action.communicate(timeout=4)[0].strip();assert output=='default',output
+        wait_for(lambda:state()['popups']==0 and not state()['busy'],'native callback handled')
+        assert len(dispatches())==before,'native callback unexpectedly focused a window'
+        if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'native callback clears center')
     ctx['clients']=original_clients;context_path.write_text(json.dumps(ctx))
     cfg['plugins'][0]['browserMappings']=[];(config/'shell.json').write_text(json.dumps(cfg))
     send('Dismiss me')

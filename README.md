@@ -38,6 +38,13 @@ Actions supplied by an app work while that app is connected. Restored messages
 cannot recover old app callbacks. Failed actions keep the notification available
 for retry. The center retains its own history and optional image previews.
 
+Notification Center can invoke a live default action through
+`foamy.notifications invokeDefault <timestamp-id>`. The method returns `invoked`,
+`unavailable`, `busy`, or `invalid`. It accepts only an exact current notification
+key, never archived commands, and handles that notification without clearing its
+whole duplicate group. Expired and restored callbacks return `unavailable` so the
+center can fall back to focusing the sending app.
+
 ## Remove
 
 ```sh

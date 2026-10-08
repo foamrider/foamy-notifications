@@ -387,6 +387,35 @@ Item {
     if (group) activateGroup(group, "default")
   }
 
+  function invokeLiveAction(row, identifier) {
+    var ref = !isRestoredRow(row) ? liveRefs[row.originalId] : null
+    try {
+      if (ref && ref.actions) {
+        for (var i = 0; i < ref.actions.length; i++) {
+          if (ref.actions[i].identifier === identifier) { ref.actions[i].invoke(); return true }
+        }
+      }
+    } catch(e) { console.warn("foamy.notifications: notification action is no longer available") }
+    return false
+  }
+
+  function invokeCenterDefault(key) {
+    if (!/^[0-9]+-[0-9]+$/.test(key)) return "invalid"
+    if (busyKeys[key]) return "busy"
+    // Resolve only current live rows by full identity; archived IDs can be reused.
+    for (var i = 0; i < popupModel.count; i++) {
+      var row = Object.assign({}, popupModel.get(i))
+      if (NotificationLogic.imageStem(row) !== key || isRestoredRow(row)) continue
+      if (!invokeLiveAction(row, "default")) return "unavailable"
+      row.key = key
+      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+      // Use normal handling to remove the popup and its persisted copy as well.
+      commitHandled(row, [key])
+      return "invoked"
+    }
+    return "unavailable"
+  }
+
   function activateGroup(group, identifier) {
     if (busyKeys[group.key]) return
     var row = Object.assign({}, group)
@@ -400,15 +429,7 @@ Item {
       commitHandled(row, keys, function() { Util.execArgv(argv) })
       return
     }
-    var ref = !isRestoredRow(row) ? liveRefs[row.originalId] : null
-    var invoked = false
-    try {
-      if (ref && ref.actions) {
-        for (var i = 0; i < ref.actions.length; i++) {
-          if (ref.actions[i].identifier === identifier) { ref.actions[i].invoke(); invoked = true; break }
-        }
-      }
-    } catch(e) { console.warn("foamy.notifications: notification action is no longer available") }
+    var invoked = invokeLiveAction(row, identifier)
     if (invoked) commitHandled(row, keys)
     else if (identifier === "default") {
       enqueuePopupFileJob(["python3", helper, "focus"], function(focused) {
@@ -1098,6 +1119,7 @@ Item {
 
   IpcHandler {
     target: "foamy.notifications"
+    function invokeDefault(key: string): string { return service.invokeCenterDefault(key) }
     function invokeAction(key: string, identifier: string): string {
       var group = service.displayGroups.filter(function(g) { return g.key === key })[0]
       if (!group) return "none"
