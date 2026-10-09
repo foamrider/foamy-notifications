@@ -57,7 +57,7 @@ if CENTER:
     (plugins/'foamy.notification-center').symlink_to(app/'center',target_is_directory=True)
     (plugins/'foamy.notifications').symlink_to(app/'plugin',target_is_directory=True)
     (config/'shell.json').write_text(json.dumps({'bar':{'layout':{'right':[{'id':'foamy.notification-center'}]}},'plugins':[{'id':'foamy.notifications','maxVisible':3}]}))
-(bin_dir/'omarchy-shell').write_text('#!/bin/sh\nexec qs ipc -n -p '+str(app)+' call "$@"\n')
+(bin_dir/'omarchy-shell').write_text('#!/bin/sh\n[ "$1" = "-q" ] && shift\nexec qs ipc -n -p '+str(app)+' call "$@"\n')
 (bin_dir/'omarchy-shell').chmod(0o755)
 # Exercise the installed stack delegate rather than a second copy of its bindings.
 full_service=(SOURCE/'Service.qml').read_text()
@@ -249,6 +249,39 @@ try:
         wait_for(lambda:state()['popups']==0 and not state()['busy'],'native callback handled')
         assert len(dispatches())==before,'native callback unexpectedly focused a window'
         if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'native callback clears center')
+    if CENTER:
+        # Hiding a popup must not send NotificationClosed before the history click.
+        cfg['plugins'][0]['normalTimeoutSec']=1;(config/'shell.json').write_text(json.dumps(cfg))
+        wait_for(lambda:state()['settings']['normalTimeoutSec']==1,'short history test timeout')
+        ipc('countdown-test','leave')
+        for mode in ['expiry','dismiss','silenced','remove','clear','sender-close']:
+            if mode=='silenced':ipc('notifications','setDnd','on')
+            before=len(dispatches())
+            action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','normal','-t','0','--wait','--action=default=Open','Zendesk history '+mode,'Ticket update'],env=env,stdout=subprocess.PIPE,text=True)
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'history callback archived '+mode)
+            if mode=='silenced':
+                wait_for(lambda:state()['retainedActions']==1,'silenced callback retained')
+                files=list((home/'.local/state/omarchy/notifications/history').glob('*-*.json'))
+                key=next(p.stem for p in files if json.loads(p.read_text()).get('summary')=='Zendesk history '+mode)
+                ipc('notifications','setDnd','off')
+            else:
+                key=state()['groups'][0]['key']
+                if mode!='expiry':ipc('notifications','dismissAll')
+            wait_for(lambda:state()['popups']==0 and state()['retainedActions']==1 and not state()['busy'],'popup gone but callback retained '+mode)
+            assert action.poll() is None,'popup closure destroyed native callback '+mode
+            if mode=='remove':
+                ipc('foamy.notification-center.store','remove',key)
+            elif mode=='clear':ipc('foamy.notification-center.test','clear')
+            elif mode=='sender-close':
+                subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications','--method','org.freedesktop.Notifications.CloseNotification',key.split('-')[1]],env=env,check=True,capture_output=True,timeout=3)
+                wait_for(lambda:state()['retainedActions']==0,'sender closure releases callback')
+                assert ipc('foamy.notifications','invokeDefault',key)=='unavailable'
+                ipc('foamy.notification-center.test','clear')
+            else:ipc('foamy.notification-center.test','focus',key)
+            output=action.communicate(timeout=4)[0].strip()
+            assert output==('' if mode in ['remove','clear','sender-close'] else 'default'),(mode,output)
+            wait_for(lambda:state()['retainedActions']==0 and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'history callback cleaned '+mode)
+            assert len(dispatches())==before,'history action unexpectedly focused another browser window'
     ctx['clients']=original_clients;context_path.write_text(json.dumps(ctx))
     cfg['plugins'][0]['browserMappings']=[];(config/'shell.json').write_text(json.dumps(cfg))
     send('Dismiss me')

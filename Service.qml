@@ -59,6 +59,9 @@ Item {
   // and the next read of that role segfaults in QQmlListModel::data. A JS
   // map only holds a wrapper, which degrades to a catchable error instead.
   property var liveRefs: ({})
+  property var liveKeys: ({})
+  // Primitive snapshots only; live QObjects stay in liveRefs until explicitly closed.
+  property var retainedHistory: ({})
 
   // PersistentProperties handles in-process QML reloads. The on-disk
   // notifications.json file is the cross-restart backstop — its `dnd` key
@@ -85,8 +88,8 @@ Item {
     persisted.doNotDisturb = !!value
   }
 
-  // popupModel feeds the on-screen toast stack — the only model the service
-  // keeps. Everything a toast leaves behind lives on disk under historyDir.
+  // popupModel feeds the on-screen toast stack. History text stays on disk;
+  // retainedHistory keeps bounded snapshots for callbacks owned by live senders.
   //
   // Aliased as a property so consumers outside this Item's id scope can bind
   // to it. QML ids aren't visible to external consumers without the alias.
@@ -167,12 +170,17 @@ Item {
     // captured for the popup card.
     notification.tracked = true
     var snapshot = snapshotOf(notification)
+    var previousKey = liveKeys[snapshot.originalId]
+    if (previousKey) delete retainedHistory[previousKey]
     liveRefs[snapshot.originalId] = notification
+    liveKeys[snapshot.originalId] = NotificationLogic.imageStem(snapshot)
     // Guard the delete: a newer notification may have reused this originalId
     // (freedesktop replaces_id) and taken over the map slot.
     notification.closed.connect(function() {
       if (service.liveRefs[snapshot.originalId] !== notification) return
       delete service.liveRefs[snapshot.originalId]
+      delete service.liveKeys[snapshot.originalId]
+      delete service.retainedHistory[NotificationLogic.imageStem(snapshot)]
       // Action labels are primitives; remove them when their live callback dies.
       Qt.callLater(function() {
         for (var i = 0; i < popupModel.count; i++) {
@@ -196,6 +204,7 @@ Item {
         return
       }
       delete liveRefs[snapshot.originalId]
+      delete liveKeys[snapshot.originalId]
       notification.tracked = false
       return
     }
@@ -232,6 +241,10 @@ Item {
         service.writeSilenced(notification, updated)
         return
       }
+      if (service.retainHistoryAction(written, notification)) {
+        service.watchForUpdates(notification, written)
+        return
+      }
       service.releaseSilenced(notification, written.originalId)
     })
   }
@@ -239,7 +252,11 @@ Item {
   // Let go of a DND-silenced notification once its history write has run.
   // The id may have been reused and the object torn down meanwhile.
   function releaseSilenced(notification, originalId) {
-    if (liveRefs[originalId] === notification) delete liveRefs[originalId]
+    if (liveRefs[originalId] === notification) {
+      delete retainedHistory[liveKeys[originalId]]
+      delete liveKeys[originalId]
+      delete liveRefs[originalId]
+    }
     try {
       notification.tracked = false
     } catch (e) {
@@ -299,6 +316,52 @@ Item {
       scheduleRebuild()
       return
     }
+    var key = String(timestamp) + "-" + String(originalId)
+    if (retainedHistory[key] && NotificationLogic.popupRowChanged(retainedHistory[key], updated)) {
+      retainedHistory[key] = updated
+      writeHistoryFile(updated)
+    }
+  }
+
+  function retainHistoryAction(row, notification) {
+    var key = NotificationLogic.imageStem(row)
+    if (!centerEnabled || row.transient || handledKeys[key] || liveKeys[row.originalId] !== key
+        || liveRefs[row.originalId] !== notification) return false
+    try {
+      if (!notification.tracked || !notification.actions.some(function(action) { return action.identifier === "default" })) return false
+    } catch (e) { return false }
+    retainedHistory[key] = Object.assign({}, row)
+    // Bound live callbacks by the same count as popup history, even if the center is never opened.
+    var keys = Object.keys(retainedHistory).sort(function(a, b) {
+      return Number(retainedHistory[a].timestamp) - Number(retainedHistory[b].timestamp)
+    })
+    while (keys.length > historyLimit) releaseHistoryAction(keys.shift())
+    return !!retainedHistory[key]
+  }
+
+  function releaseHistoryAction(key) {
+    var row = retainedHistory[key] || {originalId:Number(key.split("-")[1])}
+    delete retainedHistory[key]
+    if (liveKeys[row.originalId] !== key) return
+    var ref = liveRefs[row.originalId]
+    delete liveKeys[row.originalId]
+    delete liveRefs[row.originalId]
+    try { if (ref && ref.tracked) ref.dismiss() }
+    catch (e) { console.warn("foamy.notifications: retained notification already closed") }
+  }
+
+  function releaseHistoryKeys(keys) {
+    keys.forEach(function(key) { service.releaseHistoryAction(key) })
+    // Removing history while a popup is visible must not retain its callback later.
+    removeKeys(keys, "historyDismissed")
+  }
+
+  function releaseHistoryBefore(timestamp) {
+    // Include silenced notifications whose history write is still queued.
+    var keys = Object.keys(liveKeys).map(function(id) { return liveKeys[id] }).filter(function(key) {
+      return Number(key.split("-")[0]) <= timestamp
+    })
+    releaseHistoryKeys(keys)
   }
 
   // A restored row carries an id from the previous server generation, and
@@ -357,8 +420,10 @@ Item {
       delete lifetimes[NotificationLogic.imageStem(entry)]
       if (restored) delete restoredPopups[NotificationLogic.popupFileName(entry)]
     }
+    var retained = ref && (reason === "expire" || reason === "dismiss") && retainHistoryAction(entry, ref)
     popupModel.remove(index)
     scheduleRebuild()
+    if (retained) return
     if (ref) {
       try {
         if (ref.tracked) {
@@ -388,7 +453,9 @@ Item {
   }
 
   function invokeLiveAction(row, identifier) {
-    var ref = !isRestoredRow(row) ? liveRefs[row.originalId] : null
+    var key = NotificationLogic.imageStem(row)
+    var retained = retainedHistory[key] && liveKeys[row.originalId] === key
+    var ref = (!isRestoredRow(row) || retained) ? liveRefs[row.originalId] : null
     try {
       if (ref && ref.actions) {
         for (var i = 0; i < ref.actions.length; i++) {
@@ -411,6 +478,13 @@ Item {
       var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
       // Use normal handling to remove the popup and its persisted copy as well.
       commitHandled(row, [key])
+      return "invoked"
+    }
+    var retained = retainedHistory[key]
+    if (retained && liveKeys[retained.originalId] === key && invokeLiveAction(retained, "default")) {
+      var retainedRow = Object.assign({}, retained, {key:key})
+      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+      commitHandled(retainedRow, [key])
       return "invoked"
     }
     return "unavailable"
@@ -447,6 +521,7 @@ Item {
       service.notifyCenter(keys)
       if (beforeDismiss) beforeDismiss()
       service.removeKeys(keys, "handled")
+      keys.forEach(function(key) { service.releaseHistoryAction(key) })
       service.finishAction(row.key, "")
     }, JSON.stringify({keys:keys}))
   }
@@ -603,12 +678,8 @@ Item {
   // straight into history. Same file format as an archived popup, so the
   // replay can't tell the two apart.
   //
-  // A silenced notification is untracked the moment it arrives, so the server
-  // has nothing left for a later replaces_id to replace and hands the sender a
-  // fresh id instead. Every update from a chatty thread is therefore its own
-  // notification here, and several can sit in the ten slots together — there
-  // is no id to recognize them by, and guessing from app and summary would
-  // merge genuinely separate messages.
+  // With the center enabled, live default actions remain tracked after writing.
+  // Other silenced notifications are released once their latest content is saved.
   function writeHistoryFile(entry, done) {
     if (!entry) { if (done) done(true); return }
     var persistable = NotificationLogic.persistablePopup(entry, imagesDir)
@@ -616,6 +687,7 @@ Item {
   }
 
   function clearHistory() {
+    Object.keys(retainedHistory).forEach(function(key) { service.releaseHistoryAction(key) })
     enqueuePopupFileJob(["bash", "-c",
       "for f in \"$1\"/*.json; do\n" +
       "  [[ -e $f ]] || continue\n" +
@@ -986,6 +1058,9 @@ Item {
   property var actionErrors: ({})
   property var handledKeys: ({})
   property bool centerEnabled: false
+  onCenterEnabledChanged: {
+    if (!centerEnabled) Object.keys(retainedHistory).forEach(function(key) { service.releaseHistoryAction(key) })
+  }
   property bool rebuildPending: false
   property var pendingNotifications: []
   property var fullscreenMonitors: []
@@ -1120,6 +1195,17 @@ Item {
   IpcHandler {
     target: "foamy.notifications"
     function invokeDefault(key: string): string { return service.invokeCenterDefault(key) }
+    function releaseHistory(keysCsv: string): string {
+      var keys = keysCsv.split(",")
+      if (keys.length > 100 || keys.some(function(key) { return !/^[0-9]+-[0-9]+$/.test(key) })) return "invalid"
+      service.releaseHistoryKeys(keys)
+      return "ok"
+    }
+    function releaseHistoryBefore(timestamp: string): string {
+      if (!/^[0-9]{1,16}$/.test(timestamp)) return "invalid"
+      service.releaseHistoryBefore(Number(timestamp))
+      return "ok"
+    }
     function invokeAction(key: string, identifier: string): string {
       var group = service.displayGroups.filter(function(g) { return g.key === key })[0]
       if (!group) return "none"
@@ -1128,7 +1214,7 @@ Item {
     }
     function state(): string {
       return JSON.stringify({groups:service.displayGroups.map(function(g){return {key:g.key,count:g.keys.length,actions:JSON.parse(g.actionsJson || "[]").length}}),
-        pending:pendingNotifications.length, contextBusy:contextProc.running, popups:popupModel.count, doNotDisturb:service.doNotDisturb, monitors:service.targetMonitors,
+        retainedActions:Object.keys(service.retainedHistory).length, pending:pendingNotifications.length, contextBusy:contextProc.running, popups:popupModel.count, doNotDisturb:service.doNotDisturb, monitors:service.targetMonitors,
         fullscreenMonitors:service.fullscreenMonitors, settings:service.preferences,
         centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,busy:popupFileProc.running || service.popupFileQueue.length>0})
     }

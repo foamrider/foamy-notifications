@@ -42,8 +42,19 @@ Notification Center can invoke a live default action through
 `foamy.notifications invokeDefault <timestamp-id>`. The method returns `invoked`,
 `unavailable`, `busy`, or `invalid`. It accepts only an exact current notification
 key, never archived commands, and handles that notification without clearing its
-whole duplicate group. Expired and restored callbacks return `unavailable` so the
-center can fall back to focusing the sending app.
+whole duplicate group. With the center enabled, live default actions remain
+available after popup expiry, hiding, and DND silencing. At most `historyLimit`
+(100) history callbacks remain tracked; older callbacks are released first.
+Sender closure, successful handling, history dismissal/clearing, and disabling
+the center release callbacks. Replacements update the retained history entry.
+Browser or shell restarts cannot restore callbacks; unavailable actions still
+use the center's app-focus fallback.
+
+After durable history removal, the center calls `releaseHistory <keysCsv>`
+(up to 100 exact keys), or `releaseHistoryBefore <timestamp>` after clearing.
+The cutoff preserves notifications received after the clear request. Cleanup
+also covers visible popups and silenced notifications still being written.
+These cleanup calls are optional when using stock or older notifications.
 
 ## Remove
 

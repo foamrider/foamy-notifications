@@ -2,12 +2,12 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const source=fs.readFileSync(path.join(__dirname,'../Service.qml'),'utf8')
 function fixture() {
  const jobs=[],events=[]
- const state=vm.createContext({busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},helper:'helper',preferences:{browserMappings:[]},console,
-  NotificationLogic:{parseExecArgv:raw=>raw?JSON.parse(raw):null},isRestoredRow:()=>false,
+ const state=vm.createContext({busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
+  NotificationLogic:{imageStem:row=>`${row.timestamp}-${row.originalId}`,parseExecArgv:raw=>raw?JSON.parse(raw):null},isRestoredRow:()=>false,
   enqueuePopupFileJob:(argv,done,payload)=>jobs.push({command:argv[2],done,payload}),
   notifyCenter:()=>events.push('center'),removeKeys:()=>events.push('remove'),Util:{execArgv:()=>events.push('launch')}})
  state.service=state
- for(const name of ['invokeLiveAction','invokeCenterDefault','activateGroup','commitHandled','finishAction']) {
+ for(const name of ['retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','commitHandled','finishAction']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
@@ -64,4 +64,53 @@ test('center does not replay archived commands or restored and expired callbacks
   assert.equal(state.invokeCenterDefault('10-1'),'unavailable')
   assert.deepEqual(events,[]);assert.equal(jobs.length,0)
  }
+})
+
+function retainedFixture() {
+ const f=centerFixture([]),row={timestamp:10,originalId:1,app:'Vivaldi',transient:false}
+ const ref={tracked:true,actions:[{identifier:'default',invoke(){f.events.push('invoke')}}],dismiss(){this.tracked=false;f.events.push('closed')}}
+ f.state.liveRefs[1]=ref;f.state.liveKeys[1]='10-1'
+ return {...f,row,ref}
+}
+test('history callback survives the popup and is released after successful handling',()=>{
+ const {state,row,ref,jobs,events}=retainedFixture()
+ assert.equal(state.retainHistoryAction(row,ref),true)
+ assert.equal(state.invokeCenterDefault('10-1'),'invoked')
+ assert.deepEqual(events,['invoke'])
+ jobs.shift().done(true)
+ assert.deepEqual(events,['invoke','center','remove','closed'])
+ assert.equal(Object.keys(state.retainedHistory).length,0)
+ assert.equal(state.liveRefs[1],undefined)
+})
+test('retention is bounded and cannot release a reused notification ID',()=>{
+ const {state,row,ref,events}=retainedFixture();state.historyLimit=1
+ state.retainHistoryAction(row,ref)
+ const next={...row,timestamp:11,originalId:2},other={...ref}
+ state.liveRefs[2]=other;state.liveKeys[2]='11-2';state.retainHistoryAction(next,other)
+ assert.equal(ref.tracked,false);assert.deepEqual(Object.keys(state.retainedHistory),['11-2'])
+ state.liveRefs[2]={...ref,tracked:true};state.liveKeys[2]='12-2'
+ state.releaseHistoryAction('11-2')
+ assert.equal(state.liveRefs[2].tracked,true);assert.equal(state.liveKeys[2],'12-2')
+})
+test('stock-only, transient and command-only notifications do not retain callbacks',()=>{
+ for(const mode of ['stock','transient','command']) {
+  const {state,row,ref}=retainedFixture()
+  if(mode==='stock')state.centerEnabled=false
+  if(mode==='transient')row.transient=true
+  if(mode==='command'){ref.actions=[];row.execArgv='["command"]'}
+  assert.equal(state.retainHistoryAction(row,ref),false)
+ }
+})
+test('history cleanup also closes a callback awaiting its first history write',()=>{
+ const {state,ref}=retainedFixture()
+ state.releaseHistoryKeys(['10-1'])
+ assert.equal(ref.tracked,false);assert.equal(state.liveRefs[1],undefined)
+})
+
+test('clearing history releases pending callbacks but preserves newer arrivals',()=>{
+ const {state,ref}=retainedFixture()
+ const newer={...ref,tracked:true};state.liveRefs[2]=newer;state.liveKeys[2]='11-2'
+ state.releaseHistoryBefore(10)
+ assert.equal(ref.tracked,false);assert.equal(newer.tracked,true)
+ assert.equal(state.liveKeys[2],'11-2')
 })
