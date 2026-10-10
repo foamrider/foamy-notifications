@@ -12,6 +12,7 @@ import qs.Commons
 import "components"
 import "NotificationLogic.js" as NotificationLogic
 import "Preferences.js" as Preferences
+import "BrowserIdentity.js" as BrowserIdentity
 
 Item {
   id: service
@@ -1076,10 +1077,12 @@ Item {
     Qt.callLater(function() { service.rebuildPending = false; service.rebuildGroups() })
   }
 
+  BrowserIcons { id: browserIcons; onUpdated: service.scheduleRebuild() }
+
   function rebuildGroups() {
     var rows = []
     for (var i = 0; i < popupModel.count; i++) rows.push(Object.assign({}, popupModel.get(i)))
-    var groups = Preferences.groups(rows, preferences.groupDuplicates)
+    var groups = Preferences.groups(rows, preferences.groupDuplicates, preferences.browserGrouping, BrowserIdentity)
     var retained = []
     for (var g = 0; g < groups.length; g++) {
       var group = groups[g]
@@ -1090,6 +1093,7 @@ Item {
           removeKeys(group.keys.slice(100), "dismiss")
           group.keys = group.keys.slice(0,100)
         }
+        group.favicon = preferences.useBrowserFavicons ? browserIcons.source(group) : ""
         retained.push(group)
         for (var k = 0; k < group.keys.length; k++) {
           if (lifetimes[group.keys[k]] === undefined) lifetimes[group.keys[k]] = durationFor(group.urgency, group.expireTimeout)
@@ -1097,6 +1101,7 @@ Item {
       }
     }
     displayGroups = retained
+    if (preferences.useBrowserFavicons) browserIcons.warm(retained)
   }
 
   function remainingFor(group) {
@@ -1280,6 +1285,7 @@ Item {
             width: popupColumn.width
             app: modelData.app
             appIcon: modelData.appIcon
+            favicon: modelData.favicon || ""
             image: modelData.image
             compact: service.preferences.compact
             showTimeoutIndicator: service.preferences.showTimeoutIndicator

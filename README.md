@@ -21,7 +21,7 @@ continue to work.
 
 ## Use
 
-- App icons stay in a slim header; sender images appear beside the message.
+- Website favicons or app icons stay in a slim header; sender images appear beside the message.
 - Hover to pause the timer. A smooth, optional line shows the remaining time.
 - Left-click or use an action to handle a notification and remove it from history.
   Right-click or × hides the popup and keeps it in history.

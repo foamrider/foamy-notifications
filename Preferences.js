@@ -2,7 +2,7 @@ function defaults() {
   return { lowTimeoutSec: 5, normalTimeoutSec: 8, criticalTimeoutSec: 0,
     maxVisible: 3, groupDuplicates: true, monitor: "focused", monitorName: "",
     suppressFullscreen: false, fullscreenCritical: true, width: 390,
-    browserMappings: [], restoreMaxAgeSec: 300, showImages: true, imageSize: 56, compact: true, showTimeoutIndicator: true }
+    useBrowserFavicons: true, browserGrouping: "browser", browserMappings: [], restoreMaxAgeSec: 300, showImages: true, imageSize: 56, compact: true, showTimeoutIndicator: true }
 }
 function parse(raw) {
   var settings = defaults()
@@ -17,10 +17,14 @@ function parse(raw) {
       if (typeof entry[key] !== "number" || !isFinite(entry[key]) || Math.floor(entry[key]) !== entry[key] || entry[key] < range[0] || entry[key] > range[1]) throw Error("Invalid " + key)
       settings[key] = entry[key]
     }
-    for (var name of ["groupDuplicates", "suppressFullscreen", "fullscreenCritical", "showImages", "compact", "showTimeoutIndicator"]) {
+    for (var name of ["groupDuplicates", "suppressFullscreen", "fullscreenCritical", "showImages", "compact", "showTimeoutIndicator", "useBrowserFavicons"]) {
       if (entry[name] === undefined) continue
       if (typeof entry[name] !== "boolean") throw Error("Invalid " + name)
       settings[name] = entry[name]
+    }
+    if (entry.browserGrouping !== undefined) {
+      if (["browser", "hostname", "none"].indexOf(entry.browserGrouping) < 0) throw Error("Invalid browserGrouping")
+      settings.browserGrouping = entry.browserGrouping
     }
     if (entry.monitor !== undefined) {
       if (["focused","pointer","named","all"].indexOf(entry.monitor) < 0) throw Error("Invalid monitor")
@@ -51,11 +55,13 @@ function groupKey(row) {
   // Different click targets must never merge, even if their visible text matches.
   return JSON.stringify([row.app,row.desktopEntry,row.summary,row.body,row.appIcon,row.image,row.urgency,row.execArgv,row.actionsJson])
 }
-function groups(rows, enabled) {
+function groups(rows, enabled, browserGrouping, browserIdentity) {
+  browserIdentity = browserIdentity || (typeof require === "function" ? require("./BrowserIdentity.js") : null)
   var result = [], seen = {}
   rows.forEach(function(row) {
     var identity = String(row.timestamp) + "-" + String(row.originalId)
-    var key = enabled ? groupKey(row) : identity
+    var isBrowser = browserIdentity && browserIdentity.browser(row)
+    var key = enabled && !(isBrowser && browserGrouping === "none") ? groupKey(row) : identity
     if (seen[key] !== undefined) { result[seen[key]].keys.push(identity); return }
     seen[key] = result.length
     var copy = {}

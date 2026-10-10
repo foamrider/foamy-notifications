@@ -16,7 +16,7 @@ Item {
     name: "FoamyNotificationCard"
     onCompletedChanged: if (completed) console.log("UI_RESULT",qtest_results.passCount,"passed",qtest_results.failCount,"failed")
     when: windowShown
-    function init() { card.showTimeoutIndicator=true;card.timeoutMs=0;card.remainingMs=0;card.compact=true;card.app="Test";card.showImages=true;card.imageSize=56;card.width=420;card.summary="Test title";card.busy=false;card.image="";card.appIcon="";card.actionsExpanded=false;card.actions=[{identifier:"read",text:"Mark read"}];opened.clear();dismissed.clear();action.clear() }
+    function init() { card.showTimeoutIndicator=true;card.timeoutMs=0;card.remainingMs=0;card.compact=true;card.app="Test";card.showImages=true;card.imageSize=56;card.width=420;card.summary="Test title";card.busy=false;card.image="";card.appIcon="";card.favicon="";card.actionsExpanded=false;card.actions=[{identifier:"read",text:"Mark read"}];opened.clear();dismissed.clear();action.clear() }
     function cleanup() { if (qtest_results.failed) console.log("FAILED_CASE", qtest_results.functionName) }
     function test_avatar_and_app_icon_use_separate_areas() {
       card.app="Vivaldi"
@@ -26,6 +26,17 @@ Item {
       verify(image.visible);verify(icon.visible)
       var header=findChild(card,"notificationHeader")
       verify(header.height<=32);verify(image.mapToItem(card,0,0).y>=header.height)
+    }
+    function test_favicon_has_priority_with_app_icon_fallback() {
+      card.appIcon=Qt.resolvedUrl("fallback.svg").toString()
+      card.favicon=Qt.resolvedUrl("avatar.svg").toString()
+      var icon=findChild(card,"notificationAppIcon"), favicon=findChild(card,"notificationFavicon")
+      tryCompare(icon,"status",Image.Ready);tryCompare(favicon,"status",Image.Ready)
+      verify(favicon.visible);verify(!icon.visible)
+      card.favicon=Qt.resolvedUrl("missing-favicon.png").toString()
+      tryCompare(favicon,"status",Image.Error);verify(icon.visible)
+      card.favicon="https://example.invalid/favicon.png";compare(card.faviconSource,"");verify(icon.visible)
+      card.favicon="";verify(icon.visible)
     }
     function test_timeout_indicator_is_bounded_optional_and_does_not_resize() {
       waitForRendering(card)

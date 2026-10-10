@@ -14,6 +14,8 @@ configuration. Settings are file-based, with no extra settings panel.
   "criticalTimeoutSec": 0,
   "maxVisible": 3,
   "groupDuplicates": true,
+  "useBrowserFavicons": true,
+  "browserGrouping": "browser",
   "monitor": "focused",
   "monitorName": "",
   "suppressFullscreen": false,
@@ -34,6 +36,8 @@ configuration. Settings are file-based, with no extra settings panel.
 | `criticalTimeoutSec` | 0 keeps critical alerts until dismissed; 1–120 sets an expiry. |
 | `maxVisible` | 1–10 groups. Screen space may reduce this further. Older groups go to history. |
 | `groupDuplicates` | Groups exact duplicates. Different actions or sending applications remain separate. |
+| `useBrowserFavicons` | `true` (default) uses the identified website’s locally cached favicon in the header. Missing, unsupported or failed favicons fall back to the app icon, then the glyph. Independent of `showImages`. |
+| `browserGrouping` | `browser` (default) and `hostname` preserve exact-duplicate grouping; the leading origin already keeps different websites separate. `none` disables duplicate grouping for browser notifications. Native duplicates still follow `groupDuplicates`. |
 | `monitor` | `focused`, `pointer`, `named`, or `all`. Missing named outputs fall back to the focused output. Pointer placement updates when a notification arrives. |
 | `monitorName` | Output name used with `named`, for example `DP-1`. |
 | `suppressFullscreen` | Sends notifications directly to history when the target output is fullscreen. Existing popups are also archived when all their target outputs become fullscreen. |
@@ -50,6 +54,23 @@ still show them. Group expiry has one shared clock, so it does not run faster on
 multiple monitors. Hovering any copy pauses the group.
 
 ### Browser apps
+
+Favicons are read asynchronously from standard Linux Chromium-family profile
+caches (Vivaldi, Chrome, Chromium, Brave, Edge and Opera), with no website
+requests or extra dependencies. Firefox and custom profile locations fall back
+to the app icon. Only a browser’s leading website origin identifies the site;
+message links and sender avatars are never used as favicons. Results use a
+private shared cache under `$XDG_CACHE_HOME/foamy/browser-favicons` (normally
+`~/.cache/foamy/browser-favicons`), limited to 256 PNGs of at most 64 KiB and
+256 × 256 pixels. Successful lookups refresh after one day; missing icons can
+retry after five minutes when the display model next changes. Only the first
+128 website groups in a display model are looked up.
+
+Notification Center has the same `useBrowserFavicons` and `browserGrouping`
+settings on its bar-widget entry. Its `hostname` mode creates separate website
+stacks; `none` leaves browser messages unstacked. These settings are independent
+between the plugins. Missing origins remain under the browser. Grouping does
+not change notification click targets or identify browser profiles/accounts.
 
 The plugin uses a browser notification's leading website origin to select its
 web-app window. It accepts a leading HTTP(S) URL or link, and a bare hostname
@@ -80,7 +101,7 @@ action does not imply an inline text field. Critical alerts have a red edge that
 follows and tapers through both left corners.
 
 Sender images, such as Teams avatars and screenshot previews, share one rounded
-slot to the left of the message. The app icon stays in the header, with a glyph
+slot to the left of the message. The app icon or website favicon stays in the header, with a glyph
 fallback. Missing, failed, or disabled images leave no empty slot. Clicking the
 image invokes the same default action as clicking the message. No browser-specific
 image classification is needed.
@@ -134,6 +155,7 @@ python3 tests/render.py
 # In a Wayland desktop, verify GPU-rendered rounded image masks:
 python3 tests/render.py --desktop
 python3 tests/ui.py
+python3 tests/browser-ui.py
 python3 tests/motion.py
 # In a Wayland desktop, verify animation frames on a real surface:
 python3 tests/motion.py --desktop

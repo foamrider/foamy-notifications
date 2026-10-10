@@ -10,6 +10,8 @@ Rectangle {
   id: root
   property string app: ""
   property string appIcon: ""
+  property string favicon: ""
+  readonly property string faviconSource: favicon.indexOf("file://") === 0 ? favicon : ""
   property string image: ""
   property bool showTimeoutIndicator: true
   property real timeoutMs: 0
@@ -105,11 +107,21 @@ Rectangle {
             sourceSize.width: Math.ceil(width * 2); sourceSize.height: Math.ceil(height * 2)
             fillMode: Image.PreserveAspectFit
             asynchronous: true
+            visible: status === Image.Ready && faviconIcon.status !== Image.Ready
+          }
+          Image {
+            id: faviconIcon
+            objectName: "notificationFavicon"
+            anchors.fill: parent
+            source: root.faviconSource
+            sourceSize.width: Math.ceil(width * 2); sourceSize.height: Math.ceil(height * 2)
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
             visible: status === Image.Ready
           }
           Text {
             anchors.centerIn: parent
-            visible: icon.status !== Image.Ready
+            visible: icon.status !== Image.Ready && faviconIcon.status !== Image.Ready
             text: root.glyph || "󰂚"
             textFormat: Text.PlainText
             font.family: root.fontFamily

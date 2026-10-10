@@ -28,5 +28,5 @@ try:output=process.communicate(timeout=15)[0]
 except subprocess.TimeoutExpired:
     os.killpg(process.pid,signal.SIGTERM);output=process.communicate(timeout=3)[0]
 print(output)
-# completedChanged runs before QtTest counts cleanupTestCase: fifteen tests plus init.
-assert process.returncode==0 and 'UI_RESULT 16 passed 0 failed' in output
+# completedChanged runs before QtTest counts cleanupTestCase: sixteen tests plus init.
+assert process.returncode==0 and 'UI_RESULT 17 passed 0 failed' in output
