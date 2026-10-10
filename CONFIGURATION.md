@@ -66,6 +66,14 @@ private shared cache under `$XDG_CACHE_HOME/foamy/browser-favicons` (normally
 retry after five minutes when the display model next changes. Only the first
 128 website groups in a display model are looked up.
 
+Browser databases are opened read-only. If a rollback database is locked, the
+helper can read an in-memory copy of at most 32 MiB. It rejects active
+journals, WAL sidecars, changed files and copies that fail SQLite's integrity
+check. Copying and querying share a two-second deadline. No database copies are
+written to disk; the helper never writes to the browser database or removes its
+locks. A cache that cannot be read safely keeps the app icon and reports
+`cache-unavailable`.
+
 Notification Center has the same `useBrowserFavicons` and `browserGrouping`
 settings on its bar-widget entry. Its `hostname` mode creates separate website
 stacks; `none` leaves browser messages unstacked. These settings are independent
