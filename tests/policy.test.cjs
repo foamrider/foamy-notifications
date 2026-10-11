@@ -63,3 +63,20 @@ test('timeout indicator defaults on and rejects non-boolean overrides',()=>{
  assert.equal(P.parse(config(false)).settings.showTimeoutIndicator,false);
  for(const invalid of ['false',0,null]) assert.match(P.parse(config(invalid)).error,/Invalid showTimeoutIndicator/);
 });
+
+
+test('raw providers never render; explicit local image hints remain usable',()=>{
+ const n={image:'image://qsimage/123',hints:{'image-path':'file:///tmp/avatar.png'}}
+ assert.equal(L.snapshotOf(n,1000).image,'file:///tmp/avatar.png')
+ for(const hint of ['image-data','image_data','icon_data']) {
+  assert.equal(L.snapshotOf({image:'image://qsimage/123',hints:{[hint]:[1,1,4,true,8,4,[1]]}},1000).image,'')
+ }
+ assert.equal(L.snapshotOf({image:'file:///tmp/picture%20%23%25.png'},1000).image,'file:///tmp/picture%20%23%25.png')
+ assert.equal(L.themeIcon('image://qsimage/123'),'')
+ assert.equal(L.themeIcon('/tmp/original.jpg'),'')
+ assert.equal(L.themeIcon('org.example.App'),'org.example.App')
+ const normalized='file:///tmp/images/1000-1-image-'+ 'a'.repeat(64)+'.png'
+ assert.equal(L.normalizedImage(normalized,'/tmp/images/'),normalized)
+ for(const bad of ['file:///tmp/original.jpg','image://qsimage/123',normalized.replace('1000-1','../1000-1'),normalized+'.jpg'])
+  assert.equal(L.normalizedImage(bad,'/tmp/images/'),'')
+})

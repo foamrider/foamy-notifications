@@ -178,10 +178,12 @@ try:
         ctx['clients']=ctx['clients'][:1];context_path.write_text(json.dumps(ctx))
         ipc('notifications','invokeLast')
         wait_for(lambda:state()['popups']==0 and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'popup retry succeeds')
-        saved_clients=ctx['clients'];ctx['clients']=[];context_path.write_text(json.dumps(ctx))
+        saved_clients=ctx['clients']
+        # Missing-window focus is intentionally silent in the current center; query failures are retryable errors.
         send('Unavailable center focus')
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'ambiguous entry ingested')
         key=state()['groups'][0]['key']
+        context_path.write_text('{')
         ipc('foamy.notification-center.test','focus',key)
         wait_for(lambda:bool(json.loads(ipc('foamy.notification-center.test','state'))['focusError']),'ambiguous focus reports error')
         assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'failed focus removed notification'

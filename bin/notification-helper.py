@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Bounded notification persistence and exact Hyprland window selection."""
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import resource
+import shutil
+import struct
 import stat
 import subprocess
 import sys
@@ -37,24 +41,138 @@ def atomic(path, data):
     finally:
         Path(name).unlink(missing_ok=True)
 
-def copy_image(source, destination):
+IMAGE_LIMIT = 5 * 1024 * 1024
+IMAGE_NAME = re.compile(r"^([0-9]+-[0-9]+)-(appIcon|image)-([a-f0-9]{64})\.png$")
+THEME_ICON = re.compile(r"^[A-Za-z0-9_.-]+$")
+POLICY = Path(__file__).with_name('policy.xml')
+
+
+def local_image(value):
+    if not isinstance(value, str):
+        return None
+    if value.startswith('file://'):
+        parsed = urlparse(value)
+        if parsed.netloc or parsed.query or parsed.fragment:
+            return None
+        from urllib.parse import unquote
+        value = unquote(parsed.path)
+    return Path(value) if value.startswith('/') else None
+
+
+def image_bytes(path):
     # Nonblocking + regular-file validation prevents FIFO/device stalls and bounds reads.
-    fd = os.open(source, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
-    with os.fdopen(fd,'rb') as stream:
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(fd, 'rb') as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
             raise ValueError('Image is not a regular file')
-        data = stream.read(5242881)
-    if len(data) > 5242880:
+        data = stream.read(IMAGE_LIMIT + 1)
+    if len(data) > IMAGE_LIMIT:
         raise ValueError('Image exceeds the size limit')
-    # Preserve the retained inode/mtime on text-only updates so the center can reuse its thumbnail.
+    return data
+
+
+def png_dimensions(data):
+    if len(data) < 33 or data[:16] != b'\x89PNG\r\n\x1a\n\0\0\0\rIHDR':
+        raise ValueError('Converter did not produce a PNG')
+    width, height = struct.unpack('!II', data[16:24])
+    if not (0 < width <= 720 and 0 < height <= 720):
+        raise ValueError('Converted image dimensions exceed the limit')
+    return width, height
+
+
+def decoder_limits():
+    # The single-threaded helper forks only this worker; Qt never owns its decoder allocations.
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024,) * 2)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (IMAGE_LIMIT,) * 2)
+    resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
+
+
+def normalize_image(source, key, role):
+    data = image_bytes(source)
+    images = base() / 'images'
+    images.mkdir(parents=True, exist_ok=True, mode=0o700)
+    digest = hashlib.sha256(data).hexdigest()
+    match = IMAGE_NAME.fullmatch(source.name)
+    # Content-addressed private outputs are reusable on text-only updates and restores.
+    if source.parent == images and match and match.group(1) == key and match.group(2) == role:
+        png_dimensions(data)
+        return source
+    destination = images / (key + '-' + role + '-' + digest + '.png')
     try:
-        if destination.is_file() and not destination.is_symlink() and destination.stat().st_size == len(data):
-            with destination.open('rb') as previous:
-                if previous.read(5242881) == data:
-                    return
-    except OSError:
+        png_dimensions(image_bytes(destination))
+        return destination
+    except (OSError, ValueError):
         pass
-    atomic(destination,data)
+    if not POLICY.is_file() or not shutil.which('magick') or not shutil.which('file'):
+        raise ValueError('Image conversion requires file and ImageMagick 7')
+    with tempfile.TemporaryDirectory(prefix='.foamy-image-', dir=images) as work:
+        scratch = Path(work)
+        incoming = scratch / 'input'
+        incoming.write_bytes(data)
+        mime = subprocess.run(['file', '-b', '--mime-type', str(incoming)],
+                              check=True, capture_output=True, timeout=2).stdout.strip()
+        coder = {b'image/png': 'PNG', b'image/jpeg': 'JPEG', b'image/gif': 'GIF',
+                 b'image/webp': 'WEBP', b'image/bmp': 'BMP', b'image/x-ms-bmp': 'BMP',
+                 b'image/vnd.microsoft.icon': 'ICO', b'image/x-icon': 'ICO',
+                 b'image/svg+xml': 'RSVG'}.get(mime)
+        if not coder:
+            raise ValueError('Unsupported image format')
+        output = scratch / 'output.png'
+        empty = scratch / 'empty'
+        empty.mkdir()
+        # SVG receives stdin in an empty directory, without a base path for linked resources.
+        input_spec = 'RSVG:-[0]' if coder == 'RSVG' else coder + ':' + str(incoming) + '[0]'
+        env = dict(os.environ, MAGICK_CONFIGURE_PATH=str(POLICY.parent))
+        subprocess.run(['magick', '-background', 'none', input_spec, '-auto-orient',
+                        '-resize', '720x720>', '-strip', 'PNG:' + str(output)],
+                       input=data if coder == 'RSVG' else None, cwd=empty, env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       check=True, timeout=5, preexec_fn=decoder_limits)
+        normalized = image_bytes(output)
+        png_dimensions(normalized)
+        atomic(destination, normalized)
+        # A new URL avoids Qt reusing the original or previous replacement's cached image.
+        for previous in images.glob(key + '-' + role + '-*.png'):
+            if previous != destination and IMAGE_NAME.fullmatch(previous.name):
+                previous.unlink(missing_ok=True)
+        return destination
+
+
+def normalize_entry(entry, copies=()):
+    key = str(entry['timestamp']) + '-' + str(entry['originalId'])
+    if not KEY.fullmatch(key):
+        raise ValueError('Invalid notification identity')
+    copy_sources = {}
+    for pair in copies:
+        destination = Path(pair['to'])
+        if destination.parent != base() / 'images' or destination.name not in (key+'-appIcon', key+'-image'):
+            raise ValueError('Invalid image destination')
+        copy_sources['file://' + str(destination)] = pair['from']
+    for role in ('appIcon', 'image'):
+        value = entry.get(role, '')
+        if not isinstance(value, str):
+            entry[role] = ''
+            continue
+        if role == 'appIcon' and isinstance(value, str) and THEME_ICON.fullmatch(value):
+            continue
+        source = local_image(copy_sources.get(value, value))
+        entry[role] = ''
+        if source is None:
+            continue
+        try:
+            entry[role] = normalize_image(source, key, role).as_uri()
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            # Failed optional images retain text and actions, never the unsafe original.
+            print('foamy.notifications: ' + role + ' rejected: ' + type(error).__name__, file=sys.stderr)
+    entry['imageFormat'] = 1
+    return entry
+
+
+def remove_images(key):
+    for path in (base() / 'images').glob(key + '-*'):
+        if path.name in (key+'-appIcon', key+'-image') or IMAGE_NAME.fullmatch(path.name):
+            path.unlink(missing_ok=True)
 
 def write(data):
     root = base()
@@ -63,23 +181,19 @@ def write(data):
     entry.pop('actionsJson', None)
     key = str(entry['timestamp']) + '-' + str(entry['originalId'])
     if not KEY.fullmatch(key): raise ValueError('Invalid notification identity')
-    for pair in data.get('copies',[]):
-        destination = Path(pair['to'])
-        if destination.parent != root/'images' or destination.name not in (key+'-appIcon',key+'-image'):
-            raise ValueError('Invalid image destination')
-        try:
-            copy_image(pair['from'], destination)
-        except (OSError,ValueError):
-            # Text remains useful even when an optional local image cannot be copied.
-            for role in ('appIcon','image'):
-                if str(entry.get(role,'')) == 'file://' + str(destination): entry[role] = ''
+    normalize_entry(entry, data.get('copies', []))
     target = root/'history' if data.get('history') else root
     atomic(target/(key+'.json'), (json.dumps(entry,ensure_ascii=True)+'\n').encode())
     if data.get('history'):
         files = sorted(target.glob('[0-9]*-*.json'), key=lambda p:p.name, reverse=True)
         for path in files[100:]:
             path.unlink(missing_ok=True)
-            for role in ('appIcon','image'): (root/'images'/(path.stem+'-'+role)).unlink(missing_ok=True)
+            remove_images(path.stem)
+
+    if 'sources' in data:
+        print(json.dumps({'key': key, 'version': data.get('imageVersion', 0), 'sources': data['sources'],
+                          'appIcon': entry.get('appIcon', ''), 'image': entry.get('image', '')}))
+
 
 def read(data):
     folder = base()/('history' if data.get('history') else '')
@@ -93,6 +207,12 @@ def read(data):
             if len(raw)>LIMIT: continue
             row = json.loads(raw)
             if not isinstance(row,dict) or not isinstance(row.get('summary'),str) or not row.get('timestamp'): continue
+            if str(row['timestamp']) + '-' + str(row.get('originalId', '')) != path.stem:
+                continue
+            original = dict(row)
+            normalize_entry(row)
+            if row != original:
+                atomic(path, (json.dumps(row, ensure_ascii=True) + '\n').encode())
             print(json.dumps(row))
             count += 1
         except (OSError,ValueError): continue
@@ -108,7 +228,7 @@ def forget(data):
         subprocess.run([str(center),'remove',*keys],check=True,timeout=15,stdout=subprocess.DEVNULL)
     for key in keys:
         for folder in (base(),base()/'history'): (folder/(key+'.json')).unlink(missing_ok=True)
-        for role in ('appIcon','image'): (base()/'images'/(key+'-'+role)).unlink(missing_ok=True)
+        remove_images(key)
 
 def hypr(command):
     result = subprocess.run(['hyprctl','-j',command],check=True,capture_output=True,timeout=3)

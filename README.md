@@ -9,6 +9,20 @@ Compact notification popups for Omarchy Quattro, styled to match
 
 Requires Omarchy Quattro, Quickshell, Python 3, and the standard Omarchy tools
 (including `hyprctl` and `omarchy-shell`). Notification Center is optional.
+File-backed app icons and sender pictures also need `file` and ImageMagick 7
+(`magick`). Missing conversion tools keep the text, actions and icon fallback.
+
+Sender files are converted outside the shell to PNGs of at most 720 × 720 pixels,
+with the same decoder policy as Notification Center: no delegates or disk pixel
+cache, 128 MiB pixel cache, a 512 MiB process-memory limit and a five-second
+deadline. Input and output are limited to 5 MiB. Failed conversions never expose
+the original image to Qt. Existing popup images are normalized before restoration.
+
+Quickshell removes raw `image-data` buffers before plugins can validate them.
+The popup therefore never renders its raw-image provider. If the sender also
+supplies a local `image-path`, that file is converted and displayed; otherwise
+only that sender picture is omitted. Text, actions, website favicons and named
+app icons remain available. No network image retrieval is used.
 
 ```sh
 omarchy plugin add https://github.com/foamrider/foamy-notifications.git --enable

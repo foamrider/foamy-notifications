@@ -137,13 +137,20 @@ continues to manage its own archive and retention.
 
 Notification content reaches persistence and window-matching helpers through
 standard input, not process arguments. Adjacent queued snapshots for the same notification are coalesced, while reads,
-actions, and deletes keep their ordering. Unchanged local image copies retain
-their inode and modification time so the center can reuse its thumbnails.
+actions, and deletes keep their ordering. Normalized PNGs use content-addressed filenames. Text-only updates reuse the
+existing file; picture replacements get a new URL so Qt cannot reuse old pixels.
 
 New state files use private permissions
-and atomic replacement. Text and restore reads are bounded; optional image copies
-are limited to regular local files up to 5 MiB. Sender image tags are filtered
-before rendering. No network image retrieval is added.
+and atomic replacement. Text and restore reads are bounded. Regular local image
+files up to 5 MiB pass through the bounded external decoder described in the
+README before the popup or restored history sees them. Progressive JPEG, PNG,
+GIF, WebP, BMP, ICO and self-contained SVG images remain supported, including
+transparency. SVG linked resources are unavailable. Failed, oversized or missing
+images retain text and actions and use the icon fallback; no original-image
+fallback is used. Raw `image-data` provider URLs are never rendered because
+Quickshell does not expose the buffer for plugin-side validation. An explicit
+local `image-path` remains usable. Sender image tags are filtered before
+rendering. No network image retrieval is added.
 
 Critical alerts remain persistent by default, but restored popups are subject to
 the configured maximum age. No message content appears in the diagnostic IPC:
@@ -164,6 +171,8 @@ python3 tests/render.py
 python3 tests/render.py --desktop
 python3 tests/ui.py
 python3 tests/browser-ui.py
+# Real popup image intake/rendering on a private D-Bus session:
+python3 tests/images-ui.py
 python3 tests/motion.py
 # In a Wayland desktop, verify animation frames on a real surface:
 python3 tests/motion.py --desktop

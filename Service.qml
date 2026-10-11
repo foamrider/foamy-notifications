@@ -144,7 +144,44 @@ Item {
   }
 
   function snapshotOf(notification) {
+    if (String(notification.image || "").indexOf("image://") === 0 && !NotificationLogic.popupImage(notification))
+      console.warn("foamy.notifications: raw sender image unavailable; keeping text, actions and icon fallback")
     return NotificationLogic.snapshotOf(notification, Date.now())
+  }
+
+  property var normalizedImages: ({})
+  property var imageWriteVersions: ({})
+  property double nextImageWriteVersion: 0
+
+  function acceptNormalizedImages(result) {
+    if (!result || !result.sources || !/^[0-9]+-[0-9]+$/.test(result.key)
+        || imageWriteVersions[result.key] !== result.version) return
+    for (var i = 0; i < popupModel.count; i++) {
+      var row = popupModel.get(i)
+      if (NotificationLogic.imageStem(row) !== result.key) continue
+      // A queued conversion must never overwrite the image of a newer replacement.
+      if (String(row.appIcon || "") !== result.sources.appIcon || String(row.image || "") !== result.sources.image) return
+      var images = Object.assign({}, normalizedImages)
+      images[result.key] = result
+      normalizedImages = images
+      return
+    }
+  }
+
+  function popupImageFor(row, role) {
+    var source = String(row[role] || "")
+    if (role === "appIcon" && NotificationLogic.themeIcon(source)) return source
+    if (isRestoredRow(row)) return NotificationLogic.normalizedImage(source, imagesDir)
+    var result = normalizedImages[NotificationLogic.imageStem(row)]
+    if (!result || result.sources[role] !== source) return ""
+    return NotificationLogic.normalizedImage(result[role], imagesDir)
+  }
+
+  function forgetNormalizedImages(row, keepVersion) {
+    var images = Object.assign({}, normalizedImages)
+    delete images[NotificationLogic.imageStem(row)]
+    normalizedImages = images
+    if (!keepVersion) delete imageWriteVersions[NotificationLogic.imageStem(row)]
   }
 
   // A notification nobody looks back at:
@@ -391,6 +428,7 @@ Item {
       // would silently kill a restored critical alert on an unrelated ping.
       if (isRestoredRow(row)) continue
       if (NotificationLogic.popupFileName(row) !== keepFileName) deletePopupFileFor(row)
+      forgetNormalizedImages(row, NotificationLogic.popupFileName(row) === keepFileName)
       popupModel.remove(i)
     }
   }
@@ -406,6 +444,7 @@ Item {
   function removePopup(index, reason) {
     if (index < 0 || index >= popupModel.count) return
     var entry = popupModel.get(index)
+    forgetNormalizedImages(entry)
     var originalId = entry ? entry.originalId : -1
     // A restored row has no live server object, and its old-generation id
     // may meanwhile belong to a fresh notification — resolving liveRefs by
@@ -576,6 +615,7 @@ Item {
   // Done callback of the job popupFileProc is currently running.
   property var runningPopupFileJobDone: null
   property string runningPayload: ""
+  property bool runningImageWrite: false
 
   function enqueuePopupFileJob(command, done, payload, replaceKey) {
     // Coalesce only adjacent, not-yet-started snapshots. Reads, actions and deletes stay barriers.
@@ -594,17 +634,24 @@ Item {
   }
 
   function runNextPopupFileJob() {
-    if (readHistoryProc.running || popupFileProc.running) return
+    if (readHistoryProc.running || restorePopupsProc.running || popupFileProc.running) return
     if (popupFileQueue.length === 0) return
 
     var job = popupFileQueue[0]
     popupFileQueue = popupFileQueue.slice(1)
+
+    if (job.restore) {
+      restorePopupsProc.command = ["python3", helper, "read"]
+      restorePopupsProc.running = true
+      return
+    }
 
     if (job.read) {
       startHistoryRead()
       return
     }
 
+    runningImageWrite = job.command[1] === helper && job.command[2] === "write" && !!job.replaceKey
     runningPayload = job.payload || ""
     popupFileProc.command = job.command
     service.runningPopupFileJobDone = job.done || null
@@ -617,10 +664,16 @@ Item {
     running: false
     stdinEnabled: true
     onStarted: { if (service.runningPayload) write(service.runningPayload); stdinEnabled = false }
+    stdout: StdioCollector { id: fileResult }
     stderr: StdioCollector { id: fileErrors }
     onExited: function(exitCode, exitStatus) {
       var ok = exitCode === 0 && exitStatus === 0
       if (!ok) { service.lastError = "Notification operation failed: " + fileErrors.text.trim(); console.warn(service.lastError) }
+      if (ok && service.runningImageWrite) {
+        try { service.acceptNormalizedImages(JSON.parse(fileResult.text)) }
+        catch (e) { service.lastError = "Invalid notification image result"; console.warn(service.lastError) }
+      }
+      if (ok && fileErrors.text.trim()) console.warn(fileErrors.text.trim())
       var done = service.runningPopupFileJobDone
       service.runningPopupFileJobDone = null
       if (done) {
@@ -636,7 +689,9 @@ Item {
 
   function persistPopupFile(snapshot) {
     var persistable = NotificationLogic.persistablePopup(snapshot, imagesDir)
-    enqueuePopupFileJob(["python3", helper, "write"], null, JSON.stringify({entry:persistable.entry, copies:persistable.copies}), NotificationLogic.imageStem(snapshot))
+    var version = ++nextImageWriteVersion
+    imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
+    enqueuePopupFileJob(["python3", helper, "write"], null, JSON.stringify({entry:persistable.entry, copies:persistable.copies, imageVersion:version, sources:{appIcon:String(snapshot.appIcon || ""), image:String(snapshot.image || "")}}), NotificationLogic.imageStem(snapshot))
   }
 
   function deletePopupFileFor(row) {
@@ -706,7 +761,8 @@ Item {
       "  [[ -e $img ]] || continue\n" +
       "  [[ $img == *.tmp ]] && { rm -f -- \"$img\"; continue; }\n" +
       "  stem=\"${img##*/}\"\n" +
-      "  stem=\"${stem%-*}\"\n" +
+      "  [[ $stem =~ ^([0-9]+-[0-9]+)-(appIcon|image)(-[a-f0-9]+)?(\\.png)?$ ]] || continue\n" +
+      "  stem=\"${BASH_REMATCH[1]}\"\n" +
       "  [[ -e $1/$stem.json || -e $2/$stem.json ]] || rm -f \"$img\"\n" +
       "done", "--", popupStateDir, historyDir, imagesDir])
   }
@@ -762,19 +818,19 @@ Item {
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
       if (!row || row.originalId < 0) continue
-      rows.push(NotificationLogic.persistablePopup({
+      rows.push({
         id: row.id,
         originalId: row.originalId,
         app: row.app,
-        appIcon: row.appIcon,
+        appIcon: popupImageFor(row, "appIcon"),
         summary: row.summary,
         body: row.body,
-        image: row.image,
+        image: popupImageFor(row, "image"),
         glyph: row.glyph || "",
         execArgv: row.execArgv || "",
         urgency: row.urgency,
         timestamp: row.timestamp
-      }, imagesDir).entry)
+      })
     }
     return rows
   }
@@ -818,6 +874,7 @@ Item {
   Process {
     id: restorePopupsProc
     running: false
+    onExited: service.runNextPopupFileJob()
     stdinEnabled: true
     onStarted: { write("{}"); stdinEnabled = false }
     stdout: StdioCollector {
@@ -949,15 +1006,10 @@ Item {
     // handles that path.
     Qt.callLater(function() {
       settingsFile.reload()
-      // Re-show popups that were on screen when the previous shell died.
-      // The glob-through-bash tolerates a missing/empty dir (first run).
-      // awk 1 (not cat) so a torn file missing its trailing newline can't
-      // glue itself onto the next file and take a valid popup down with it.
-      restorePopupsProc.command = ["python3", service.helper, "read"]
-      restorePopupsProc.running = true
-      // Safe beside the restore read: it only re-persists entries whose
-      // JSON exists, exactly the images the sweep keeps.
+      // Migration, new writes and cleanup share the queue so none sees partial image state.
       service.sweepOrphanImages()
+      service.popupFileQueue = service.popupFileQueue.concat([{restore:true}])
+      service.runNextPopupFileJob()
     })
   }
 
@@ -1284,9 +1336,9 @@ Item {
             enabled: !retired
             width: popupColumn.width
             app: modelData.app
-            appIcon: modelData.appIcon
+            appIcon: service.popupImageFor(modelData, "appIcon")
             favicon: modelData.favicon || ""
-            image: modelData.image
+            image: service.popupImageFor(modelData, "image")
             compact: service.preferences.compact
             showTimeoutIndicator: service.preferences.showTimeoutIndicator
             timeoutMs: service.durationFor(modelData.urgency, modelData.expireTimeout)

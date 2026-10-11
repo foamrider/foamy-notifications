@@ -191,6 +191,28 @@ function actionRows(notification) {
   return rows
 }
 
+// Quickshell removes raw pixel hints before QML can validate their buffer.
+// Never request its native pixmap provider; prefer an explicit local-file hint.
+function popupImage(notification) {
+  var n = notification || {}
+  var path = localImageFile(n.image)
+  if (!path) path = localImageFile(stringHint(n.hints, "image-path"))
+  if (!path) path = localImageFile(stringHint(n.hints, "image_path"))
+  return path ? "file://" + path.split("/").map(encodeURIComponent).join("/") : ""
+}
+
+function themeIcon(value) {
+  return /^[A-Za-z0-9_.-]+$/.test(String(value || "")) ? String(value) : ""
+}
+
+// Only the helper's content-addressed PNGs may cross into the popup renderer.
+function normalizedImage(value, imagesDir) {
+  var prefix = "file://" + String(imagesDir || "").split("/").map(encodeURIComponent).join("/")
+  var source = String(value || "")
+  if (!imagesDir || source.indexOf(prefix) !== 0) return ""
+  return /^[0-9]+-[0-9]+-(appIcon|image)-[a-f0-9]{64}\.png$/.test(source.slice(prefix.length)) ? source : ""
+}
+
 function snapshotOf(notification, timestamp) {
   var n = notification || {}
   var id = n.id || 0
@@ -206,7 +228,7 @@ function snapshotOf(notification, timestamp) {
     desktopEntry: String(n.desktopEntry || ""),
     transient: !!n.transient,
     actionsJson: JSON.stringify(actionRows(n)),
-    image: n.image || "",
+    image: popupImage(n),
     glyph: glyphFromHints(n.hints),
     execArgv: execArgvFromHints(n.hints),
     urgency: n.urgency,
@@ -477,6 +499,9 @@ if (typeof module !== "undefined") {
     parseExecArgv: parseExecArgv,
     shouldRenderCompactGlyph: shouldRenderCompactGlyph,
     snapshotOf: snapshotOf,
+    themeIcon: themeIcon,
+    normalizedImage: normalizedImage,
+    popupImage: popupImage,
     popupRoles: popupRoles,
     popupRowChanged: popupRowChanged,
     replacementSnapshot: replacementSnapshot,

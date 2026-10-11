@@ -57,7 +57,7 @@ class HelperTest(unittest.TestCase):
             row={'timestamp':1000,'originalId':3,'summary':'Hello','body':'$(touch nope)'}
             h.write({'entry':dict(row, actionsJson='[{"identifier":"reply"}]')})
             path=h.base()/'1000-3.json'
-            self.assertEqual(json.loads(path.read_text()),row)
+            self.assertEqual(json.loads(path.read_text()),dict(row, appIcon="", image="", imageFormat=1))
             self.assertEqual(path.stat().st_mode & 0o777,0o600)
             h.forget({'keys':['1000-3']})
             self.assertFalse(path.exists())
@@ -81,13 +81,6 @@ class HelperTest(unittest.TestCase):
             result=subprocess.run(['python3',str(ROOT/'bin/notification-helper.py'),'read'],input='{}',text=True,capture_output=True,timeout=2)
             self.assertEqual(len(result.stdout.splitlines()),1)
             self.assertEqual(json.loads(result.stdout)['summary'],'Good')
-
-    def test_unchanged_image_copy_preserves_inode_and_mtime(self):
-        with tempfile.TemporaryDirectory() as d:
-            src=Path(d)/'src';dest=Path(d)/'dest';src.write_bytes(b'image')
-            h.copy_image(src,dest);before=dest.stat()
-            h.copy_image(src,dest);self.assertEqual(dest.stat().st_ino,before.st_ino);self.assertEqual(dest.stat().st_mtime_ns,before.st_mtime_ns)
-            src.write_bytes(b'updated image');h.copy_image(src,dest);self.assertEqual(dest.read_bytes(),b'updated image')
 
     def test_center_focus_uses_current_browser_mapping_and_ignores_commands(self):
         with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_CONFIG_HOME':d}), patch.object(h,'focus') as focus:

@@ -39,13 +39,12 @@ Rectangle {
   readonly property bool hasTitle: summary.trim().length > 0
   readonly property string smallIcon: {
     if (!appIcon) return ""
-    if (appIcon.indexOf("file://") === 0 || appIcon.indexOf("image://") === 0) return appIcon
-    if (appIcon.charAt(0) === "/") return Util.fileUrl(appIcon)
-    if (appIcon.indexOf(":") >= 0) return ""
-    return Quickshell.iconPath(appIcon, true)
+    if (appIcon.indexOf("file://") === 0) return appIcon
+    var name = Logic.themeIcon(appIcon)
+    return name ? Quickshell.iconPath(name, true) : ""
   }
   readonly property string safeImageSource: {
-    if (image.indexOf("file://") === 0 || image.indexOf("image://") === 0) return image
+    if (image.indexOf("file://") === 0) return image
     return image.charAt(0) === "/" ? Util.fileUrl(image) : ""
   }
   readonly property string contentImageSource: showImages ? safeImageSource : ""
