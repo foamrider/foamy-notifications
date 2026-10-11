@@ -11,6 +11,8 @@ import time
 import struct
 import zlib
 
+from gi.repository import Gio, GLib
+
 # Optional real center checkout enables the cross-plugin archive/badge regression.
 CENTER=os.environ.get('FOAMY_CENTER_SOURCE','')
 
@@ -284,6 +286,43 @@ try:
             assert output==('' if mode in ['remove','clear','sender-close'] else 'default'),(mode,output)
             wait_for(lambda:state()['retainedActions']==0 and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'history callback cleaned '+mode)
             assert len(dispatches())==before,'history action unexpectedly focused another browser window'
+    # Raw pixels close the native notification, so both click paths use app focus.
+    ctx['clients']=original_clients;context_path.write_text(json.dumps(ctx))
+    raw_bus=Gio.bus_get_sync(Gio.BusType.SESSION,None)
+    raw_closed=[]; raw_actions=[]
+    def raw_signal(connection,sender,path,interface,name,arguments):
+        (raw_closed if name=='NotificationClosed' else raw_actions).append(arguments.unpack()[0])
+    raw_bus.signal_subscribe(None,'org.freedesktop.Notifications',None,'/org/freedesktop/Notifications',None,Gio.DBusSignalFlags.NONE,raw_signal)
+    def pump_signals():
+        while GLib.MainContext.default().pending(): GLib.MainContext.default().iteration(False)
+    for target in (['popup','center-visible','center-history','center-silenced'] if CENTER else ['popup']):
+        before=len(dispatches())
+        ipc('notifications','setDnd','on' if target=='center-silenced' else 'off')
+        args=GLib.Variant('(susssasa{sv}i)',('Foamy Test',0,'foot','Raw focus '+target,'Text survives native closure',
+            ['default','Open','reply','Reply'],{'urgency':GLib.Variant('y',2),'image-data':GLib.Variant('(iiibiiay)',(1,1,4,True,8,4,bytes([40,80,120,255])))},0))
+        identifier=raw_bus.call_sync('org.freedesktop.Notifications','/org/freedesktop/Notifications','org.freedesktop.Notifications','Notify',args,GLib.VariantType.new('(u)'),Gio.DBusCallFlags.NONE,3000,None).unpack()[0]
+        wait_for(lambda:state()['tracked']==state()['retainedActions']==0 and not state()['busy'],'raw native source released')
+        pump_signals();assert identifier in raw_closed,'raw sender was not told of closure'
+        if target=='popup':
+            wait_for(lambda:state()['popups']==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'raw popup ready')
+            assert state()['groups'][0]['actions']==0
+            ipc('countdown-test','clickFirst')
+            wait_for(lambda:state()['popups']==0 and not state()['busy'],'raw popup app-focus fallback')
+        else:
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'raw text reaches center')
+            if target=='center-history':ipc('notifications','dismissAll')
+            center_rows=list((home/'.local/state/omarchy/notifications/history' if target=='center-silenced' else home/'.local/state/omarchy/notifications').glob('*.json'))
+            if target=='center-history':
+                wait_for(lambda:state()['popups']==0 and not state()['busy'],'raw popup archived')
+                center_rows=list((home/'.local/state/omarchy/notifications/history').glob('*.json'))
+            key=next(p.stem for p in center_rows if json.loads(p.read_text()).get('summary')=='Raw focus '+target)
+            assert ipc('foamy.notifications','invokeDefault',key)=='unavailable'
+            ipc('foamy.notification-center.test','focus',key)
+        if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'raw fallback clears center only after focus')
+        wait_for(lambda:len(dispatches())==before+1,'raw click focuses sending app once')
+        pump_signals();assert identifier not in raw_actions,'raw callback survived native closure'
+        ipc('notifications','dismissAll');ipc('notifications','setDnd','off')
+        wait_for(lambda:not state()['busy'],'raw focus cleanup')
     ctx['clients']=original_clients;context_path.write_text(json.dumps(ctx))
     cfg['plugins'][0]['browserMappings']=[];(config/'shell.json').write_text(json.dumps(cfg))
     send('Dismiss me')
@@ -319,6 +358,41 @@ try:
     assert marker.read_text()==str(image),'screenshot action changed the image path'
     if CENTER:
         wait_for(lambda:not any('Screenshot saved to clipboard and file' in item.read_text() for item in (home/'.local/state/omarchy/notifications/history').glob('*.json')),'handled screenshot stays out of history')
+    if CENTER:
+        ipc('foamy.notification-center.test','clear')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'clear unrelated history before editor scenarios')
+        # Use a long-lived fake editor so the center must release its launch process.
+        editor_marker=base/'screenshot-editor.txt'
+        editor=bin_dir/'tensaku-edit'
+        editor.write_text('#!/bin/sh\nprintf "%s" "$1" > '+str(editor_marker)+'\nsleep 1\n')
+        editor.chmod(0o755)
+        spaced_image=base/'screenshot with spaces.png';shutil.copy(image,spaced_image)
+        for mode in ['visible','history','reload','missing','launch-failure']:
+            editor_marker.unlink(missing_ok=True)
+            subprocess.run(['omarchy','notification','send','--app-name','omarchy-action','-u','critical','--image',str(spaced_image),'Screenshot editor '+mode,'Click to edit','--exec','tensaku-edit',str(spaced_image)],env=env,check=True,timeout=3)
+            wait_for(lambda:state()['popups']==1 and not state()['busy'],'screenshot ready '+mode)
+            key=state()['groups'][0]['key']
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'screenshot archived '+mode)
+            if mode!='visible':
+                ipc('notifications','dismissAll')
+                wait_for(lambda:state()['popups']==0 and not state()['busy'],'screenshot outlives popup '+mode)
+                assert ipc('foamy.notifications','invokeDefault',key)=='unavailable'
+            if mode=='reload':
+                os.killpg(process.pid,signal.SIGTERM);process.wait(timeout=3)
+                process=subprocess.Popen(['quickshell','-p',str(app),'--no-color'],env=env,stdout=log,stderr=log,start_new_session=True)
+                wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'screenshot survives shell reload')
+            if mode=='missing':spaced_image.unlink()
+            if mode=='launch-failure':editor.write_text('#!/bin/sh\nexit 3\n')
+            ipc('foamy.notification-center.test','focus',key)
+            if mode in ['missing','launch-failure']:
+                wait_for(lambda:bool(json.loads(ipc('foamy.notification-center.test','state'))['focusError']),'screenshot launch failure reports feedback')
+                assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'failed screenshot launch lost history'
+                shutil.copy(image,spaced_image)
+                editor.write_text('#!/bin/sh\nprintf "%s" "$1" > '+str(editor_marker)+'\nsleep 1\n')
+                ipc('foamy.notification-center.test','focus',key)
+            wait_for(lambda:editor_marker.exists() and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'center launches screenshot editor '+mode)
+            assert editor_marker.read_text()==str(spaced_image),'center changed screenshot filename'
+            wait_for(lambda:state()['popups']==0 and not state()['busy'],'screenshot cleanup '+mode)
     cfg=json.loads((config/'shell.json').read_text())
     settings=cfg['plugins'][0]
     settings.update({'suppressFullscreen':True,'fullscreenCritical':False,'criticalTimeoutSec':2,'normalTimeoutSec':1})
@@ -393,7 +467,7 @@ try:
 
     for name in ['stack-before','stack-held','stack-closed']:
         assert (app/(name+'.png')).exists(),'missing stack render: '+name
-    print('PASS: stable third-card hover through real expiry and gap closure; timeout indicator progression, hover/busy pause, persistence and disabled expiry; center replacements, single removal, shared focus/retry, idle event-driven refresh; actual D-Bus delivery, duplicates, click handling, dismissal history, DND, overflow, native action callback, screenshot image delivery and structured action, configurable fullscreen/critical exceptions, expiry, invalid settings')
+    print('PASS: stable third-card hover through real expiry and gap closure; timeout indicator progression, hover/busy pause, persistence and disabled expiry; center replacements, single removal, shared focus/retry, idle event-driven refresh; raw-image native closure and popup/visible/archived/DND center focus fallbacks; actual D-Bus delivery, duplicates, click handling, dismissal history, DND, overflow, native action callback, screenshot image delivery, structured action and center editor parity through expiry/reload with missing-file and launch-failure retries, configurable fullscreen/critical exceptions, expiry, invalid settings')
 finally:
     os.killpg(process.pid,signal.SIGTERM);process.wait(timeout=3);log.close()
     print('Runtime log:',base/'runtime.log')

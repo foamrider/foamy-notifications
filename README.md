@@ -19,10 +19,24 @@ deadline. Input and output are limited to 5 MiB. Failed conversions never expose
 the original image to Qt. Existing popup images are normalized before restoration.
 
 Quickshell removes raw `image-data` buffers before plugins can validate them.
-The popup therefore never renders its raw-image provider. If the sender also
-supplies a local `image-path`, that file is converted and displayed; otherwise
-only that sender picture is omitted. Text, actions, website favicons and named
-app icons remain available. No network image retrieval is used.
+The popup therefore never renders its raw-image provider and immediately releases
+native notifications carrying it, including raw-image replacements. For these
+notifications, only bounded primitive snapshots enter monitor-context and
+persistence queues. Text, website
+favicons, named app icons and the normal app-focus fallback remain available.
+A local `image-path` or file app icon can still be converted, but the sender may
+delete that file when notified of closure; unavailable files use the icon fallback.
+No network image retrieval is used.
+
+This release ends sender callbacks and further in-place updates for raw-image
+notifications. For example, a chat avatar sent as raw pixels means buttons such
+as Reply or Mark read disappear, and clicking focuses the app rather than
+invoking its notification-specific action. A raw image combined with a local-file
+hint has the same tradeoff because Quickshell still holds the raw buffer. File-only
+images, named theme icons and text-only notifications keep their live callbacks
+and replacement behavior. Structured Omarchy command hints remain independent of
+sender callbacks. The plugin cannot prevent Quickshell's initial buffer allocation;
+it prevents those buffers accumulating in retained popup or history callbacks.
 
 Sender metadata is checked before tracking notifications or queuing snapshots:
 app names are limited to 256 characters, app icons/local paths to 4096, titles to
@@ -69,21 +83,26 @@ Configure timeout, compact layout, images, monitor placement, fullscreen
 suppression, and browser app matching in `shell.json`. See
 [configuration and validation](CONFIGURATION.md) for all settings and checks.
 
-Actions supplied by an app work while that app is connected. Restored messages
+Actions supplied by an app work while that app is connected, except for raw-image
+notifications released as described above. Restored messages
 cannot recover old app callbacks. Failed actions keep the notification available
 for retry. The center retains its own history and optional image previews.
 
 Notification Center can invoke a live default action through
 `foamy.notifications invokeDefault <timestamp-id>`. The method returns `invoked`,
 `unavailable`, `busy`, or `invalid`. It accepts only an exact current notification
-key, never archived commands, and handles that notification without clearing its
-whole duplicate group. With the center enabled, live default actions remain
+key and handles that notification without clearing its whole duplicate group.
+For a visible popup with its current tracked native identity, its structured
+command runs with the same persist-before-launch ordering as a popup click.
+Restored, detached, or archived command vectors are unavailable through this IPC. With the center enabled, live default actions remain
 available after popup expiry, hiding, and DND silencing. At most `historyLimit`
 (100) history callbacks remain tracked; older callbacks are released first.
 Sender closure, successful handling, history dismissal/clearing, and disabling
 the center release callbacks. Replacements update the retained history entry.
 Browser or shell restarts cannot restore callbacks; unavailable actions still
-use the center's app-focus fallback.
+use the center's fixed image opener or app-focus fallback. The center preserves
+the standard Tensaku screenshot action as a fixed image-editing intent through
+expiry and reload.
 
 After durable history removal, the center calls `releaseHistory <keysCsv>`
 (up to 100 exact keys), or `releaseHistoryBefore <timestamp>` after clearing.

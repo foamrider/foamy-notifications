@@ -191,7 +191,7 @@ test('live-source and compositor backlogs reject new native objects without exte
   s.handleNotification(live)
   assert.equal(live.tracked,false)
   assert.equal(Object.keys(s.liveRefs).length,256)
-  const pending={id:301,summary:'normal',tracked:false}
+  const pending={id:301,summary:'normal',tracked:false,imageChanged:{connect(){}}}
   s.receiveNotification(pending)
   assert.equal(pending.tracked,false)
   assert.equal(s.pendingNotifications.length,100)

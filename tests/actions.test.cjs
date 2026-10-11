@@ -3,7 +3,7 @@ const source=fs.readFileSync(path.join(__dirname,'../Service.qml'),'utf8')
 function fixture() {
  const jobs=[],events=[]
  const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
-  NotificationLogic:{imageStem:row=>`${row.timestamp}-${row.originalId}`,parseExecArgv:raw=>raw?JSON.parse(raw):null},isRestoredRow:()=>false,
+  NotificationLogic:{...require('../NotificationLogic.js')},isRestoredRow:()=>false,
   enqueuePopupFileJob:(argv,done,payload)=>jobs.push({command:argv[2],done,payload}),
   notifyCenter:()=>events.push('center'),removeKeys:()=>events.push('remove'),Util:{execArgv:()=>events.push('launch')}})
  state.service=state
@@ -48,7 +48,7 @@ function centerFixture(rows) {
  return f
 }
 test('center invokes only the exact live default action and handles one notification',()=>{
- const {state,jobs,events}=centerFixture([{timestamp:10,originalId:1,execArgv:'["unsafe"]'}])
+ const {state,jobs,events}=centerFixture([{timestamp:10,originalId:1}])
  state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
  assert.equal(state.invokeCenterDefault('9-1'),'unavailable')
  assert.equal(state.invokeCenterDefault('../bad'),'invalid')
@@ -117,4 +117,23 @@ test('clearing history releases pending callbacks but preserves newer arrivals',
  state.releaseHistoryBefore(10)
  assert.equal(ref.tracked,false);assert.equal(newer.tracked,true)
  assert.equal(state.liveKeys[2],'11-2')
+})
+
+
+test('center delegates current commands with the same persist-before-launch ordering',()=>{
+ const {state,jobs,events}=centerFixture([{timestamp:10,originalId:1,execArgv:'["tensaku-edit","/tmp/a picture.png"]'}])
+ state.liveKeys[1]='10-1';state.liveRefs[1]={tracked:true,actions:[]}
+ assert.equal(state.invokeCenterDefault('10-1'),'invoked');assert.deepEqual(events,[])
+ assert.equal(state.invokeCenterDefault('10-1'),'busy')
+ jobs.shift().done(false);assert.deepEqual(events,[]);assert.ok(state.actionErrors['10-1'])
+ assert.equal(state.invokeCenterDefault('10-1'),'invoked')
+ jobs.shift().done(true);assert.deepEqual(events,['center','launch','remove'])
+})
+test('center never runs a command from a detached or reused native identity',()=>{
+ for(const mode of ['detached','reused','restored']) {
+  const {state,jobs,events}=centerFixture([{timestamp:10,originalId:1,execArgv:'["unsafe"]'}])
+  state.liveKeys[1]=mode==='reused'?'11-1':'10-1';state.liveRefs[1]={tracked:mode!=='detached',actions:[]}
+  state.isRestoredRow=()=>mode==='restored'
+  assert.equal(state.invokeCenterDefault('10-1'),'unavailable');assert.equal(jobs.length,0);assert.deepEqual(events,[])
+ }
 })

@@ -146,11 +146,15 @@ files up to 5 MiB pass through the bounded external decoder described in the
 README before the popup or restored history sees them. Progressive JPEG, PNG,
 GIF, WebP, BMP, ICO and self-contained SVG images remain supported, including
 transparency. SVG linked resources are unavailable. Failed, oversized or missing
-images retain text and actions and use the icon fallback; no original-image
+file images retain text and actions and use the icon fallback; no original-image
 fallback is used. Raw `image-data` provider URLs are never rendered because
-Quickshell does not expose the buffer for plugin-side validation. An explicit
-local `image-path` remains usable. Sender image tags are filtered before
-rendering. No network image retrieval is added.
+Quickshell does not expose the buffer for plugin-side validation. Raw-image native
+notifications are released before tracking or queuing; raw replacements also
+release existing popup/history callbacks. Their bounded text snapshots remain,
+but sender actions and further in-place updates are unavailable. Clicks use app
+focus instead. A local `image-path` is converted if it survives native closure.
+File-only and text-only notifications retain callbacks. Sender image tags are
+filtered before rendering. No network image retrieval is added.
 
 Critical alerts remain persistent by default, but restored popups are subject to
 the configured maximum age. No message content appears in the diagnostic IPC:
@@ -179,14 +183,15 @@ python3 tests/motion.py --desktop
 # Requires Wayland; checks first-popup mapping and final-popup unmapping:
 python3 tests/layer.py
 python3 tests/runtime.py
-# Stalled-worker floods, cancellation, oversized metadata and recovery on a private bus:
+# Stalled-worker floods, raw 4 MiB buffers, replacements and context backlog:
 python3 tests/queue-runtime.py
 # Also exercise the center, if its checkout is available:
 FOAMY_CENTER_SOURCE=/path/to/foamy-notification-center python3 tests/runtime.py
 ```
 
 The render test uses the real card with synthetic data at wide and narrow widths.
-The runtime test exercises actual notification D-Bus traffic on a private bus and
-home directory. Qt's offscreen platform cannot create layer-shell surfaces, so
+The runtime and queue tests use the installed PyGObject/Gio bindings to send raw
+pixel buffers without command-line size limits. They exercise actual notification
+D-Bus traffic on a private bus and temporary home directory. Qt's offscreen platform cannot create layer-shell surfaces, so
 that test omits only the popup windows. Complete Wayland placement, hover, and
 fullscreen behavior must also be checked in a desktop session.

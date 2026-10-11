@@ -144,8 +144,6 @@ Item {
   }
 
   function snapshotOf(notification) {
-    if (String(notification.image || "").indexOf("image://") === 0 && !NotificationLogic.popupImage(notification))
-      console.warn("foamy.notifications: raw sender image unavailable; keeping text, actions and icon fallback")
     return NotificationLogic.snapshotOf(notification, Date.now())
   }
 
@@ -202,7 +200,83 @@ Item {
     return transient || NotificationLogic.isEphemeralApp(String(notification.appName || ""))
   }
 
+  // Raw buffers have no readable size in QML. Keep only primitives and release
+  // before a compositor query or persistence worker can hold the native object.
+  function detachRawNotification(notification) {
+    if (!NotificationLogic.notificationWithinLimits(notification)) {
+      rejectNotification(notification, "Notification update exceeds sender limits")
+      return
+    }
+    var originalId = notification.id
+    var key = liveRefs[originalId] === notification ? liveKeys[originalId] : ""
+    var snapshot = key ? NotificationLogic.replacementSnapshot(notification, originalId, Number(key.split("-")[0])) : snapshotOf(notification)
+    snapshot.actionsJson = "[]"
+    // Replacement hints are cached until their own property signal fires. Finish
+    // copying the group's remaining changes into primitives before deferred delivery;
+    // closing below still releases the native object without waiting for a worker.
+    if (notification.tracked) {
+      function finishSnapshot() {
+        var updated = NotificationLogic.replacementSnapshot(notification, originalId, snapshot.timestamp)
+        updated.actionsJson = "[]"
+        Object.assign(snapshot, updated)
+      }
+      for (var signalIndex = 0; signalIndex < updateSignals.length; signalIndex++)
+        notification[updateSignals[signalIndex]].connect(finishSnapshot)
+    }
+    var historyOnly = key && !!retainedHistory[key]
+    var pendingIndex = pendingNotifications.findIndex(function(job) { return job.notification === notification })
+    if (key) {
+      delete retainedHistory[key]
+      delete liveKeys[originalId]
+      delete liveRefs[originalId]
+      cancelPendingWrites([key])
+    }
+    if (pendingIndex >= 0) pendingNotifications[pendingIndex] = {snapshot:snapshot}
+    notification.tracked = false
+    if (pendingIndex >= 0) return
+    if (!key) { receiveDetachedSnapshot(snapshot); return }
+    // The first popup insert may already be deferred; update it after that insert.
+    Qt.callLater(function() {
+      if (service.handledKeys[key]) return
+      for (var i = 0; i < popupModel.count; i++) {
+        if (NotificationLogic.imageStem(popupModel.get(i)) !== key) continue
+        var roles = NotificationLogic.popupRoles()
+        for (var r = 0; r < roles.length; r++) popupModel.setProperty(i, roles[r], snapshot[roles[r]])
+        service.lifetimes[key] = service.durationFor(snapshot.urgency, snapshot.expireTimeout)
+        if (!service.busyKeys[key]) service.persistPopupFile(snapshot)
+        service.scheduleRebuild()
+        return
+      }
+      if (!service.busyKeys[key]) service.handleDetachedSnapshot(snapshot, historyOnly)
+    })
+  }
+
+  function receiveDetachedSnapshot(snapshot) {
+    if (!preferences.suppressFullscreen && preferences.monitor !== "pointer") { handleDetachedSnapshot(snapshot, false); return }
+    if (pendingNotifications.length >= 100) {
+      reportPersistenceError("Notification monitor-context backlog is full")
+      return
+    }
+    pendingNotifications = pendingNotifications.concat([{snapshot:snapshot}])
+    refreshContext()
+  }
+
+  function handleDetachedSnapshot(snapshot, historyOnly) {
+    var bypass = NotificationLogic.shouldBypassDnd({appName:snapshot.app, urgency:snapshot.urgency}, NotificationUrgency.Critical)
+    if (historyOnly || (doNotDisturb && !bypass) || suppressForFullscreen(snapshot.urgency)) {
+      if (!snapshot.transient && !NotificationLogic.isEphemeralApp(snapshot.app)) writeHistoryFile(snapshot)
+      return
+    }
+    if (!persistPopupFile(snapshot)) return
+    Qt.callLater(function() {
+      removePopupsByOriginalId(snapshot.originalId, NotificationLogic.popupFileName(snapshot))
+      popupModel.insert(0, snapshot)
+      service.scheduleRebuild()
+    })
+  }
+
   function handleNotification(notification) {
+    if (NotificationLogic.hasRawImage(notification)) { detachRawNotification(notification); return }
     if (!NotificationLogic.notificationWithinLimits(notification)
         || (!liveRefs[notification.id] && Object.keys(liveRefs).length >= 256)) {
       rejectNotification(notification, "Notification exceeds sender or live-callback limits")
@@ -360,6 +434,10 @@ Item {
   }
 
   function refreshPopup(notification, originalId, timestamp) {
+    if (service.liveRefs[originalId] === notification && NotificationLogic.hasRawImage(notification)) {
+      detachRawNotification(notification)
+      return
+    }
     if (busyKeys[String(timestamp) + "-" + String(originalId)] || handledKeys[String(timestamp) + "-" + String(originalId)]) return
     // A newer notification may have taken this id over, and the object may
     // outlive its popup — in both cases there is nothing here to refresh.
@@ -403,6 +481,7 @@ Item {
     if (!centerEnabled || row.transient || handledKeys[key] || liveKeys[row.originalId] !== key
         || liveRefs[row.originalId] !== notification) return false
     try {
+      if (NotificationLogic.hasRawImage(notification)) { detachRawNotification(notification); return false }
       if (!notification.tracked || !notification.actions.some(function(action) { return action.identifier === "default" })) return false
     } catch (e) { return false }
     retainedHistory[key] = Object.assign({}, row)
@@ -551,6 +630,16 @@ Item {
     for (var i = 0; i < popupModel.count; i++) {
       var row = Object.assign({}, popupModel.get(i))
       if (NotificationLogic.imageStem(row) !== key || isRestoredRow(row)) continue
+      // Only the current native identity may delegate its command. Restored
+      // and archived command vectors never cross the center's click boundary.
+      var ref = liveKeys[row.originalId] === key ? liveRefs[row.originalId] : null
+      var argv = ref && ref.tracked ? NotificationLogic.parseExecArgv(row.execArgv) : null
+      if (argv) {
+        row.key = key
+        var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+        commitHandled(row, [key], function() { Util.execArgv(argv) })
+        return "invoked"
+      }
       if (!invokeLiveAction(row, "default")) return "unavailable"
       row.key = key
       var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
@@ -1276,6 +1365,17 @@ Item {
       rejectNotification(notification, "Notification exceeds sender limits")
       return
     }
+    if (NotificationLogic.hasRawImage(notification)) { detachRawNotification(notification); return }
+    // Watch immediately, including DND writes and native objects awaiting monitor context.
+    notification.imageChanged.connect(function() {
+      // Another property signal may have already detached this grouped replacement.
+      if (!notification.tracked || !NotificationLogic.hasRawImage(notification)) return
+      if (!NotificationLogic.notificationWithinLimits(notification)) {
+        service.rejectNotification(notification, "Notification update exceeds sender limits")
+        return
+      }
+      service.detachRawNotification(notification)
+    })
     if (!preferences.suppressFullscreen && preferences.monitor !== "pointer") { handleNotification(notification); return }
     notification.tracked = true
     // Retain live objects only briefly while the compositor snapshot is in flight.
@@ -1283,7 +1383,7 @@ Item {
       rejectNotification(notification, "Notification monitor-context backlog is full")
       return
     }
-    pendingNotifications = pendingNotifications.concat([notification])
+    pendingNotifications = pendingNotifications.concat([{notification:notification}])
     refreshContext()
   }
 
@@ -1317,7 +1417,10 @@ Item {
       } else { service.lastError = "Cannot query monitor state; notifications use the last known monitor"; console.warn(service.lastError) }
       var pending = service.pendingNotifications; service.pendingNotifications = []
       for (var i = 0; i < pending.length; i++) {
-        try { service.handleNotification(pending[i]) } catch(e) { console.warn("foamy.notifications: sender closed before delivery") }
+        try {
+          if (pending[i].snapshot) service.handleDetachedSnapshot(pending[i].snapshot, false)
+          else service.handleNotification(pending[i].notification)
+        } catch(e) { console.warn("foamy.notifications: sender closed before delivery") }
       }
       service.scheduleRebuild()
     }

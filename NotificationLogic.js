@@ -226,7 +226,12 @@ function actionRows(notification) {
 }
 
 // Quickshell removes raw pixel hints before QML can validate their buffer.
-// Never request its native pixmap provider; prefer an explicit local-file hint.
+// Only qsimage is the native pixel-buffer provider; theme icons use a separate provider.
+function hasRawImage(notification) {
+  return String((notification && notification.image) || "").indexOf("image://qsimage/") === 0
+}
+
+// Never request the native pixmap provider; prefer an explicit local-file hint.
 function popupImage(notification) {
   var n = notification || {}
   var path = localImageFile(n.image)
@@ -538,6 +543,7 @@ if (typeof module !== "undefined") {
     themeIcon: themeIcon,
     normalizedImage: normalizedImage,
     popupImage: popupImage,
+    hasRawImage: hasRawImage,
     popupRoles: popupRoles,
     popupRowChanged: popupRowChanged,
     replacementSnapshot: replacementSnapshot,
