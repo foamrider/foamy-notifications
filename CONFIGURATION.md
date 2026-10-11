@@ -179,6 +179,8 @@ python3 tests/motion.py --desktop
 # Requires Wayland; checks first-popup mapping and final-popup unmapping:
 python3 tests/layer.py
 python3 tests/runtime.py
+# Stalled-worker floods, cancellation, oversized metadata and recovery on a private bus:
+python3 tests/queue-runtime.py
 # Also exercise the center, if its checkout is available:
 FOAMY_CENTER_SOURCE=/path/to/foamy-notification-center python3 tests/runtime.py
 ```
@@ -188,4 +190,3 @@ The runtime test exercises actual notification D-Bus traffic on a private bus an
 home directory. Qt's offscreen platform cannot create layer-shell surfaces, so
 that test omits only the popup windows. Complete Wayland placement, hover, and
 fullscreen behavior must also be checked in a desktop session.
-

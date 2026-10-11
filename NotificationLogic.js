@@ -137,8 +137,42 @@ function stringHint(hints, name) {
   return ""
 }
 
+// Check sender fields before tracking its QObject or retaining a snapshot/callback.
+function notificationWithinLimits(notification) {
+  var n = notification || {}
+  var limits = {appName:256, appIcon:4096, summary:4096, body:16384, desktopEntry:512, image:12288}
+  for (var name in limits) if (String(n[name] || "").length > limits[name]) return false
+  var hints = {"image-path":4096, "image_path":4096, "omarchy-glyph":64, "omarchy-exec-argv":8192}
+  for (var hint in hints) if (stringHint(n.hints, hint).length > hints[hint]) return false
+  var actions = n.actions || []
+  if (actions.length > 32) return false
+  for (var i = 0; i < actions.length; i++) {
+    if (String(actions[i].identifier || "").length > 256 || String(actions[i].text || "").length > 512) return false
+  }
+  return true
+}
+
+function limitedString(value, limit) {
+  var text = String(value || "")
+  return text.length <= limit ? text : ""
+}
+
+// QML has no TextEncoder; count the bytes that the helper receives, including surrogate pairs.
+function utf8Bytes(text) {
+  var bytes = 0
+  for (var i = 0; i < text.length; i++) {
+    var code = text.charCodeAt(i)
+    if (code < 128) bytes++
+    else if (code < 2048) bytes += 2
+    else if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length
+        && text.charCodeAt(i + 1) >= 0xdc00 && text.charCodeAt(i + 1) <= 0xdfff) { bytes += 4; i++ }
+    else bytes += 3
+  }
+  return bytes
+}
+
 function glyphFromHints(hints) {
-  return stringHint(hints, "omarchy-glyph")
+  return limitedString(stringHint(hints, "omarchy-glyph"), 64)
 }
 
 // The click action: a JSON argv string from omarchy-notification-send
@@ -147,7 +181,7 @@ function glyphFromHints(hints) {
 // Util.execArgv as bash positional parameters, never a shell string, so
 // attacker-controlled values (a title, a filename) can't become commands.
 function execArgvFromHints(hints) {
-  return stringHint(hints, "omarchy-exec-argv")
+  return limitedString(stringHint(hints, "omarchy-exec-argv"), 8192)
 }
 
 // Validate a persisted omarchy-exec-argv into a runnable argv, or null. This is
@@ -185,7 +219,7 @@ function actionRows(notification) {
   var actions = notification && notification.actions ? notification.actions : []
   for (var i = 0; i < actions.length && rows.length < 8; i++) {
     var action = actions[i]
-    if (action && action.identifier !== "default")
+    if (action && action.identifier !== "default" && String(action.identifier || "").length <= 256)
       rows.push({identifier: String(action.identifier), text: String(action.text || action.identifier).slice(0, 80)})
   }
   return rows
@@ -221,11 +255,11 @@ function snapshotOf(notification, timestamp) {
   return {
     id: id,
     originalId: id,
-    app: n.appName || "",
-    appIcon: n.appIcon || "",
+    app: limitedString(n.appName, 256),
+    appIcon: limitedString(n.appIcon, 4096),
     summary: String(n.summary || "").slice(0, 4096),
     body: String(n.body || "").slice(0, 16384),
-    desktopEntry: String(n.desktopEntry || ""),
+    desktopEntry: limitedString(n.desktopEntry, 512),
     transient: !!n.transient,
     actionsJson: JSON.stringify(actionRows(n)),
     image: popupImage(n),
@@ -356,12 +390,12 @@ function imageStem(entry) {
 // The filesystem path behind a file-backed image value, or "" for anything
 // a copy can't capture: themed icon names, in-process image:// URLs, empty.
 function localImageFile(value) {
-  var s = String(value || "")
+  var s = limitedString(value, 12288)
   if (s.indexOf("file://") === 0) {
     s = s.slice(7)
     try { s = decodeURIComponent(s) } catch (e) {}
   }
-  return s.charAt(0) === "/" ? s : ""
+  return s.length <= 4096 && s.charAt(0) === "/" ? s : ""
 }
 
 // The entry as it should hit the disk, plus the copies that make it true.
@@ -494,6 +528,8 @@ if (typeof module !== "undefined") {
     shouldBypassDnd: shouldBypassDnd,
     isEphemeralApp: isEphemeralApp,
     stringHint: stringHint,
+    notificationWithinLimits: notificationWithinLimits,
+    utf8Bytes: utf8Bytes,
     glyphFromHints: glyphFromHints,
     execArgvFromHints: execArgvFromHints,
     parseExecArgv: parseExecArgv,

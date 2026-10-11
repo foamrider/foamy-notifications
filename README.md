@@ -24,6 +24,27 @@ supplies a local `image-path`, that file is converted and displayed; otherwise
 only that sender picture is omitted. Text, actions, website favicons and named
 app icons remain available. No network image retrieval is used.
 
+Sender metadata is checked before tracking notifications or queuing snapshots:
+app names are limited to 256 characters, app icons/local paths to 4096, titles to
+4096, bodies to 16384, desktop entries to 512, glyphs to 64, and command hints to
+8192. Encoded image URLs may use up to 12288 characters. At most 32 incoming
+actions are accepted, with identifiers limited to 256 characters and labels to
+512. Oversized notifications or updates are rejected rather than truncating a
+path, action identifier or command. A rejected update releases its live callback;
+the previous popup text remains available.
+
+Persistence packets are limited to 128 KiB of UTF-8 before entering the queue.
+Pending work is limited to 128 jobs and 1 MiB of serialized payload/command data;
+notification writes may use at most 64 jobs and 768 KiB, reserving the rest for
+actions, reads and cleanup. There is only one running file job. The service tracks
+at most 256 live notification sources, plus at most 100 briefly waiting for monitor
+context. New work is rejected when a limit is reached, and the error is reported
+through logs and `foamy.notifications state`. Rejected/cancelled DND writes release
+their callbacks without retrying. Handling, replacement removal and history
+clearing cancel obsolete pending writes; expiry still archives ordinary messages.
+Normal delivery resumes as the backlog drains. These limits protect the plugin's
+retained work; they do not change Quickshell's D-Bus implementation.
+
 ```sh
 omarchy plugin add https://github.com/foamrider/foamy-notifications.git --enable
 omarchy restart shell

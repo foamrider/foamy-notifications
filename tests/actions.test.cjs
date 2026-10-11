@@ -2,12 +2,12 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const source=fs.readFileSync(path.join(__dirname,'../Service.qml'),'utf8')
 function fixture() {
  const jobs=[],events=[]
- const state=vm.createContext({busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
+ const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
   NotificationLogic:{imageStem:row=>`${row.timestamp}-${row.originalId}`,parseExecArgv:raw=>raw?JSON.parse(raw):null},isRestoredRow:()=>false,
   enqueuePopupFileJob:(argv,done,payload)=>jobs.push({command:argv[2],done,payload}),
   notifyCenter:()=>events.push('center'),removeKeys:()=>events.push('remove'),Util:{execArgv:()=>events.push('launch')}})
  state.service=state
- for(const name of ['retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','commitHandled','finishAction']) {
+ for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','commitHandled','finishAction']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
@@ -28,8 +28,12 @@ test('missing or throwing non-default callbacks do not discard notifications',()
 })
 test('live callback runs before forgetting; failed persistence retains history',()=>{
  const {state,jobs,events,row}=fixture();state.liveRefs[1]={actions:[{identifier:'read',invoke(){events.push('invoke')}}]}
+ state.popupFileQueue=[{writeKey:'1-1',payload:'prior snapshot'}]
  state.activateGroup(row,'read');assert.deepEqual(events,['invoke']);assert.equal(jobs[0].command,'forget')
  jobs.shift().done(false);assert.deepEqual(events,['invoke']);assert.equal(state.handledKeys['1-1'],undefined);assert.ok(state.actionErrors['1-1'])
+ assert.equal(state.popupFileQueue.length,1)
+ state.activateGroup(row,'read');jobs.shift().done(true)
+ assert.equal(state.popupFileQueue.length,0)
 })
 test('shell-restarting commands retain their persist-before-launch ordering',()=>{
  const {state,jobs,events,row}=fixture();row.execArgv='["omarchy","restart","shell"]'

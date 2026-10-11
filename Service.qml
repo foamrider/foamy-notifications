@@ -203,6 +203,11 @@ Item {
   }
 
   function handleNotification(notification) {
+    if (!NotificationLogic.notificationWithinLimits(notification)
+        || (!liveRefs[notification.id] && Object.keys(liveRefs).length >= 256)) {
+      rejectNotification(notification, "Notification exceeds sender or live-callback limits")
+      return
+    }
     // Without `tracked = true` the Notification object is destroyed as soon
     // as this signal handler returns, which would null out the `ref` we just
     // captured for the popup card.
@@ -247,7 +252,10 @@ Item {
       return
     }
 
-    persistPopupFile(snapshot)
+    if (!persistPopupFile(snapshot)) {
+      releaseSilenced(notification, snapshot.originalId)
+      return
+    }
     watchForUpdates(notification, snapshot)
     // Qt.callLater avoids "QV4::Object::insertMember" crashes when a
     // Repeater is mid-incubation while we mutate its model.
@@ -268,9 +276,15 @@ Item {
   // object without a second onNotification — releasing on a stale snapshot
   // would drop it. Each catch-up write reuses the original file identity.
   function writeSilenced(notification, written) {
-    writeHistoryFile(written, function() {
+    writeHistoryFile(written, function(ok) {
+      // A rejected/cancelled job is terminal; never enqueue a catch-up retry on overload.
+      if (!ok) { service.releaseSilenced(notification, written.originalId); return }
       var updated = null
       try {
+        if (!NotificationLogic.notificationWithinLimits(notification)) {
+          service.rejectNotification(notification, "Notification update exceeds sender limits")
+          return
+        }
         updated = NotificationLogic.replacementSnapshot(notification, written.originalId, written.timestamp)
       } catch (e) {
         // Torn down by the server while the write was queued.
@@ -302,6 +316,25 @@ Item {
     }
   }
 
+  function reportPersistenceError(message) {
+    if (lastError !== message) console.warn("foamy.notifications:", message)
+    lastError = message
+  }
+
+  function rejectNotification(notification, message) {
+    reportPersistenceError(message)
+    var key = liveKeys[notification.id]
+    if (liveRefs[notification.id] === notification) {
+      cancelPendingWrites([key])
+      for (var i = 0; i < popupModel.count; i++) {
+        var row = popupModel.get(i)
+        if (NotificationLogic.imageStem(row) === key) popupModel.setProperty(i, "actionsJson", "[]")
+      }
+      releaseSilenced(notification, notification.id)
+      scheduleRebuild()
+    } else notification.tracked = false
+  }
+
   // Everything the card draws. A change to any of these is a client updating
   // the notification in place, which is the only kind of update we ever hear
   // about after the popup exists.
@@ -331,6 +364,10 @@ Item {
     // A newer notification may have taken this id over, and the object may
     // outlive its popup — in both cases there is nothing here to refresh.
     if (service.liveRefs[originalId] !== notification) return
+    if (!NotificationLogic.notificationWithinLimits(notification)) {
+      rejectNotification(notification, "Notification update exceeds sender limits")
+      return
+    }
 
     var updated
     try {
@@ -389,6 +426,7 @@ Item {
   }
 
   function releaseHistoryKeys(keys) {
+    cancelPendingWrites(keys)
     keys.forEach(function(key) { service.releaseHistoryAction(key) })
     // Removing history while a popup is visible must not retain its callback later.
     removeKeys(keys, "historyDismissed")
@@ -557,6 +595,8 @@ Item {
   function commitHandled(row, keys, beforeDismiss) {
     enqueuePopupFileJob(["python3", helper, "forget"], function(ok) {
       if (!ok) { service.finishAction(row.key, "Could not mark this notification handled. Try again."); return }
+      // Keep prior writes on failure; only durable handling may cancel later snapshots.
+      service.cancelPendingWrites(keys)
       keys.forEach(function(key) { service.handledKeys[key] = true })
       service.notifyCenter(keys)
       if (beforeDismiss) beforeDismiss()
@@ -611,26 +651,74 @@ Item {
   // Everything queued after it — a clear, an archive, a silenced write — waits
   // for it, and no amount of later traffic can push it back.
   property var popupFileQueue: []
+  readonly property int popupQueueLimit: 128
+  readonly property int popupWriteLimit: 64
+  readonly property int popupQueueByteLimit: 1048576
+  readonly property int popupWriteByteLimit: 786432
+  readonly property int popupPayloadLimit: 131072
 
   // Done callback of the job popupFileProc is currently running.
   property var runningPopupFileJobDone: null
   property string runningPayload: ""
   property bool runningImageWrite: false
 
-  function enqueuePopupFileJob(command, done, payload, replaceKey) {
-    // Coalesce only adjacent, not-yet-started snapshots. Reads, actions and deletes stay barriers.
+  function rejectPopupFileJob(job, message) {
+    reportPersistenceError(message)
+    if (job.done) job.done(false)
+    return false
+  }
+
+  function enqueuePopupJob(job) {
+    var payload = job.payload || ""
+    // Bound before copying the queue. UTF-8 accounts for escaped and non-ASCII sender data.
+    if (payload.length > popupPayloadLimit || NotificationLogic.utf8Bytes(payload) > popupPayloadLimit)
+      return rejectPopupFileJob(job, "Notification operation exceeds the 128 KiB payload limit")
+    var command = JSON.stringify(job.command || [])
+    if (command.length > 8192 || NotificationLogic.utf8Bytes(command) > 8192)
+      return rejectPopupFileJob(job, "Notification operation exceeds the command limit")
+    job.bytes = NotificationLogic.utf8Bytes(payload) + NotificationLogic.utf8Bytes(command)
     var queue = popupFileQueue.slice()
     var last = queue.length ? queue[queue.length - 1] : null
-    var job = { command: command, done: done || null, payload: payload || "", replaceKey: replaceKey || "" }
-    if (replaceKey && last && last.replaceKey === replaceKey && !last.done) queue[queue.length - 1] = job
-    else queue.push(job)
+    // Callback-bearing writes, reads, actions and cleanup remain ordering barriers.
+    var replace = job.replaceKey && last && last.replaceKey === job.replaceKey
+      && last.historyWrite === job.historyWrite && !last.done && !job.done
+    if (replace) queue.pop()
+    var bytes = job.bytes, writes = job.writeKey ? 1 : 0, writeBytes = job.writeKey ? job.bytes : 0
+    for (var i = 0; i < queue.length; i++) {
+      bytes += queue[i].bytes
+      if (queue[i].writeKey) { writes++; writeBytes += queue[i].bytes }
+    }
+    // Reserve half the slots and 256 KiB for cleanup/actions during sender floods.
+    if (queue.length >= popupQueueLimit || bytes > popupQueueByteLimit
+        || (job.writeKey && (writes > popupWriteLimit || writeBytes > popupWriteByteLimit)))
+      return rejectPopupFileJob(job, "Notification persistence queue is full; new work was rejected")
+    queue.push(job)
     popupFileQueue = queue
+    runNextPopupFileJob()
+    return true
+  }
+
+  function enqueuePopupFileJob(command, done, payload, replaceKey, historyWrite) {
+    return enqueuePopupJob({command:command, done:done || null, payload:payload || "",
+      replaceKey:replaceKey || "", historyWrite:!!historyWrite,
+      writeKey:command[1] === helper && command[2] === "write" ? replaceKey : ""})
+  }
+
+  function cancelPendingWrites(keys, historyOnly) {
+    var kept = [], cancelled = []
+    for (var i = 0; i < popupFileQueue.length; i++) {
+      var job = popupFileQueue[i]
+      if (job.writeKey && (!historyOnly || job.historyWrite) && keys.indexOf(job.writeKey) >= 0) cancelled.push(job)
+      else kept.push(job)
+    }
+    // Remove references before callbacks run, so release/re-entrancy cannot revisit a cancelled job.
+    popupFileQueue = kept
+    for (var c = 0; c < cancelled.length; c++) if (cancelled[c].done) cancelled[c].done(false)
     runNextPopupFileJob()
   }
 
   function enqueueHistoryRead() {
-    popupFileQueue = popupFileQueue.concat([{ read: true }])
-    runNextPopupFileJob()
+    return enqueuePopupJob({read:true})
   }
 
   function runNextPopupFileJob() {
@@ -651,7 +739,7 @@ Item {
       return
     }
 
-    runningImageWrite = job.command[1] === helper && job.command[2] === "write" && !!job.replaceKey
+    runningImageWrite = job.command[1] === helper && job.command[2] === "write" && !!job.replaceKey && !job.historyWrite
     runningPayload = job.payload || ""
     popupFileProc.command = job.command
     service.runningPopupFileJobDone = job.done || null
@@ -663,7 +751,11 @@ Item {
     id: popupFileProc
     running: false
     stdinEnabled: true
-    onStarted: { if (service.runningPayload) write(service.runningPayload); stdinEnabled = false }
+    onStarted: {
+      if (service.runningPayload) write(service.runningPayload)
+      service.runningPayload = ""
+      stdinEnabled = false
+    }
     stdout: StdioCollector { id: fileResult }
     stderr: StdioCollector { id: fileErrors }
     onExited: function(exitCode, exitStatus) {
@@ -676,6 +768,7 @@ Item {
       if (ok && fileErrors.text.trim()) console.warn(fileErrors.text.trim())
       var done = service.runningPopupFileJobDone
       service.runningPopupFileJobDone = null
+      service.runningPayload = ""
       if (done) {
         try {
           done(ok)
@@ -691,11 +784,14 @@ Item {
     var persistable = NotificationLogic.persistablePopup(snapshot, imagesDir)
     var version = ++nextImageWriteVersion
     imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
-    enqueuePopupFileJob(["python3", helper, "write"], null, JSON.stringify({entry:persistable.entry, copies:persistable.copies, imageVersion:version, sources:{appIcon:String(snapshot.appIcon || ""), image:String(snapshot.image || "")}}), NotificationLogic.imageStem(snapshot))
+    var accepted = enqueuePopupFileJob(["python3", helper, "write"], null, JSON.stringify({entry:persistable.entry, copies:persistable.copies, imageVersion:version, sources:{appIcon:String(snapshot.appIcon || ""), image:String(snapshot.image || "")}}), NotificationLogic.imageStem(snapshot))
+    if (!accepted) delete imageWriteVersions[NotificationLogic.imageStem(snapshot)]
+    return accepted
   }
 
   function deletePopupFileFor(row) {
     if (!row) return
+    cancelPendingWrites([NotificationLogic.imageStem(row)])
     // History replays and the "no recent notifications" placeholder never
     // had a file — rm -f on the computed paths is a harmless no-op there.
     enqueuePopupFileJob(["bash", "-c",
@@ -739,11 +835,13 @@ Item {
   function writeHistoryFile(entry, done) {
     if (!entry) { if (done) done(true); return }
     var persistable = NotificationLogic.persistablePopup(entry, imagesDir)
-    enqueuePopupFileJob(["python3", helper, "write"], done, JSON.stringify({entry:persistable.entry, copies:persistable.copies, history:true}))
+    return enqueuePopupFileJob(["python3", helper, "write"], done, JSON.stringify({entry:persistable.entry, copies:persistable.copies, history:true}), NotificationLogic.imageStem(entry), true)
   }
 
   function clearHistory() {
+    var keys = Object.keys(liveKeys).map(function(id) { return liveKeys[id] })
     Object.keys(retainedHistory).forEach(function(key) { service.releaseHistoryAction(key) })
+    cancelPendingWrites(keys, true)
     enqueuePopupFileJob(["bash", "-c",
       "for f in \"$1\"/*.json; do\n" +
       "  [[ -e $f ]] || continue\n" +
@@ -797,7 +895,11 @@ Item {
     if (readHistoryProc.running || service.historyReadQueued) return "ok"
     service.replayCarryOver = liveRowsForReplay()
     service.historyReadQueued = true
-    enqueueHistoryRead()
+    if (!enqueueHistoryRead()) {
+      service.historyReadQueued = false
+      service.replayCarryOver = []
+      return "busy"
+    }
     return "ok"
   }
 
@@ -1008,8 +1110,7 @@ Item {
       settingsFile.reload()
       // Migration, new writes and cleanup share the queue so none sees partial image state.
       service.sweepOrphanImages()
-      service.popupFileQueue = service.popupFileQueue.concat([{restore:true}])
-      service.runNextPopupFileJob()
+      service.enqueuePopupJob({restore:true})
     })
   }
 
@@ -1171,10 +1272,17 @@ Item {
   }
 
   function receiveNotification(notification) {
+    if (!NotificationLogic.notificationWithinLimits(notification)) {
+      rejectNotification(notification, "Notification exceeds sender limits")
+      return
+    }
     if (!preferences.suppressFullscreen && preferences.monitor !== "pointer") { handleNotification(notification); return }
     notification.tracked = true
     // Retain live objects only briefly while the compositor snapshot is in flight.
-    if (pendingNotifications.length >= 100) { writeSilenced(notification, snapshotOf(notification)); return }
+    if (pendingNotifications.length >= 100) {
+      rejectNotification(notification, "Notification monitor-context backlog is full")
+      return
+    }
     pendingNotifications = pendingNotifications.concat([notification])
     refreshContext()
   }
@@ -1273,7 +1381,9 @@ Item {
       return JSON.stringify({groups:service.displayGroups.map(function(g){return {key:g.key,count:g.keys.length,actions:JSON.parse(g.actionsJson || "[]").length}}),
         retainedActions:Object.keys(service.retainedHistory).length, pending:pendingNotifications.length, contextBusy:contextProc.running, popups:popupModel.count, doNotDisturb:service.doNotDisturb, monitors:service.targetMonitors,
         fullscreenMonitors:service.fullscreenMonitors, settings:service.preferences,
-        centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,busy:popupFileProc.running || service.popupFileQueue.length>0})
+        centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,
+        queuedJobs:service.popupFileQueue.length, queuedBytes:service.popupFileQueue.reduce(function(total,job){return total+job.bytes},0),
+        tracked:Object.keys(service.liveRefs).length, busy:popupFileProc.running || service.popupFileQueue.length>0})
     }
   }
 
