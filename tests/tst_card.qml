@@ -11,6 +11,7 @@ Item {
   }
   SignalSpy { id: opened; target: card; signalName: "cardClicked" }
   SignalSpy { id: dismissed; target: card; signalName: "closeRequested" }
+  SignalSpy { id: hidden; target: card; signalName: "hideRequested" }
   SignalSpy { id: action; target: card; signalName: "actionRequested" }
   TestCase {
     name: "FoamyNotificationCard"
@@ -100,8 +101,8 @@ Item {
       compare(tile.mapToItem(card,0,0),before);compare(tile.width,width);compare(card.height,height)
     }
     function test_left_click_activates() { mouseClick(card,100,52,Qt.LeftButton);compare(opened.count,1);compare(dismissed.count,0) }
-    function test_right_click_dismisses() { mouseClick(card,100,52,Qt.RightButton);compare(dismissed.count,1);compare(opened.count,0) }
-    function test_close_button_only_dismisses() { var button=findChild(card,"dismissButton");verify(button);mouseClick(button);compare(dismissed.count,1);compare(opened.count,0) }
+    function test_right_click_dismisses() { hidden.clear();mouseClick(card,100,52,Qt.RightButton);compare(hidden.count,1);compare(dismissed.count,0);compare(opened.count,0) }
+    function test_close_button_only_dismisses() { hidden.clear();var button=findChild(card,"dismissButton");verify(button);mouseClick(button);compare(dismissed.count,1);compare(hidden.count,0);compare(opened.count,0) }
     function test_app_action_only_invokes_action() { var button=findChild(card,"notificationAction");verify(button);mouseClick(button);compare(action.count,1);compare(action.signalArguments[0][0],"read");compare(opened.count,0) }
     function test_settings_and_overflow_remain_reachable() {
       card.actions=[{identifier:"settings",text:"Innstillinger"},{identifier:"reply",text:"Reply"},{identifier:"read",text:"Mark read"},{identifier:"snooze",text:"Snooze"}]

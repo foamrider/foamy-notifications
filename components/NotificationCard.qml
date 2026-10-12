@@ -52,6 +52,7 @@ Rectangle {
   onBusyChanged: if (busy) actionsExpanded = false
   Keys.onEscapePressed: actionsExpanded = false
   signal closeRequested()
+  signal hideRequested()
   signal cardClicked()
   signal actionRequested(string identifier)
   implicitWidth: cardWidth
@@ -67,7 +68,7 @@ Rectangle {
     cursorShape: Qt.PointingHandCursor
     enabled: !root.busy
     onClicked: function(mouse) {
-      if (mouse.button === Qt.RightButton) root.closeRequested()
+      if (mouse.button === Qt.RightButton) root.hideRequested()
       else root.cardClicked()
     }
   }

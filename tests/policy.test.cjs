@@ -3,6 +3,11 @@ const assert = require('node:assert/strict');
 const P = require('../Preferences.js');
 const L = require('../NotificationLogic.js');
 const row = (id, extra={}) => ({originalId:id,timestamp:1000+id,app:'Chat',desktopEntry:'chat',summary:'Message',body:'Hello',appIcon:'chat',urgency:1,execArgv:'',actionsJson:'[]',...extra});
+test('X history removal defaults off and requires an explicit boolean',()=>{
+ assert.equal(P.parse('{}').settings.closeButtonRemovesHistory,false)
+ for(const value of [true,false]) assert.equal(P.parse(JSON.stringify({plugins:[{id:'foamy.notifications',closeButtonRemovesHistory:value}]})).settings.closeButtonRemovesHistory,value)
+ for(const value of ['true',1,null]) assert.match(P.parse(JSON.stringify({plugins:[{id:'foamy.notifications',closeButtonRemovesHistory:value}]})).error,/Invalid closeButtonRemovesHistory/)
+});
 test('invalid configuration retains a clear error instead of silently changing behavior',()=>{
  assert.match(P.parse('{').error,/SyntaxError/);
  assert.equal(P.parse(JSON.stringify({plugins:[{id:'foamy.notifications',maxVisible:0}]})).settings,null);

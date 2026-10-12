@@ -1,6 +1,6 @@
 function defaults() {
   return { lowTimeoutSec: 5, normalTimeoutSec: 8, criticalTimeoutSec: 0,
-    maxVisible: 3, groupDuplicates: true, monitor: "focused", monitorName: "",
+    maxVisible: 3, groupDuplicates: true, closeButtonRemovesHistory: false, monitor: "focused", monitorName: "",
     suppressFullscreen: false, fullscreenCritical: true, width: 390,
     useBrowserFavicons: true, browserGrouping: "browser", browserMappings: [], restoreMaxAgeSec: 300, showImages: true, imageSize: 56, compact: true, showTimeoutIndicator: true }
 }
@@ -17,7 +17,7 @@ function parse(raw) {
       if (typeof entry[key] !== "number" || !isFinite(entry[key]) || Math.floor(entry[key]) !== entry[key] || entry[key] < range[0] || entry[key] > range[1]) throw Error("Invalid " + key)
       settings[key] = entry[key]
     }
-    for (var name of ["groupDuplicates", "suppressFullscreen", "fullscreenCritical", "showImages", "compact", "showTimeoutIndicator", "useBrowserFavicons"]) {
+    for (var name of ["groupDuplicates", "closeButtonRemovesHistory", "suppressFullscreen", "fullscreenCritical", "showImages", "compact", "showTimeoutIndicator", "useBrowserFavicons"]) {
       if (entry[name] === undefined) continue
       if (typeof entry[name] !== "boolean") throw Error("Invalid " + name)
       settings[name] = entry[name]

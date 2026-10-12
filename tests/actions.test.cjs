@@ -7,12 +7,47 @@ function fixture() {
   enqueuePopupFileJob:(argv,done,payload)=>jobs.push({command:argv[2],done,payload}),
   notifyCenter:()=>events.push('center'),removeKeys:()=>events.push('remove'),Util:{execArgv:()=>events.push('launch')}})
  state.service=state
- for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','commitHandled','finishAction']) {
+ for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','dismissGroup','commitHandled','finishAction']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
  return {state,jobs,events,row:{key:'1-1',keys:['1-1'],originalId:1,app:'Test'}}
 }
+test('X removal forgets the duplicate group without invoking any action',()=>{
+ const {state,jobs,events,row}=fixture()
+ state.preferences.closeButtonRemovesHistory=true
+ row.keys=['1-1','2-2'];row.execArgv='["must-not-launch"]'
+ state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+ state.popupFileQueue=[{writeKey:'1-1',payload:'obsolete snapshot'},{writeKey:'2-2',payload:'obsolete duplicate'},{writeKey:'3-3',payload:'other notification'}]
+ state.dismissGroup(row,true)
+ assert.equal(jobs[0].command,'forget');assert.deepEqual(JSON.parse(jobs[0].payload).keys,row.keys)
+ assert.deepEqual(events,[])
+ state.dismissGroup(row,true);state.dismissGroup(row,false);assert.equal(jobs.length,1)
+ jobs.shift().done(true)
+ assert.deepEqual(events,['center','remove'])
+ assert.equal(state.handledKeys['1-1'],true);assert.equal(state.handledKeys['2-2'],true)
+ assert.deepEqual(Array.from(state.popupFileQueue,job=>job.writeKey),['3-3'])
+})
+test('failed X removal keeps snapshots and permits retry',()=>{
+ const {state,jobs,events,row}=fixture()
+ state.preferences.closeButtonRemovesHistory=true
+ state.popupFileQueue=[{writeKey:'1-1',payload:'prior snapshot'}]
+ state.dismissGroup(row,true);jobs.shift().done(false)
+ assert.deepEqual(events,[]);assert.equal(state.popupFileQueue.length,1)
+ assert.equal(state.handledKeys['1-1'],undefined);assert.ok(state.actionErrors['1-1'])
+ assert.equal(state.busyKeys['1-1'],undefined)
+ state.dismissGroup(row,true);jobs.shift().done(true)
+ assert.deepEqual(events,['center','remove'])
+})
+test('right-click always archives and X archives when the option is off',()=>{
+ for(const [enabled,close] of [[true,false],[false,false],[false,true]]) {
+  const {state,jobs,row}=fixture();const removed=[]
+  state.preferences.closeButtonRemovesHistory=enabled
+  state.removeKeys=(keys,reason)=>removed.push({keys,reason})
+  state.dismissGroup(row,close)
+  assert.equal(jobs.length,0);assert.deepEqual(removed,[{keys:row.keys,reason:'dismiss'}])
+ }
+})
 test('failed focus retains history; retry forgets only after focus succeeds',()=>{
  const {state,jobs,events,row}=fixture()
  state.activateGroup(row,'default');assert.equal(jobs[0].command,'focus')

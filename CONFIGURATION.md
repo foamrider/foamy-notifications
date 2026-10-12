@@ -4,7 +4,8 @@
 
 Configure the `foamy.notifications` entry in `~/.config/omarchy/shell.json`.
 Changes are watched; invalid settings report an error and retain the last valid
-configuration. Settings are file-based, with no extra settings panel.
+configuration. The companion Notification Center exposes common popup settings
+under **Settings → Foamy Notifications**; all settings remain in this entry.
 
 ```json
 {
@@ -14,6 +15,7 @@ configuration. Settings are file-based, with no extra settings panel.
   "criticalTimeoutSec": 0,
   "maxVisible": 3,
   "groupDuplicates": true,
+  "closeButtonRemovesHistory": false,
   "useBrowserFavicons": true,
   "browserGrouping": "browser",
   "monitor": "focused",
@@ -36,6 +38,7 @@ configuration. Settings are file-based, with no extra settings panel.
 | `criticalTimeoutSec` | 0 keeps critical alerts until dismissed; 1–120 sets an expiry. |
 | `maxVisible` | 1–10 groups. Screen space may reduce this further. Older groups go to history. |
 | `groupDuplicates` | Groups exact duplicates. Different actions or sending applications remain separate. |
+| `closeButtonRemovesHistory` | `false` (default) keeps notifications in history when × closes a popup. `true` removes the popup's whole duplicate group from history without invoking any action. Right-click, expiry, and keyboard/IPC dismissal still keep history. Failed removal leaves the popup available for retry. |
 | `useBrowserFavicons` | `true` (default) uses the identified website’s locally cached favicon in the header. Missing, unsupported or failed favicons fall back to the app icon, then the glyph. Independent of `showImages`. |
 | `browserGrouping` | `browser` (default) and `hostname` preserve exact-duplicate grouping; the leading origin already keeps different websites separate. `none` disables duplicate grouping for browser notifications. Native duplicates still follow `groupDuplicates`. |
 | `monitor` | `focused`, `pointer`, `named`, or `all`. Missing named outputs fall back to the focused output. Pointer placement updates when a notification arrives. |

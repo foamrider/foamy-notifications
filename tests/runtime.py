@@ -102,6 +102,8 @@ ShellRoot {
   }
   function leave(): void { input.mouseMove(testWindow.contentItem,480,580) }
   function clickFirst(): void { input.mouseClick(popupColumn.itemAtIndex(0),100,50,Qt.LeftButton) }
+  function rightClickFirst(): void { input.mouseClick(popupColumn.itemAtIndex(0),100,50,Qt.RightButton) }
+  function closeFirst(): void { input.mouseClick(input.findChild(popupColumn.itemAtIndex(0),"dismissButton")) }
   function stackState(): string {
    var settled=true
    for(var i=0;i<popupColumn.count;i++){var card=popupColumn.itemAtIndex(i);if(!card || card.entranceOffset!==0)settled=false}
@@ -158,6 +160,34 @@ try:
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0 and json.loads(ipc('foamy.notification-center.test','state'))['unread']==0,'handled click removes center entry and badge')
         tombstones=(home/'.local/state/omarchy-notification-center/dismissed').read_text().splitlines()
         assert len(tombstones)==2 and len(set(tombstones))==2,'handled keys were removed more than once'
+        # Exercise the actual card inputs and shared removal queue against real history.
+        for enabled, click in [(False,'closeFirst'),(True,'rightClickFirst'),(True,'closeFirst')]:
+            cfg=json.loads((config/'shell.json').read_text())
+            cfg['plugins'][0]['closeButtonRemovesHistory']=enabled
+            (config/'shell.json').write_text(json.dumps(cfg))
+            wait_for(lambda:state()['settings']['closeButtonRemovesHistory']==enabled,'X preference reload')
+            before=len(dispatches())
+            actions=[subprocess.Popen(['notify-send','-a','Foamy Test','-u','critical','--wait','--action=default=Open','Close behavior '+click,'Sample body'],env=env,stdout=subprocess.PIPE,text=True) for _ in range(2)]
+            wait_for(lambda:state()['popups']==2 and len(state()['groups'])==1 and state()['groups'][0]['count']==2 and not state()['busy'] and json.loads(ipc('countdown-test','stackState'))['settled'],'duplicate cards ready')
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==2,'close test history ingested')
+            ipc('countdown-test',click)
+            wait_for(lambda:state()['popups']==0 and not state()['busy'],'close test popup removed')
+            if enabled and click=='closeFirst':
+                wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0 and json.loads(ipc('foamy.notification-center.test','state'))['unread']==0,'X clears history and badge')
+                assert not list((home/'.local/state/omarchy/notifications/history').glob('*.json')),'X entered history'
+                assert not list((home/'.local/state/omarchy/notifications').glob('*-*.json')),'X popup persisted'
+                ipc('foamy.notification-center.test','reload')
+                time.sleep(.3)
+                assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'X entry reappeared after refresh'
+            else:
+                wait_for(lambda:state()['retainedActions']==2,'hidden callbacks retained')
+                assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==2,'hide removed history'
+                assert all(action.poll() is None for action in actions),'hide closed sender callbacks'
+                ipc('foamy.notification-center.test','clear')
+                wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'close test cleanup')
+            for action in actions: assert action.communicate(timeout=4)[0].strip()=='','close invoked default action'
+            assert len(dispatches())==before,'close focused an app'
+            ipc('countdown-test','leave')
         replacement=send('Before replacement')
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['newest']=='Before replacement','initial center entry')
         send('After replacement',('-r',replacement))

@@ -554,6 +554,22 @@ Item {
     removePopup(index, "dismiss")
   }
 
+  function dismissGroup(group, fromCloseButton) {
+    if (busyKeys[group.key]) return
+    if (!fromCloseButton || !preferences.closeButtonRemovesHistory) {
+      removeKeys(group.keys, "dismiss")
+      return
+    }
+    var row = Object.assign({}, group)
+    var keys = group.keys.slice()
+    var busy = Object.assign({}, busyKeys); busy[row.key] = true; busyKeys = busy
+    actionErrors = ({})
+    lastError = ""
+    // Commit removal before closing so queued writes cannot restore the group.
+    // Closing never invokes a sender action or the app-focus fallback.
+    commitHandled(row, keys)
+  }
+
   function expirePopup(index) {
     removePopup(index, "expire")
   }
@@ -683,7 +699,7 @@ Item {
 
   function commitHandled(row, keys, beforeDismiss) {
     enqueuePopupFileJob(["python3", helper, "forget"], function(ok) {
-      if (!ok) { service.finishAction(row.key, "Could not mark this notification handled. Try again."); return }
+      if (!ok) { service.finishAction(row.key, "Could not remove this notification from history. Try again."); return }
       // Keep prior writes on failure; only durable handling may cancel later snapshots.
       service.cancelPendingWrites(keys)
       keys.forEach(function(key) { service.handledKeys[key] = true })
@@ -1582,7 +1598,8 @@ Item {
             onModelDataChanged: publishHover()
             Component.onCompleted: { publishHover(); entrance.start() }
             Component.onDestruction: delete service.hoveredKeys[registeredHoverKey]
-            onCloseRequested: service.removeKeys(modelData.keys,"dismiss")
+            onCloseRequested: service.dismissGroup(modelData, true)
+            onHideRequested: service.dismissGroup(modelData, false)
             onCardClicked: service.activateGroup(modelData,"default")
             onActionRequested: function(identifier) { service.activateGroup(modelData,identifier) }
           }

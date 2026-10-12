@@ -73,7 +73,9 @@ continue to work.
 - Website favicons or app icons stay in a slim header; sender images appear beside the message.
 - Hover to pause the timer. A smooth, optional line shows the remaining time.
 - Left-click or use an action to handle a notification and remove it from history.
-  Right-click or × hides the popup and keeps it in history.
+  Right-click hides the popup and keeps it in history. × does the same by default;
+  enable **X removes from history** in the center's Foamy Notifications settings
+  to remove the popup's whole duplicate group from history instead.
 - Exact duplicates share a card. Overflow goes to history.
 - Critical alerts have a colored edge and stay until dismissed by default.
 - Cards fade in and out. While the pointer is inside the stack, expired cards
