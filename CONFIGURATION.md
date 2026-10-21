@@ -16,6 +16,7 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
   "maxVisible": 3,
   "groupDuplicates": true,
   "closeButtonRemovesHistory": false,
+  "dndSilenceCritical": false,
   "useBrowserFavicons": true,
   "browserGrouping": "browser",
   "monitor": "focused",
@@ -39,6 +40,7 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
 | `maxVisible` | 1–10 groups. Screen space may reduce this further. Older groups go to history. |
 | `groupDuplicates` | Groups exact duplicates. Different actions or sending applications remain separate. |
 | `closeButtonRemovesHistory` | `false` (default) keeps notifications in history when × closes a popup. `true` removes the popup's whole duplicate group from history without invoking any action. Right-click, expiry, and keyboard/IPC dismissal still keep history. Failed removal leaves the popup available for retry. |
+| `dndSilenceCritical` | `false` (default) preserves trusted critical alerts through Do Not Disturb. `true` sends all new critical alerts, including Omarchy crash notifications, directly to history during DND. Transient alerts are not stored. Normal Omarchy action feedback and delivery outside DND are unchanged. |
 | `useBrowserFavicons` | `true` (default) uses the identified website’s locally cached favicon in the header. Missing, unsupported or failed favicons fall back to the app icon, then the glyph. Independent of `showImages`. |
 | `browserGrouping` | `browser` (default) and `hostname` preserve exact-duplicate grouping; the leading origin already keeps different websites separate. `none` disables duplicate grouping for browser notifications. Native duplicates still follow `groupDuplicates`. |
 | `monitor` | `focused`, `pointer`, `named`, or `all`. Missing named outputs fall back to the focused output. Pointer placement updates when a notification arrives. |

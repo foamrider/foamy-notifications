@@ -85,3 +85,19 @@ test('raw providers never render; explicit local image hints remain usable',()=>
  for(const bad of ['file:///tmp/original.jpg','image://qsimage/123',normalized.replace('1000-1','../1000-1'),normalized+'.jpg'])
   assert.equal(L.normalizedImage(bad,'/tmp/images/'),'')
 })
+
+
+test('DND critical silencing defaults off and rejects non-booleans',()=>{
+ assert.equal(P.parse('{}').settings.dndSilenceCritical,false)
+ const config=value=>JSON.stringify({plugins:[{id:'foamy.notifications',dndSilenceCritical:value}]})
+ for(const value of [true,false]) assert.equal(P.parse(config(value)).settings.dndSilenceCritical,value)
+ for(const value of ['true',1,null]) assert.match(P.parse(config(value)).error,/Invalid dndSilenceCritical/)
+})
+test('DND critical silencing overrides trusted critical alerts without changing normal action feedback',()=>{
+ for(const appName of ['omarchy-action','notify-send','Chat']) {
+  assert.equal(L.shouldBypassDnd({appName,urgency:2},2,true),false)
+  assert.equal(L.shouldBypassDnd({appName,urgency:2},2,false),appName!=='Chat')
+ }
+ assert.equal(L.shouldBypassDnd({appName:'omarchy-action',urgency:1},2,true),true)
+ assert.equal(L.shouldBypassDnd({appName:'Chat',urgency:1},2,true),false)
+})

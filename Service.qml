@@ -140,7 +140,7 @@ Item {
   //     chat apps set app_name to their brand (Discord/Slack/Vesktop), which
   //     falls outside this rule.
   function shouldBypassDnd(notification) {
-    return NotificationLogic.shouldBypassDnd(notification, NotificationUrgency.Critical)
+    return NotificationLogic.shouldBypassDnd(notification, NotificationUrgency.Critical, preferences.dndSilenceCritical)
   }
 
   function snapshotOf(notification) {
@@ -182,22 +182,11 @@ Item {
     if (!keepVersion) delete imageWriteVersions[NotificationLogic.imageStem(row)]
   }
 
-  // A notification nobody looks back at:
-  //   - the freedesktop `transient` hint is set ("popup only, don't store")
-  //   - app_name is "notify-send" (the CLI default — means the sender
-  //     didn't bother declaring an identity, so it's almost certainly
-  //     ephemeral test/feedback noise)
-  //   - app_name is "omarchy-action" (Omarchy's own user-action toasts —
-  //     the user just triggered them)
-  // Their toasts still land in history like any other once they've been on
-  // screen; the distinction only decides whether a DND-silenced one is worth
-  // recording at all.
-  function isEphemeral(notification) {
-    var transient = false
-    try {
-      transient = !!(notification.hints && notification.hints["transient"])
-    } catch (e) { transient = false }
-    return transient || NotificationLogic.isEphemeralApp(String(notification.appName || ""))
+  function shouldArchiveSilenced(snapshot) {
+    // Critical CLI alerts explicitly silenced by DND still need a history entry.
+    // Respect transient senders and keep routine CLI feedback out of history.
+    return !snapshot.transient && (!NotificationLogic.isEphemeralApp(snapshot.app)
+      || (doNotDisturb && preferences.dndSilenceCritical && snapshot.urgency === NotificationUrgency.Critical))
   }
 
   // Raw buffers have no readable size in QML. Keep only primitives and release
@@ -262,9 +251,9 @@ Item {
   }
 
   function handleDetachedSnapshot(snapshot, historyOnly) {
-    var bypass = NotificationLogic.shouldBypassDnd({appName:snapshot.app, urgency:snapshot.urgency}, NotificationUrgency.Critical)
+    var bypass = shouldBypassDnd({appName:snapshot.app, urgency:snapshot.urgency})
     if (historyOnly || (doNotDisturb && !bypass) || suppressForFullscreen(snapshot.urgency)) {
-      if (!snapshot.transient && !NotificationLogic.isEphemeralApp(snapshot.app)) writeHistoryFile(snapshot)
+      if (shouldArchiveSilenced(snapshot)) writeHistoryFile(snapshot)
       return
     }
     if (!persistPopupFile(snapshot)) return
@@ -316,7 +305,7 @@ Item {
       // The toast never shows, so the only record a silenced notification
       // can leave is a history entry. Write it straight into history —
       // "what did I miss while silenced" is exactly what history is for.
-      if (!isEphemeral(notification)) {
+      if (shouldArchiveSilenced(snapshot)) {
         writeSilenced(notification, snapshot)
         return
       }

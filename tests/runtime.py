@@ -147,6 +147,53 @@ try:
     if CENTER:
         wait_for(lambda:state()['centerEnabled'],'center config loaded')
         ipc('foamy.notification-center','close')
+    cfg=json.loads((config/'shell.json').read_text())
+    assert state()['settings']['dndSilenceCritical'] is False
+    ipc('notifications','setDnd','on')
+    for app_name in ['omarchy-action','notify-send']:
+        send('DND policy default '+app_name,('-a',app_name))
+        wait_for(lambda:state()['popups']==1 and not state()['busy'],'default trusted critical bypass')
+        ipc('notifications','dismissAll')
+        wait_for(lambda:state()['popups']==0 and not state()['busy'],'default bypass cleanup')
+    cfg['plugins'][0]['dndSilenceCritical']=True
+    (config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:state()['settings']['dndSilenceCritical'],'critical DND option reloads')
+    history=home/'.local/state/omarchy/notifications/history'
+    for app_name in ['omarchy-action','notify-send','Foamy Test']:
+        title='DND policy silenced '+app_name
+        send(title,('-a',app_name))
+        wait_for(lambda:any(json.loads(p.read_text()).get('summary')==title for p in history.glob('*.json')) and not state()['busy'],'critical alert reaches history')
+        assert state()['popups']==0,'critical alert escaped DND'
+    if CENTER:
+        # Native app actions must still work directly from silenced history.
+        action=subprocess.Popen(['notify-send','-a','notify-send','-u','critical','--wait','--action=default=Open','DND policy native action','Sample body'],env=env,stdout=subprocess.PIPE,text=True)
+        wait_for(lambda:any(json.loads(p.read_text()).get('summary')=='DND policy native action' for p in history.glob('*.json')) and state()['retainedActions']==1,'silenced critical callback retained')
+        key=next(p.stem for p in history.glob('*.json') if json.loads(p.read_text()).get('summary')=='DND policy native action')
+        ipc('foamy.notification-center.test','focus',key)
+        assert action.communicate(timeout=4)[0].strip()=='default'
+        wait_for(lambda:state()['retainedActions']==0 and not state()['busy'],'critical history action handled')
+    send('DND policy transient',('-a','omarchy-action','-h','boolean:transient:true'))
+    time.sleep(.15)
+    assert not any(json.loads(p.read_text()).get('summary')=='DND policy transient' for p in history.glob('*.json'))
+    send('DND policy normal feedback',('-a','omarchy-action','-u','normal'))
+    wait_for(lambda:state()['popups']==1,'normal action feedback still bypasses DND')
+    ipc('notifications','dismissAll')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'normal feedback cleanup')
+    ipc('notifications','setDnd','off')
+    send('DND policy unmuted',('-a','omarchy-action'))
+    wait_for(lambda:state()['popups']==1,'critical alert appears outside DND')
+    ipc('notifications','dismissAll')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'unmuted alert cleanup')
+    cfg['plugins'][0]['dndSilenceCritical']=False
+    (config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:not state()['settings']['dndSilenceCritical'],'default policy restored')
+    if CENTER:
+        ipc('foamy.notification-center.test','clear')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0 and not state()['busy'],'policy fixture cleanup')
+    else:
+        for entry in history.glob('*.json'):
+            if json.loads(entry.read_text()).get('summary','').startswith('DND policy '):entry.unlink()
+    prior_tombstones=set((home/'.local/state/omarchy-notification-center/dismissed').read_text().splitlines()) if CENTER else set()
     first=send('Duplicate');send('Duplicate')
     wait_for(lambda:len(state()['groups'])==1 and state()['groups'][0]['count']==2,'duplicate grouping')
     assert json.loads(ipc('countdown-test','state'))['progress']==0,'persistent popup showed a timeout'
@@ -159,7 +206,7 @@ try:
         time.sleep(.3)
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0 and json.loads(ipc('foamy.notification-center.test','state'))['unread']==0,'handled click removes center entry and badge')
         tombstones=(home/'.local/state/omarchy-notification-center/dismissed').read_text().splitlines()
-        assert len(tombstones)==2 and len(set(tombstones))==2,'handled keys were removed more than once'
+        assert len(tombstones)==len(prior_tombstones)+2 and len(set(tombstones))==len(tombstones),'handled keys were removed more than once'
         # Exercise the actual card inputs and shared removal queue against real history.
         for enabled, click in [(False,'closeFirst'),(True,'rightClickFirst'),(True,'closeFirst')]:
             cfg=json.loads((config/'shell.json').read_text())

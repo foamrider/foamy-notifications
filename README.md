@@ -78,6 +78,9 @@ continue to work.
   to remove the popup's whole duplicate group from history instead.
 - Exact duplicates share a card. Overflow goes to history.
 - Critical alerts have a colored edge and stay until dismissed by default.
+  Enable **Do Not Disturb also silences critical alerts** in the center’s Foamy
+  Notifications settings to send them directly to history during DND, including
+  Omarchy crash alerts. The option is off by default; transient alerts are not stored.
 - Cards fade in and out. While the pointer is inside the stack, expired cards
   leave their space in place so the hovered card does not move away.
 

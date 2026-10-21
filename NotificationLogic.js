@@ -115,7 +115,8 @@ function summaryStartsWithGlyph(summary) {
   return spaces >= 2
 }
 
-function shouldBypassDnd(notification, criticalUrgency) {
+function shouldBypassDnd(notification, criticalUrgency, silenceCritical) {
+  if (silenceCritical && notification && notification.urgency === criticalUrgency) return false
   var appName = String((notification && notification.appName) || "")
   if (appName === "omarchy-action") return true
   return appName === "notify-send" && notification && notification.urgency === criticalUrgency

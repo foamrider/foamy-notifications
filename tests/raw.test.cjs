@@ -18,7 +18,7 @@ function fixture(rows=[]) {
     reportPersistenceError:message=>writes.push({kind:'error',message}),rejectNotification:n=>{n.tracked=false},
     handleNotification:n=>writes.push({kind:'native',n})})
   s.service=s
-  for(const name of ['detachRawNotification','receiveDetachedSnapshot','handleDetachedSnapshot','receiveNotification','refreshPopup']) {
+  for(const name of ['shouldBypassDnd','shouldArchiveSilenced','detachRawNotification','receiveDetachedSnapshot','handleDetachedSnapshot','receiveNotification','refreshPopup']) {
     const start=source.indexOf('  function '+name+'(')
     vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),s)
   }
@@ -110,4 +110,20 @@ test('remaining replacement signals finish the detached snapshot without stale i
   n.hints={};n.body='Updated body';n.emit('hintsChanged');n.emit('bodyChanged');flush()
   assert.equal(rows.length,1);assert.equal(rows[0].image,'');assert.equal(rows[0].body,'Updated body')
   assert.equal(rows[0].actionsJson,'[]');assert.equal(writes.filter(job=>job.kind==='popup').length,1)
+})
+
+
+test('DND critical option archives raw critical alerts including CLI senders and respects transient hints',()=>{
+ for(const appName of ['omarchy-action','notify-send','Chat']) for(const enabled of [false,true]) for(const dnd of [false,true]) {
+  const {s,rows,writes,flush}=fixture(),n=notification()
+  s.preferences.dndSilenceCritical=enabled;s.doNotDisturb=dnd;n.appName=appName;n.urgency=2
+  s.receiveNotification(n);flush()
+  const silenced=dnd && (enabled || appName==='Chat')
+  assert.equal(rows.length,silenced?0:1)
+  assert.equal(writes[0].kind,silenced?'history':'popup')
+ }
+ const {s,rows,writes,flush}=fixture(),n=notification()
+ s.preferences.dndSilenceCritical=true;s.doNotDisturb=true;n.appName='omarchy-action';n.urgency=2;n.transient=true
+ s.receiveNotification(n);flush()
+ assert.equal(rows.length,0);assert.equal(writes.length,0)
 })
