@@ -1,3 +1,4 @@
+import ".." as PluginLanguage
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Layouts
@@ -138,7 +139,7 @@ Rectangle {
         Text {
           objectName: "notificationAppName"
           Layout.fillWidth: true
-          text: root.app || "Notification"
+          text: root.app || PluginLanguage.FoamyI18n.t("Notification")
           textFormat: Text.PlainText
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -156,7 +157,7 @@ Rectangle {
         Text {
           objectName: "notificationTime"
           visible: root.timestamp > 0
-          text: visible ? Qt.formatTime(new Date(root.timestamp), "hh:mm") : ""
+          text: visible ? Qt.locale(PluginLanguage.FoamyI18n.formatLocale).toString(new Date(root.timestamp), "hh:mm") : ""
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           color: Util.alpha(Commons.Color.popups.text, 0.65)
@@ -168,7 +169,7 @@ Rectangle {
           Layout.preferredWidth: Style.space(24)
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
-          Accessible.name: root.actionsExpanded ? "Hide more actions" : "Show more actions"
+          Accessible.name: root.actionsExpanded ? PluginLanguage.FoamyI18n.t("Hide more actions") : PluginLanguage.FoamyI18n.t("Show more actions")
           background: Rectangle { radius: Style.cornerRadius * 2; color: moreButton.hovered || root.actionsExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
           contentItem: Text { text: "⋯"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.title }
           onClicked: root.actionsExpanded = !root.actionsExpanded
@@ -180,7 +181,7 @@ Rectangle {
           Layout.preferredWidth: Style.space(24)
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
-          Accessible.name: "Snooze this sender"
+          Accessible.name: PluginLanguage.FoamyI18n.t("Snooze this sender")
           background: Rectangle { radius: Style.cornerRadius * 2; color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
           contentItem: Text { text: "󰥔"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.body }
           onClicked: root.snoozeExpanded = !root.snoozeExpanded
@@ -191,7 +192,7 @@ Rectangle {
           Layout.preferredWidth: Style.space(24)
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
-          Accessible.name: "Dismiss notification"
+          Accessible.name: PluginLanguage.FoamyI18n.t("Dismiss notification")
           background: Rectangle { radius: Style.cornerRadius * 2; color: closeButton.hovered ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
           contentItem: Text { text: "×"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Util.alpha(Commons.Color.popups.text, 0.7); font.family: root.fontFamily; font.pixelSize: Style.font.title }
           onClicked: root.closeRequested()
@@ -289,7 +290,7 @@ Rectangle {
           FeatureButton {
             required property string modelData
             objectName: "notificationCopyCode"
-            text: root.copiedCode === modelData ? "Copied " + modelData : "Copy " + modelData
+            text: root.copiedCode === modelData ? PluginLanguage.FoamyI18n.t("Copied %1", modelData) : PluginLanguage.FoamyI18n.t("Copy %1", modelData)
             width: Math.min(implicitWidth, parent.width)
             onClicked: root.featureRequested("code", modelData)
           }
@@ -297,7 +298,7 @@ Rectangle {
         FeatureButton {
           objectName: "notificationOpenLink"
           visible: !!root.offers.link
-          text: root.offers.meeting ? "Join meeting" : "Open link"
+          text: root.offers.meeting ? PluginLanguage.FoamyI18n.t("Join meeting") : PluginLanguage.FoamyI18n.t("Open link")
           width: Math.min(implicitWidth, parent.width)
           onClicked: root.featureRequested("link", root.offers.link)
         }
@@ -311,7 +312,7 @@ Rectangle {
           FeatureButton {
             required property int modelData
             objectName: "notificationSnooze" + modelData
-            text: modelData < 60 ? modelData + " min" : (modelData / 60) + " h"
+            text: modelData < 60 ? PluginLanguage.FoamyI18n.t("%1 min", PluginLanguage.FoamyI18n.number(modelData)) : PluginLanguage.FoamyI18n.t("%1 h", PluginLanguage.FoamyI18n.number(modelData / 60))
             width: Math.min(implicitWidth, parent.width)
             onClicked: { root.snoozeExpanded = false; root.featureRequested("snooze", String(modelData)) }
           }
@@ -336,7 +337,7 @@ Rectangle {
       Text {
         Layout.fillWidth: true
         visible: root.error.length > 0
-        text: root.error
+        text: PluginLanguage.FoamyI18n.t(root.error)
         textFormat: Text.PlainText
         color: Commons.Color.urgent
         font.family: root.fontFamily

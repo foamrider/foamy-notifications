@@ -9,6 +9,10 @@ import tempfile
 source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-motion-'));app=base/'app';app.mkdir()
 (app/'Commons').symlink_to('/usr/share/omarchy/shell/Commons',target_is_directory=True)
+# Include the plugin translator without registering unrelated fixture types.
+(app / 'FoamyI18n.qml').symlink_to(source / 'FoamyI18n.qml')
+(app / 'i18n').symlink_to(source / 'i18n', target_is_directory=True)
+(app / 'qmldir').write_text('singleton FoamyI18n 1.0 FoamyI18n.qml\n')
 (app/'components').symlink_to(source/'components',target_is_directory=True)
 (app/'NotificationLogic.js').symlink_to(source/'NotificationLogic.js')
 s=(source/'Service.qml').read_text();start=s.index('          NotificationCard {',s.index('  Variants {'));end=s.index('\n      }\n    }\n  }',start)
