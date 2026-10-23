@@ -20,7 +20,7 @@ app = base/'app'; app.mkdir()
 shutil.copytree(SOURCE, app/'plugin', ignore=shutil.ignore_patterns('.git', '__pycache__'))
 service = (SOURCE/'Service.qml').read_text()
 # Keep the real service/server/queue; presentation has separate desktop coverage.
-(app/'plugin/Service.qml').write_text((service[:service.rfind('  Variants {')] + '}\n').replace('tracked:Object.keys(service.liveRefs).length', 'nativeTracked:server.trackedNotifications.values.length, tracked:Object.keys(service.liveRefs).length'))
+(app/'plugin/Service.qml').write_text((service[:service.index('  Variants {')] + '}\n').replace('tracked:Object.keys(service.liveRefs).length', 'nativeTracked:server.trackedNotifications.values.length, tracked:Object.keys(service.liveRefs).length'))
 (app/'shell.qml').write_text('import Quickshell\nimport "plugin" as Plugin\nShellRoot { Plugin.Service {} }\n')
 helper = app/'plugin/bin/notification-helper.py'
 helper.rename(helper.with_name('notification-helper-real.py'))

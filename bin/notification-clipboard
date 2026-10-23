@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+# Codes travel over stdin, never in argv or clipboard history. Bound both reads.
+IFS= read -r -n 65 code
+[[ $code =~ ^[A-Za-z0-9]{4,8}$ ]] || exit 2
+case ${1:-} in
+  copy) printf '%s' "$code" | timeout --kill-after=1 2 wl-copy --sensitive ;;
+  clear)
+    current=$(timeout --kill-after=1 2 wl-paste --no-newline | head -c 65) || exit 1
+    if [[ $current == "$code" ]]; then timeout --kill-after=1 2 wl-copy --clear; fi
+    ;;
+  *) exit 2 ;;
+esac

@@ -20,7 +20,7 @@ service = (SOURCE/'Service.qml').read_text()
 start = service.index('          NotificationCard {',service.index('  Variants {'))
 end = service.index('\n      }\n    }\n  }',start)
 delegate = service[start:end].replace('NotificationCard {','Cards.NotificationCard {').replace('service.','notifications.').replace('popupWindow.screen.name','"TEST"')
-(app/'plugin/Service.qml').write_text(service[:service.rfind('  Variants {')]+'}\n')
+(app/'plugin/Service.qml').write_text(service[:service.index('  Variants {')]+'}\n')
 (app/'shell.qml').write_text('''import QtQuick
 import QtTest
 import Quickshell

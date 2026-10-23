@@ -13,12 +13,34 @@ Item {
   SignalSpy { id: dismissed; target: card; signalName: "closeRequested" }
   SignalSpy { id: hidden; target: card; signalName: "hideRequested" }
   SignalSpy { id: action; target: card; signalName: "actionRequested" }
+  SignalSpy { id: feature; target: card; signalName: "featureRequested" }
   TestCase {
     name: "FoamyNotificationCard"
     onCompletedChanged: if (completed) console.log("UI_RESULT",qtest_results.passCount,"passed",qtest_results.failCount,"failed")
     when: windowShown
-    function init() { card.showTimeoutIndicator=true;card.timeoutMs=0;card.remainingMs=0;card.compact=true;card.app="Test";card.showImages=true;card.imageSize=56;card.width=420;card.summary="Test title";card.busy=false;card.image="";card.appIcon="";card.favicon="";card.actionsExpanded=false;card.actions=[{identifier:"read",text:"Mark read"}];opened.clear();dismissed.clear();action.clear() }
+    function init() { card.offers={codes:"",link:"",meeting:false};card.snoozeAvailable=false;card.snoozeExpanded=false;feature.clear(); card.showTimeoutIndicator=true;card.timeoutMs=0;card.remainingMs=0;card.compact=true;card.app="Test";card.showImages=true;card.imageSize=56;card.width=420;card.summary="Test title";card.busy=false;card.image="";card.appIcon="";card.favicon="";card.actionsExpanded=false;card.actions=[{identifier:"read",text:"Mark read"}];opened.clear();dismissed.clear();action.clear() }
     function cleanup() { if (qtest_results.failed) console.log("FAILED_CASE", qtest_results.functionName) }
+    function test_feature_buttons_do_not_trigger_default_actions() {
+      card.offers={codes:"482913",link:"https://meet.google.com/abc",meeting:true}
+      card.width=280
+      waitForRendering(card)
+      var copy=findChild(card,"notificationCopyCode"), link=findChild(card,"notificationOpenLink")
+      verify(copy.visible);verify(link.visible)
+      mouseClick(copy);compare(feature.count,1);compare(feature.signalArguments[0][0],"code");compare(feature.signalArguments[0][1],"482913")
+      link.forceActiveFocus();keyClick(Qt.Key_Space)
+      compare(feature.count,2);compare(feature.signalArguments[1][0],"link")
+      compare(opened.count,0);compare(action.count,0)
+      verify(copy.mapToItem(card,copy.width,0).x<=card.width)
+      verify(link.mapToItem(card,link.width,0).x<=card.width)
+    }
+    function test_snooze_controls_keep_right_click_and_escape_behavior() {
+      card.snoozeAvailable=true
+      mouseClick(findChild(card,"notificationSnooze"));verify(card.snoozeExpanded);verify(card.hovered)
+      waitForRendering(card)
+      mouseClick(findChild(card,"notificationSnooze30"));compare(feature.count,1);compare(feature.signalArguments[0][1],"30");verify(!card.snoozeExpanded)
+      mouseClick(findChild(card,"notificationSnooze"));card.forceActiveFocus();keyClick(Qt.Key_Escape);verify(!card.snoozeExpanded)
+      var before=hidden.count;mouseClick(card,100,50,Qt.RightButton);compare(hidden.count,before+1);compare(feature.count,1)
+    }
     function test_avatar_and_app_icon_use_separate_areas() {
       card.app="Vivaldi"
       card.appIcon=Qt.resolvedUrl("fallback.svg").toString();card.image=Qt.resolvedUrl("avatar.svg").toString()

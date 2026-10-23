@@ -6,11 +6,14 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Services.Pipewire
 import Quickshell.Services.Notifications
 import qs.Commons
 
 import "components"
 import "NotificationLogic.js" as NotificationLogic
+import "Features.js" as Features
+import "Security.js" as Security
 import "Preferences.js" as Preferences
 import "BrowserIdentity.js" as BrowserIdentity
 
@@ -143,6 +146,122 @@ Item {
     return NotificationLogic.shouldBypassDnd(notification, NotificationUrgency.Critical, preferences.dndSilenceCritical)
   }
 
+  property var snoozes: ({})
+  property double quietNow: Date.now()
+  readonly property bool anySnooze: Object.keys(snoozes).some(function(key) { return snoozes[key] > quietNow })
+  readonly property double globalSnoozeUntil: snoozes["*"] > quietNow ? snoozes["*"] : 0
+
+  function isQuiet(row) {
+    var quiet = doNotDisturb || snoozes["*"] > Date.now() || snoozes[Features.source(row)] > Date.now()
+    return quiet && !shouldBypassDnd({appName:row.app, urgency:row.urgency})
+  }
+
+  function snoozeSource(source, minutes) {
+    var duration = Number(minutes)
+    if ([15, 30, 60, 240].indexOf(duration) < 0 || (source !== "*" && !/^(app|web):.{1,256}$/.test(source))) return "invalid"
+    var next = Features.quietState(snoozes, Date.now())
+    if (!next[source] && Object.keys(next).length >= 128) return "full"
+    next[source] = Date.now() + duration * 60000
+    snoozes = next
+    quietNow = Date.now()
+    scheduleSettingsSave()
+    // Hide current matching cards without discarding their history or callbacks.
+    for (var i = popupModel.count - 1; i >= 0; i--)
+      if ((source === "*" || Features.source(popupModel.get(i)) === source) && !busyKeys[NotificationLogic.imageStem(popupModel.get(i))]) dismissPopup(i)
+    return "ok"
+  }
+
+  function resumeSnoozes() {
+    snoozes = ({})
+    scheduleSettingsSave()
+    return "ok"
+  }
+
+  Timer {
+    interval: 1000; repeat: true; running: service.anySnooze
+    onTriggered: {
+      service.quietNow = Date.now()
+      var next = Features.quietState(service.snoozes, service.quietNow)
+      if (JSON.stringify(next) !== JSON.stringify(service.snoozes)) { service.snoozes = next; service.scheduleSettingsSave() }
+    }
+  }
+
+  readonly property var sharingCandidates: {
+    var nodes = Pipewire.nodes.values, out = []
+    for (var i = 0; i < nodes.length && out.length < 64; i++)
+      if (nodes[i].type === PwNodeType.VideoSource) out.push(nodes[i])
+    return out
+  }
+  PwObjectTracker { objects: service.sharingCandidates }
+  readonly property bool sharingActive: Pipewire.ready && sharingCandidates.some(function(node) { return node.ready && Features.isSharing(node.properties) })
+  property bool sharingOfferHandled: false
+  property real sharingPromptHeight: Style.space(140)
+  readonly property string sharingPromptScreen: targetMonitors.length ? targetMonitors[0] : ""
+  readonly property bool sharingOfferPending: preferences.offerSnoozeWhenSharing && sharingActive && !sharingOfferHandled && !doNotDisturb && !globalSnoozeUntil
+  onSharingActiveChanged: sharingOfferHandled = sharingActive && (doNotDisturb || globalSnoozeUntil > 0)
+  onDoNotDisturbChanged: if (doNotDisturb && sharingActive) sharingOfferHandled = true
+  onGlobalSnoozeUntilChanged: if (globalSnoozeUntil > 0 && sharingActive) sharingOfferHandled = true
+
+  function offersFor(row) { return Features.offers(row) }
+
+  function featureAction(group, kind, value) {
+    // Resolve the current card so stale delegates cannot act on replacement text.
+    var row = displayGroups.find(function(row) { return row.key === group.key })
+    if (!row || busyKeys[row.key]) return
+    if (kind === "snooze") {
+      if (snoozeSource(Features.source(row), value) !== "ok") finishAction(row.key, "Could not snooze this sender. Resume an existing snooze and try again.")
+      return
+    }
+    var offers = Features.offers(row)
+    if (kind === "code" && offers.codes.split(" ").indexOf(value) >= 0) {
+      if (clipboardProc.running) { finishAction(row.key, "Clipboard is busy. Try again."); return }
+      clipboardProc.entryKey = row.key
+      clipboardProc.value = value
+      clipboardProc.mode = "copy"
+      clipboardProc.running = true
+    } else if (kind === "link" && value === offers.link && Security.safeHttpUrl(value)) {
+      if (!Qt.openUrlExternally(Security.safeHttpUrl(value))) finishAction(row.key, "Could not open the link. Try again.")
+    }
+  }
+
+  property string clipboardSecret: ""
+  property string clipboardCopiedKey: ""
+  Timer {
+    id: clipboardExpiry; interval: 60000
+    onTriggered: {
+      if (!service.clipboardSecret) return
+      if (clipboardProc.running) { restart(); return }
+      clipboardProc.entryKey = ""
+      clipboardProc.value = service.clipboardSecret
+      clipboardProc.mode = "clear"
+      clipboardProc.running = true
+    }
+  }
+  Process {
+    id: clipboardProc
+    property string entryKey: ""
+    property string value: ""
+    property string mode: "copy"
+    command: ["bash", Qt.resolvedUrl("bin/notification-clipboard").toString().replace(/^file:\/\//, ""), mode]
+    stdinEnabled: true
+    onStarted: { write(value + "\n"); stdinEnabled = false }
+    onExited: function(code, status) {
+      if (code === 0 && status === 0 && mode === "copy") {
+        service.clipboardSecret = value
+        service.clipboardCopiedKey = entryKey
+        clipboardExpiry.restart()
+        service.finishAction(entryKey, "")
+      } else if (mode === "copy") service.finishAction(entryKey, "Could not copy the code. Check wl-copy and try again.")
+      else {
+        if (code !== 0 || status !== 0) service.reportPersistenceError("Could not check or clear the verification-code clipboard")
+        service.clipboardSecret = ""
+        service.clipboardCopiedKey = ""
+      }
+      value = ""
+      stdinEnabled = true
+    }
+  }
+
   function snapshotOf(notification) {
     return NotificationLogic.snapshotOf(notification, Date.now())
   }
@@ -183,10 +302,10 @@ Item {
   }
 
   function shouldArchiveSilenced(snapshot) {
-    // Critical CLI alerts explicitly silenced by DND still need a history entry.
+    // Critical CLI alerts explicitly silenced by DND or snooze still need history.
     // Respect transient senders and keep routine CLI feedback out of history.
     return !snapshot.transient && (!NotificationLogic.isEphemeralApp(snapshot.app)
-      || (doNotDisturb && preferences.dndSilenceCritical && snapshot.urgency === NotificationUrgency.Critical))
+      || (isQuiet(snapshot) && preferences.dndSilenceCritical && snapshot.urgency === NotificationUrgency.Critical))
   }
 
   // Raw buffers have no readable size in QML. Keep only primitives and release
@@ -251,8 +370,7 @@ Item {
   }
 
   function handleDetachedSnapshot(snapshot, historyOnly) {
-    var bypass = shouldBypassDnd({appName:snapshot.app, urgency:snapshot.urgency})
-    if (historyOnly || (doNotDisturb && !bypass) || suppressForFullscreen(snapshot.urgency)) {
+    if (historyOnly || isQuiet(snapshot) || suppressForFullscreen(snapshot.urgency)) {
       if (shouldArchiveSilenced(snapshot)) writeHistoryFile(snapshot)
       return
     }
@@ -301,7 +419,7 @@ Item {
     // DND bypass rules: chat apps abuse urgency=critical to force
     // visibility, so critical alone isn't enough — we also require the
     // sender to be CLI-style. See shouldBypassDnd().
-    if ((service.doNotDisturb && !shouldBypassDnd(notification)) || suppressForFullscreen(snapshot.urgency)) {
+    if (isQuiet(snapshot) || suppressForFullscreen(snapshot.urgency)) {
       // The toast never shows, so the only record a silenced notification
       // can leave is a history entry. Write it straight into history —
       // "what did I miss while silenced" is exactly what history is for.
@@ -875,10 +993,11 @@ Item {
   }
 
   function persistPopupFile(snapshot) {
-    var persistable = NotificationLogic.persistablePopup(snapshot, imagesDir)
+    var safeSnapshot = Features.redact(snapshot)
+    var persistable = NotificationLogic.persistablePopup(safeSnapshot, imagesDir)
     var version = ++nextImageWriteVersion
     imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
-    var accepted = enqueuePopupFileJob(["python3", helper, "write"], null, JSON.stringify({entry:persistable.entry, copies:persistable.copies, imageVersion:version, sources:{appIcon:String(snapshot.appIcon || ""), image:String(snapshot.image || "")}}), NotificationLogic.imageStem(snapshot))
+    var accepted = enqueuePopupFileJob(["python3", helper, "write"], null, JSON.stringify({entry:persistable.entry, copies:persistable.copies, imageVersion:version, sources:{appIcon:String(safeSnapshot.appIcon || ""), image:String(safeSnapshot.image || "")}}), NotificationLogic.imageStem(snapshot))
     if (!accepted) delete imageWriteVersions[NotificationLogic.imageStem(snapshot)]
     return accepted
   }
@@ -928,7 +1047,7 @@ Item {
   // Other silenced notifications are released once their latest content is saved.
   function writeHistoryFile(entry, done) {
     if (!entry) { if (done) done(true); return }
-    var persistable = NotificationLogic.persistablePopup(entry, imagesDir)
+    var persistable = NotificationLogic.persistablePopup(Features.redact(entry), imagesDir)
     return enqueuePopupFileJob(["python3", helper, "write"], done, JSON.stringify({entry:persistable.entry, copies:persistable.copies, history:true}), NotificationLogic.imageStem(entry), true)
   }
 
@@ -1182,6 +1301,7 @@ Item {
       service._hydrating = false
     }
 
+    try { service.snoozes = Features.quietState(JSON.parse(raw).snoozes, Date.now()) } catch (e) { service.snoozes = ({}) }
     service.settingsLoaded = true
     // Versions before the history moved into its own directory kept every
     // notification in here. Rewrite once so that dead payload doesn't sit in
@@ -1190,7 +1310,7 @@ Item {
   }
 
   function flushSettings() {
-    settingsFile.setText(JSON.stringify({ version: 3, dnd: persisted.doNotDisturb }, null, 2) + "\n")
+    settingsFile.setText(JSON.stringify({ version: 4, dnd: persisted.doNotDisturb, snoozes: snoozes }, null, 2) + "\n")
   }
 
   Component.onCompleted: {
@@ -1208,10 +1328,23 @@ Item {
     })
   }
 
+  Component.onDestruction: if (settingsLoaded) flushSettings()
+
   // ---------------------------------------------------- IPC
 
   IpcHandler {
     target: "notifications"
+
+    function snoozeAll(minutes: string): string { return service.snoozeSource("*", minutes) }
+    function unsnooze(key: string): string {
+      if (!key) return service.resumeSnoozes()
+      var next = Object.assign({}, service.snoozes)
+      delete next[key]
+      service.snoozes = next
+      service.scheduleSettingsSave()
+      return "ok"
+    }
+    function snoozes(): string { return JSON.stringify(service.snoozes) }
 
     function dndState(): string {
       return service.doNotDisturb ? "on" : "off"
@@ -1489,9 +1622,44 @@ Item {
       return JSON.stringify({groups:service.displayGroups.map(function(g){return {key:g.key,count:g.keys.length,actions:JSON.parse(g.actionsJson || "[]").length}}),
         retainedActions:Object.keys(service.retainedHistory).length, pending:pendingNotifications.length, contextBusy:contextProc.running, popups:popupModel.count, doNotDisturb:service.doNotDisturb, monitors:service.targetMonitors,
         fullscreenMonitors:service.fullscreenMonitors, settings:service.preferences,
+        snoozes:service.snoozes, sharingActive:service.sharingActive, sharingOfferPending:service.sharingOfferPending,
         centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,
         queuedJobs:service.popupFileQueue.length, queuedBytes:service.popupFileQueue.reduce(function(total,job){return total+job.bytes},0),
         tracked:Object.keys(service.liveRefs).length, busy:popupFileProc.running || service.popupFileQueue.length>0})
+    }
+  }
+
+  Variants {
+    model: service.sharingOfferPending ? Quickshell.screens.filter(function(screen) { return screen.name === service.sharingPromptScreen }).slice(0, 1) : []
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      anchors { top: true; right: true }
+      margins { top: service.barClearance + Style.space(8); right: Style.space(8) }
+      implicitWidth: Style.space(390)
+      implicitHeight: sharingCard.implicitHeight
+      color: "transparent"
+      exclusionMode: ExclusionMode.Ignore
+      WlrLayershell.namespace: "foamy-notification-sharing"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      NotificationCard {
+        id: sharingCard
+        onImplicitHeightChanged: service.sharingPromptHeight = implicitHeight
+        Component.onCompleted: service.sharingPromptHeight = implicitHeight
+        width: parent.width
+        app: "Notifications"
+        summary: "Screen sharing is active"
+        body: "Snooze notifications while you share?"
+        actions: [{identifier:"snooze", text:"Snooze for 30 minutes"}, {identifier:"keep", text:"Keep notifications"}]
+        onCloseRequested: service.sharingOfferHandled = true
+        onHideRequested: service.sharingOfferHandled = true
+        onCardClicked: service.sharingOfferHandled = true
+        onActionRequested: function(identifier) {
+          service.sharingOfferHandled = true
+          if (identifier === "snooze") service.snoozeSource("*", 30)
+        }
+      }
     }
   }
 
@@ -1523,7 +1691,7 @@ Item {
         id: popupColumn
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: popupWindow.placement.margins.top + Style.space(8)
+        anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen ? service.sharingPromptHeight + Style.space(8) : 0)
         anchors.rightMargin: popupWindow.placement.margins.right + Style.space(8)
         width: Math.max(1,Math.min(Style.space(service.preferences.width),popupWindow.width - anchors.rightMargin - Style.space(8)))
         spacing: Style.space(8)
@@ -1570,6 +1738,10 @@ Item {
             timestamp: modelData.timestamp
             count: modelData.keys.length
             actions: JSON.parse(modelData.actionsJson || "[]")
+            offers: service.offersFor(modelData)
+            copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
+            snoozeAvailable: true
+            onFeatureRequested: function(kind, value) { service.featureAction(modelData, kind, value) }
             busy: !!service.busyKeys[modelData.key]
             error: service.actionErrors[modelData.key] || ""
             fontFamily: service.shell && service.shell.bar ? service.shell.bar.fontFamily : Style.font.family

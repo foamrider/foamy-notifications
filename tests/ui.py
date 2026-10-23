@@ -8,7 +8,7 @@ import tempfile
 source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-ui-'))
 app=base/'app';app.mkdir()
-(app/'Commons').symlink_to('/usr/share/omarchy/shell/Commons',target_is_directory=True)
+(app/'Commons').symlink_to(os.environ.get('OMARCHY_TEST_ROOT', '/usr/share/omarchy')+'/shell/Commons',target_is_directory=True)
 (app/'components').symlink_to(source/'components',target_is_directory=True)
 (app/'NotificationLogic.js').symlink_to(source/'NotificationLogic.js')
 test=(source/'tests/tst_card.qml').read_text().replace('import "../components"','import "components"').replace('Item {\n  width:', 'Item {\n  id: testRoot\n  property bool ready: false\n  Timer { interval: 400; running: true; onTriggered: testRoot.ready=true }\n  width:').replace('when: windowShown','when: testRoot.ready')
@@ -29,4 +29,4 @@ except subprocess.TimeoutExpired:
     os.killpg(process.pid,signal.SIGTERM);output=process.communicate(timeout=3)[0]
 print(output)
 # completedChanged runs before QtTest counts cleanupTestCase: sixteen tests plus init.
-assert process.returncode==0 and 'UI_RESULT 17 passed 0 failed' in output
+assert process.returncode==0 and 'UI_RESULT 19 passed 0 failed' in output

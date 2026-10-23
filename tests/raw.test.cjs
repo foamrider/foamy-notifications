@@ -6,7 +6,7 @@ const Logic = require('../NotificationLogic.js')
 const source = fs.readFileSync(require('node:path').join(__dirname, '../Service.qml'), 'utf8')
 function fixture(rows=[]) {
   const later=[], writes=[], cancelled=[]
-  const s=vm.createContext({NotificationLogic:Logic,NotificationUrgency:{Critical:2},
+  const s=vm.createContext({NotificationLogic:Logic,Features:require("./qml-js.cjs")("Features.js"),snoozes:{},NotificationUrgency:{Critical:2},
     liveRefs:{},liveKeys:{},retainedHistory:{},pendingNotifications:[],busyKeys:{},handledKeys:{},lifetimes:{},
     updateSignals:JSON.parse(source.match(/readonly property var updateSignals: (\[[\s\S]*?\])/)[1]),
     preferences:{monitor:'focused',suppressFullscreen:false},doNotDisturb:false,
@@ -18,7 +18,7 @@ function fixture(rows=[]) {
     reportPersistenceError:message=>writes.push({kind:'error',message}),rejectNotification:n=>{n.tracked=false},
     handleNotification:n=>writes.push({kind:'native',n})})
   s.service=s
-  for(const name of ['shouldBypassDnd','shouldArchiveSilenced','detachRawNotification','receiveDetachedSnapshot','handleDetachedSnapshot','receiveNotification','refreshPopup']) {
+  for(const name of ['isQuiet','shouldBypassDnd','shouldArchiveSilenced','detachRawNotification','receiveDetachedSnapshot','handleDetachedSnapshot','receiveNotification','refreshPopup']) {
     const start=source.indexOf('  function '+name+'(')
     vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),s)
   }

@@ -200,3 +200,28 @@ pixel buffers without command-line size limits. They exercise actual notificatio
 D-Bus traffic on a private bus and temporary home directory. Qt's offscreen platform cannot create layer-shell surfaces, so
 that test omits only the popup windows. Complete Wayland placement, hover, and
 fullscreen behavior must also be checked in a desktop session.
+
+### Omarchy 4.5 additions
+
+`offerSnoozeWhenSharing` (boolean, default `true`) controls the screen-sharing
+snooze prompt. It is also available in Notification Center's settings. Snoozes
+are bounded to 128 source entries and persist beside DND in `notifications.json`.
+The service keeps its existing file format on both Omarchy 4.0 and 4.5; it does
+not write stock 4.5's `live.json`, `history.json`, or `quiet.json` arrays.
+
+Verification-code detection, redaction, validated link buttons and the sender
+snooze control are built in. Copying needs the standard `wl-clipboard` tools;
+missing tools report a copy error without affecting notifications.
+
+Additional checks:
+
+```sh
+python3 tests/features-runtime.py
+python3 tests/clipboard_test.py
+```
+
+The feature runtime test starts a private D-Bus session and private PipeWire
+server, uses a fake clipboard, and keeps all state in temporary directories.
+Set `OMARCHY_TEST_ROOT` to an extracted Omarchy source tree to exercise its
+Commons/Ui components with `runtime.py`, `features-runtime.py`, `render.py`,
+and `ui.py`, without installing that release. This does not test a complete OS upgrade.

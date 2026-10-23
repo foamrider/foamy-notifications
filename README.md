@@ -1,13 +1,14 @@
 # Foamy Notifications
 
-Compact notification popups for Omarchy Quattro, styled to match
+Compact notification popups for Omarchy 4.5 and 4.0, styled to match
 [Foamy Notification Center](https://github.com/foamrider/foamy-notification-center).
 
 ![Foamy Notifications with sample messages, actions, and a critical alert](preview.png)
 
 ## Install
 
-Requires Omarchy Quattro, Quickshell, Python 3, and the standard Omarchy tools
+Targets Omarchy 4.5; basic delivery, history, actions and DND also work on 4.0.
+Requires Quickshell, Python 3, and the standard Omarchy tools
 (including `hyprctl` and `omarchy-shell`). Notification Center is optional.
 File-backed app icons and sender pictures also need `file` and ImageMagick 7
 (`magick`). Missing conversion tools keep the text, actions and icon fallback.
@@ -77,6 +78,20 @@ continue to work.
   enable **X removes from history** in the center's Foamy Notifications settings
   to remove the popup's whole duplicate group from history instead.
 - Exact duplicates share a card. Overflow goes to history.
+- The clock button snoozes that sender for 15 minutes, 30 minutes, 1 hour, or
+  4 hours. Browser notifications use the identified website. Snoozed arrivals
+  stay in history; expiry resumes new arrivals without replaying the backlog.
+- Detected verification codes have a copy button. New saved notifications with
+  a detected code become a redacted placeholder, including their sender metadata,
+  image paths and commands. Detection is heuristic; unrecognized codes are not redacted.
+  Copy uses the existing `wl-copy --sensitive` command and attempts to clear the clipboard
+  after 60 seconds while the service is running only when it still contains that code. Clipboard failures
+  leave the popup available with an error.
+- Explicit link/meeting buttons open validated HTTP(S) destinations. Normal
+  body clicks and sender actions keep their existing behavior. No links open automatically.
+- A Hyprland portal screen-sharing stream offers a 30-minute global snooze.
+  Nothing is muted automatically. If PipeWire or stream metadata is unavailable,
+  manual snooze and DND still work. Turn the prompt off in the center's settings.
 - Critical alerts have a colored edge and stay until dismissed by default.
   Enable **Do Not Disturb also silences critical alerts** in the center’s Foamy
   Notifications settings to send them directly to history during DND, including
@@ -106,7 +121,7 @@ Sender closure, successful handling, history dismissal/clearing, and disabling
 the center release callbacks. Replacements update the retained history entry.
 Browser or shell restarts cannot restore callbacks; unavailable actions still
 use the center's fixed image opener or app-focus fallback. The center preserves
-the standard Tensaku screenshot action as a fixed image-editing intent through
+standard Omasnap and legacy Tensaku screenshot actions as a fixed image-editing intent through
 expiry and reload.
 
 After durable history removal, the center calls `releaseHistory <keysCsv>`
@@ -114,6 +129,26 @@ After durable history removal, the center calls `releaseHistory <keysCsv>`
 The cutoff preserves notifications received after the clear request. Cleanup
 also covers visible popups and silenced notifications still being written.
 These cleanup calls are optional when using stock or older notifications.
+
+## Omarchy 4.5
+
+Foamy keeps its own popup engine and per-notification persistence on both versions.
+Only one notification daemon should run. The center also supports stock 4.5's
+array storage, so it can be used without Foamy Notifications. Switching to stock
+4.5 cleans up the old daemon's popup/history files; retain a backup before switching.
+The center's separate archive is not removed by that cleanup.
+
+The center's More options menu offers global snooze and resume. CLI equivalents:
+
+```sh
+omarchy-shell notifications snoozeAll 30
+omarchy-shell notifications unsnooze ""
+```
+
+`foamy.notifications state` reports snooze deadlines and screen-sharing state.
+Foamy's `snoozeAll` sets a timer; stock 4.5 toggles it. The center handles that
+small difference. Stock 4.0 has no timed snooze, so the center disables that menu.
+DND bypass rules also apply to snoozes; normal Omarchy action feedback still appears.
 
 ## Remove
 

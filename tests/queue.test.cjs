@@ -11,7 +11,7 @@ function load(state, name) {
   vm.runInContext(source.slice(start, source.indexOf('\n  }', start) + 4), state)
 }
 function fixture() {
-  const state = vm.createContext({NotificationLogic:Logic, popupFileQueue:[], helper:'/helper', lastError:'',
+  const state = vm.createContext({NotificationLogic:Logic,Features:require("./qml-js.cjs")("Features.js"), popupFileQueue:[], helper:'/helper', lastError:'',
     console:{warn(){}}, runNextPopupFileJob(){}})
   state.service = state
   for (const name of ['popupQueueLimit', 'popupWriteLimit', 'popupQueueByteLimit', 'popupWriteByteLimit', 'popupPayloadLimit'])

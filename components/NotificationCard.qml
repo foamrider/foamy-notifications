@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "../NotificationLogic.js" as Logic
 
 Rectangle {
@@ -27,6 +28,11 @@ Rectangle {
   property double timestamp: 0
   property int count: 1
   property var actions: []
+  property var offers: ({codes:"", link:"", meeting:false})
+  property bool snoozeAvailable: false
+  property string copiedCode: ""
+  property bool snoozeExpanded: false
+  signal featureRequested(string kind, string value)
   property bool busy: false
   property string error: ""
   property string fontFamily: Style.font.family
@@ -35,7 +41,7 @@ Rectangle {
   // Keep settings reachable without giving browser chrome a permanent action row.
   readonly property var primaryActions: actions.filter(function(a) { return a.identifier !== "settings" }).slice(0, 2)
   readonly property var overflowActions: actions.filter(function(a) { return primaryActions.indexOf(a) < 0 })
-  readonly property bool hovered: hover.hovered || actionsExpanded
+  readonly property bool hovered: hover.hovered || actionsExpanded || snoozeExpanded
   readonly property bool hasTitle: summary.trim().length > 0
   readonly property string smallIcon: {
     if (!appIcon) return ""
@@ -50,7 +56,7 @@ Rectangle {
   readonly property string contentImageSource: showImages ? safeImageSource : ""
   onActionsChanged: actionsExpanded = false
   onBusyChanged: if (busy) actionsExpanded = false
-  Keys.onEscapePressed: actionsExpanded = false
+  Keys.onEscapePressed: { actionsExpanded = false; snoozeExpanded = false }
   signal closeRequested()
   signal hideRequested()
   signal cardClicked()
@@ -58,9 +64,9 @@ Rectangle {
   implicitWidth: cardWidth
   implicitHeight: content.implicitHeight + 2
   radius: Style.cornerRadius * 2
-  color: urgency === 2 ? Qt.tint(Color.popups.background, Util.alpha(Color.urgent, 0.09)) : Color.popups.background
+  color: urgency === 2 ? Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.urgent, 0.09)) : Commons.Color.popups.background
   border.width: 1
-  border.color: Util.alpha(Color.popups.text, 0.18)
+  border.color: Util.alpha(Commons.Color.popups.text, 0.18)
   HoverHandler { id: hover }
   MouseArea {
     anchors.fill: parent
@@ -88,7 +94,7 @@ Rectangle {
         height: Math.max(parent.height, topLeftRadius * 2)
         topLeftRadius: Math.max(0, root.radius - root.border.width)
         topRightRadius: topLeftRadius
-        color: Qt.tint(Color.popups.background, Util.alpha(Color.popups.text, 0.055))
+        color: Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.popups.text, 0.055))
       }
       RowLayout {
         id: header
@@ -126,7 +132,7 @@ Rectangle {
             textFormat: Text.PlainText
             font.family: root.fontFamily
             font.pixelSize: Style.space(14)
-            color: root.urgency === 2 ? Color.urgent : Color.accent
+            color: root.urgency === 2 ? Commons.Color.urgent : Commons.Color.accent
           }
         }
         Text {
@@ -136,7 +142,7 @@ Rectangle {
           textFormat: Text.PlainText
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
-          color: Color.popups.text
+          color: Commons.Color.popups.text
           elide: Text.ElideRight
           maximumLineCount: 1
         }
@@ -145,7 +151,7 @@ Rectangle {
           text: "· " + root.count
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
-          color: Util.alpha(Color.popups.text, 0.65)
+          color: Util.alpha(Commons.Color.popups.text, 0.65)
         }
         Text {
           objectName: "notificationTime"
@@ -153,7 +159,7 @@ Rectangle {
           text: visible ? Qt.formatTime(new Date(root.timestamp), "hh:mm") : ""
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
-          color: Util.alpha(Color.popups.text, 0.65)
+          color: Util.alpha(Commons.Color.popups.text, 0.65)
         }
         Controls.AbstractButton {
           id: moreButton
@@ -163,9 +169,21 @@ Rectangle {
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
           Accessible.name: root.actionsExpanded ? "Hide more actions" : "Show more actions"
-          background: Rectangle { radius: Style.cornerRadius * 2; color: moreButton.hovered || root.actionsExpanded ? Util.alpha(Color.popups.text, 0.09) : "transparent" }
-          contentItem: Text { text: "⋯"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.title }
+          background: Rectangle { radius: Style.cornerRadius * 2; color: moreButton.hovered || root.actionsExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
+          contentItem: Text { text: "⋯"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.title }
           onClicked: root.actionsExpanded = !root.actionsExpanded
+        }
+        Controls.AbstractButton {
+          id: snoozeButton
+          objectName: "notificationSnooze"
+          visible: root.snoozeAvailable
+          Layout.preferredWidth: Style.space(24)
+          Layout.preferredHeight: Style.space(24)
+          enabled: !root.busy
+          Accessible.name: "Snooze this sender"
+          background: Rectangle { radius: Style.cornerRadius * 2; color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
+          contentItem: Text { text: "󰥔"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+          onClicked: root.snoozeExpanded = !root.snoozeExpanded
         }
         Controls.AbstractButton {
           id: closeButton
@@ -174,8 +192,8 @@ Rectangle {
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
           Accessible.name: "Dismiss notification"
-          background: Rectangle { radius: Style.cornerRadius * 2; color: closeButton.hovered ? Util.alpha(Color.popups.text, 0.09) : "transparent" }
-          contentItem: Text { text: "×"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Util.alpha(Color.popups.text, 0.7); font.family: root.fontFamily; font.pixelSize: Style.font.title }
+          background: Rectangle { radius: Style.cornerRadius * 2; color: closeButton.hovered ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
+          contentItem: Text { text: "×"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Util.alpha(Commons.Color.popups.text, 0.7); font.family: root.fontFamily; font.pixelSize: Style.font.title }
           onClicked: root.closeRequested()
         }
       }
@@ -195,7 +213,7 @@ Rectangle {
           Layout.preferredHeight: Style.space(root.imageSize)
           Layout.alignment: Qt.AlignTop
           visible: contentImage.status === Image.Ready
-          color: Util.alpha(Color.popups.text, 0.055)
+          color: Util.alpha(Commons.Color.popups.text, 0.055)
           radius: Style.cornerRadius * 2
           // Keep the mask layer stable while asynchronous loading and screen scaling settle.
           layer.enabled: true
@@ -228,7 +246,7 @@ Rectangle {
             textFormat: Text.PlainText
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
-            color: Color.popups.text
+            color: Commons.Color.popups.text
             wrapMode: Text.Wrap
             maximumLineCount: 2
             elide: Text.ElideRight
@@ -240,7 +258,7 @@ Rectangle {
             textFormat: Text.StyledText
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
-            color: Util.alpha(Color.popups.text, 0.75)
+            color: Util.alpha(Commons.Color.popups.text, 0.75)
             wrapMode: Text.Wrap
             maximumLineCount: 3
             elide: Text.ElideRight
@@ -262,12 +280,49 @@ Rectangle {
           }
         }
       }
+      Flow {
+        Layout.fillWidth: true
+        spacing: Style.space(5)
+        visible: !!root.offers.codes || !!root.offers.link
+        Repeater {
+          model: String(root.offers.codes || "").split(" ").filter(Boolean)
+          FeatureButton {
+            required property string modelData
+            objectName: "notificationCopyCode"
+            text: root.copiedCode === modelData ? "Copied " + modelData : "Copy " + modelData
+            width: Math.min(implicitWidth, parent.width)
+            onClicked: root.featureRequested("code", modelData)
+          }
+        }
+        FeatureButton {
+          objectName: "notificationOpenLink"
+          visible: !!root.offers.link
+          text: root.offers.meeting ? "Join meeting" : "Open link"
+          width: Math.min(implicitWidth, parent.width)
+          onClicked: root.featureRequested("link", root.offers.link)
+        }
+      }
+      Flow {
+        Layout.fillWidth: true
+        spacing: Style.space(5)
+        visible: root.snoozeExpanded
+        Repeater {
+          model: [15, 30, 60, 240]
+          FeatureButton {
+            required property int modelData
+            objectName: "notificationSnooze" + modelData
+            text: modelData < 60 ? modelData + " min" : (modelData / 60) + " h"
+            width: Math.min(implicitWidth, parent.width)
+            onClicked: { root.snoozeExpanded = false; root.featureRequested("snooze", String(modelData)) }
+          }
+        }
+      }
       // Expanding inside the card keeps the input region and popup stack in sync.
       ColumnLayout {
         Layout.fillWidth: true
         visible: root.actionsExpanded && root.overflowActions.length > 0
         spacing: Style.space(3)
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Util.alpha(Color.popups.text, 0.2) }
+        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Util.alpha(Commons.Color.popups.text, 0.2) }
         Repeater {
           model: root.overflowActions
           ActionButton {
@@ -283,7 +338,7 @@ Rectangle {
         visible: root.error.length > 0
         text: root.error
         textFormat: Text.PlainText
-        color: Color.urgent
+        color: Commons.Color.urgent
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         wrapMode: Text.Wrap
@@ -300,6 +355,31 @@ Rectangle {
     layer.enabled: true
   }
 
+  component FeatureButton: Controls.AbstractButton {
+    id: featureButton
+    implicitWidth: featureLabel.implicitWidth + Style.space(16)
+    implicitHeight: featureLabel.implicitHeight + Style.space(8)
+    enabled: !root.busy
+    Accessible.name: text
+    background: Rectangle {
+      radius: Style.cornerRadius * 2
+      color: Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.popups.text, featureButton.hovered || featureButton.activeFocus ? 0.12 : 0.04))
+      border.width: 1
+      border.color: featureButton.activeFocus ? Commons.Color.accent : Util.alpha(Commons.Color.popups.text, 0.2)
+    }
+    contentItem: Text {
+      id: featureLabel
+      text: featureButton.text
+      textFormat: Text.PlainText
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      color: Commons.Color.popups.text
+      horizontalAlignment: Text.AlignHCenter
+      verticalAlignment: Text.AlignVCenter
+      elide: Text.ElideRight
+    }
+  }
+
   component ActionButton: Controls.AbstractButton {
     id: actionButton
     required property var actionData
@@ -309,9 +389,9 @@ Rectangle {
     Accessible.name: actionData.text
     background: Rectangle {
       radius: Style.cornerRadius * 2
-      color: Qt.tint(Color.popups.background, Util.alpha(Color.popups.text, actionButton.hovered ? 0.1 : 0.04))
+      color: Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.popups.text, actionButton.hovered ? 0.1 : 0.04))
       border.width: 1
-      border.color: Util.alpha(Color.popups.text, 0.2)
+      border.color: Util.alpha(Commons.Color.popups.text, 0.2)
     }
     contentItem: Text {
       id: label
@@ -319,7 +399,7 @@ Rectangle {
       textFormat: Text.PlainText
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
-      color: Color.popups.text
+      color: Commons.Color.popups.text
       horizontalAlignment: Text.AlignHCenter
       verticalAlignment: Text.AlignVCenter
       elide: Text.ElideRight
@@ -337,14 +417,14 @@ Rectangle {
     height: 2
     visible: root.showTimeoutIndicator && root.timeoutMs > 0 && progress > 0
     readonly property real progress: root.timeoutProgress
-    color: Util.alpha(Color.accent, 0.55)
+    color: Util.alpha(Commons.Color.accent, 0.55)
     antialiasing: true
   }
   Canvas {
     id: urgentEdge
     visible: root.urgency === 2
     width: Math.max(curveRadius + 1, Style.space(3)); height: root.height
-    property color accent: Color.urgent
+    property color accent: Commons.Color.urgent
     property real curveRadius: Math.min(root.radius, root.width / 2, root.height / 2)
     onAccentChanged: requestPaint()
     onCurveRadiusChanged: requestPaint()

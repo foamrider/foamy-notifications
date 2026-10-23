@@ -4,7 +4,7 @@ from pathlib import Path
 if '--inside' not in sys.argv:
  raise SystemExit(subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=20).returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-native-motion-'));app=base/'app';app.mkdir();home=base/'home';home.mkdir()
-for n in ['Commons','Ui']:(app/n).symlink_to('/usr/share/omarchy/shell/'+n,target_is_directory=True)
+for n in ['Commons','Ui']:(app/n).symlink_to(os.environ.get('OMARCHY_TEST_ROOT','/usr/share/omarchy')+'/shell/'+n,target_is_directory=True)
 shutil.copytree(Path(__file__).resolve().parents[1],app/'plugin',ignore=shutil.ignore_patterns('.git','__pycache__'))
 p=app/'plugin/Service.qml';s=p.read_text();s=s.replace('  id: service','''  id: service
   property var surfaces: ({})

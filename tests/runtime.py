@@ -22,13 +22,13 @@ if '--inside' not in sys.argv:
     raise SystemExit(result.returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-runtime-'))
 app=base/'app';app.mkdir()
-(app/'Commons').symlink_to('/usr/share/omarchy/shell/Commons',target_is_directory=True)
-(app/'Ui').symlink_to('/usr/share/omarchy/shell/Ui',target_is_directory=True)
+(app/'Commons').symlink_to(os.environ.get('OMARCHY_TEST_ROOT', '/usr/share/omarchy')+'/shell/Commons',target_is_directory=True)
+(app/'Ui').symlink_to(os.environ.get('OMARCHY_TEST_ROOT', '/usr/share/omarchy')+'/shell/Ui',target_is_directory=True)
 # Offscreen Qt has no layer-shell backend. Keep the real service and D-Bus server,
 # with presentation tested independently by render.py and the installed desktop.
 shutil.copytree(SOURCE,app/'plugin',ignore=shutil.ignore_patterns('__pycache__'))
 service=(SOURCE/'Service.qml').read_text()
-service=service[:service.rfind('  Variants {')]+'}\n'
+service=service[:service.index('  Variants {')]+'}\n'
 service=service.replace('Quickshell.screens.map(function(s) { return s.name })', '["TEST-1"]')
 (app/'plugin/Service.qml').write_text(service)
 home=base/'home';home.mkdir()
