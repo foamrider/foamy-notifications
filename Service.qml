@@ -1648,10 +1648,10 @@ Item {
         onImplicitHeightChanged: service.sharingPromptHeight = implicitHeight
         Component.onCompleted: service.sharingPromptHeight = implicitHeight
         width: parent.width
-        app: "Notifications"
-        summary: "Screen sharing is active"
-        body: "Snooze notifications while you share?"
-        actions: [{identifier:"snooze", text:"Snooze for 30 minutes"}, {identifier:"keep", text:"Keep notifications"}]
+        app: FoamyI18n.t("Notifications")
+        summary: FoamyI18n.t("Screen sharing is active")
+        body: FoamyI18n.t("Snooze notifications while you share?")
+        actions: [{identifier:"snooze", text:FoamyI18n.t("Snooze for 30 minutes")}, {identifier:"keep", text:FoamyI18n.t("Keep notifications")}]
         onCloseRequested: service.sharingOfferHandled = true
         onHideRequested: service.sharingOfferHandled = true
         onCardClicked: service.sharingOfferHandled = true
@@ -1731,7 +1731,8 @@ Item {
             remainingMs: showTimeoutIndicator ? service.remainingFor(modelData) : 0
             showImages: service.preferences.showImages
             imageSize: service.preferences.imageSize
-            summary: modelData.summary
+            // Negative IDs identify the plugin-owned empty-history message.
+            summary: modelData.originalId < 0 ? FoamyI18n.t(modelData.summary) : modelData.summary
             body: modelData.body
             glyph: modelData.glyph
             urgency: modelData.urgency

@@ -9,6 +9,10 @@ source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-ui-'))
 app=base/'app';app.mkdir()
 (app/'Commons').symlink_to(os.environ.get('OMARCHY_TEST_ROOT', '/usr/share/omarchy')+'/shell/Commons',target_is_directory=True)
+# Include the plugin translator without registering unrelated fixture types.
+(app / 'FoamyI18n.qml').symlink_to(source / 'FoamyI18n.qml')
+(app / 'i18n').symlink_to(source / 'i18n', target_is_directory=True)
+(app / 'qmldir').write_text('singleton FoamyI18n 1.0 FoamyI18n.qml\n')
 (app/'components').symlink_to(source/'components',target_is_directory=True)
 (app/'NotificationLogic.js').symlink_to(source/'NotificationLogic.js')
 test=(source/'tests/tst_card.qml').read_text().replace('import "../components"','import "components"').replace('Item {\n  width:', 'Item {\n  id: testRoot\n  property bool ready: false\n  Timer { interval: 400; running: true; onTriggered: testRoot.ready=true }\n  width:').replace('when: windowShown','when: testRoot.ready')
@@ -21,6 +25,12 @@ import Quickshell
 ShellRoot { FloatingWindow { visible: true; implicitWidth: 500; implicitHeight: 400; CardTests {} } }
 ''')
 home=base/'home';home.mkdir();runtime=base/'runtime';runtime.mkdir(mode=0o700)
+# Register generated view types beside the explicit singleton in this fixture.
+with (app / 'qmldir').open('a') as registry:
+    for qml in app.glob('*.qml'):
+        if qml.name[0].isupper() and qml.name != 'FoamyI18n.qml':
+            registry.write(f'{qml.stem} 1.0 {qml.name}\n')
+
 env=dict(os.environ,HOME=str(home),XDG_RUNTIME_DIR=str(runtime),QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion')
 for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
 process=subprocess.Popen(['dbus-run-session','--','quickshell','-p',str(app),'--no-color'],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
