@@ -635,6 +635,7 @@ Item {
     keys.forEach(function(key) { service.releaseHistoryAction(key) })
     // Removing history while a popup is visible must not retain its callback later.
     removeKeys(keys, "historyDismissed")
+    deleteDeferredArchives(function(key) { return keys.indexOf(key) >= 0 })
     // The center removed these durably; Foamy drops its own copies (the center never deletes them).
     // The helper takes at most 100 keys per job.
     for (var i = 0; i < keys.length; i += 100) enqueueHelperJob("drop", {keys: keys.slice(i, i + 100)})
@@ -647,6 +648,7 @@ Item {
     })
     // Every eligible key: a retained callback left behind could rewrite the history dropped below.
     releaseHistoryKeys(keys)
+    deleteDeferredArchives(function(key) { return Number(key.split("-")[0]) <= timestamp })
     enqueueHelperJob("drop", {before: Math.floor(timestamp)})
   }
 
@@ -864,7 +866,7 @@ Item {
     if (centerEnabled) peer.call("foamy.notification-center.store", "peerChanged", [what])
   }
 
-  PeerIpc { id: peer }
+  FoamyPeerIpc { id: peer }
 
   function finishAction(key, error) {
     var busy = Object.assign({}, busyKeys); delete busy[key]; busyKeys = busy
@@ -1091,7 +1093,18 @@ Item {
     var keys = Object.keys(liveKeys).map(function(id) { return liveKeys[id] })
     Object.keys(retainedHistory).forEach(function(key) { service.releaseHistoryAction(key) })
     cancelPendingWrites(keys, true)
+    // A deferred archive would run after the clear and refill history.
+    deleteDeferredArchives(function() { return true })
     enqueueHelperJob("clear", {})
+  }
+
+  // Deferred archives (refused by a full queue) run once the queue drains, so
+  // after any history clear/drop queued meanwhile. Turn those of cleared keys
+  // into plain deletes: the popup is gone and its history was just removed.
+  function deleteDeferredArchives(matches) {
+    var next = Object.assign({}, deferredMoves), changed = false
+    for (var key in next) if (next[key] === "archive" && matches(key)) { next[key] = "delete"; changed = true }
+    if (changed) deferredMoves = next
   }
 
   // A restart can kill a job between its image copy and its JSON write.
@@ -1171,7 +1184,7 @@ Item {
         summary: "No recent notifications",
         body: "",
         image: "",
-        glyph: "󰂚",
+        glyph: "\u{f009a}",
         execArgv: "",
         execActions: "",
         urgency: NotificationUrgency.Low,
@@ -1706,10 +1719,25 @@ Item {
     return true
   }
 
+  // Whether an output draws this card: a fullscreen output (with fullscreen
+  // suppression) only shows critical cards when those are allowed through.
+  function showsGroupOn(name, group) {
+    if (targetMonitors.indexOf(name) < 0) return false
+    var fullscreen = preferences.suppressFullscreen && fullscreenMonitors.indexOf(name) >= 0
+    return !fullscreen || (group.urgency === 2 && preferences.fullscreenCritical)
+  }
+  function screenShowing(group) {
+    if (!group) return ""
+    for (var i = 0; i < targetMonitors.length; i++) if (showsGroupOn(targetMonitors[i], group)) return targetMonitors[i]
+    return ""
+  }
+  readonly property string keyboardScreen: keyboardMode ? screenShowing(groupFor(keyboardKey)) : ""
+
   function startKeyboard(key) {
-    if (!displayGroups.length) return false
+    var shown = displayGroups.filter(function(group) { return service.screenShowing(group) !== "" })
+    if (!shown.length) return false
     keyboardMode = true
-    keyboardKey = groupFor(key) ? key : displayGroups[0].key
+    keyboardKey = groupFor(key) && screenShowing(groupFor(key)) ? key : shown[0].key
     keyboardIdle.restart()
     return true
   }
@@ -1721,8 +1749,11 @@ Item {
   }
 
   function moveSelection(step) {
-    var index = displayGroups.findIndex(function(group) { return group.key === service.keyboardKey }) + step
-    if (index >= 0 && index < displayGroups.length) keyboardKey = displayGroups[index].key
+    // Only cards some output draws: the keyboard never lands on a hidden one.
+    for (var index = displayGroups.findIndex(function(group) { return group.key === service.keyboardKey }) + step;
+         index >= 0 && index < displayGroups.length; index += step) {
+      if (screenShowing(displayGroups[index])) { keyboardKey = displayGroups[index].key; return }
+    }
   }
 
   // True when the key was ours.
@@ -1863,12 +1894,12 @@ Item {
       required property var modelData
       screen: modelData
       readonly property bool selected: service.targetMonitors.indexOf(screen.name) >= 0
-      readonly property bool fullscreen: service.preferences.suppressFullscreen && service.fullscreenMonitors.indexOf(screen.name) >= 0
       // Keep the surface mapped until the final card finishes fading out.
       visible: selected && (popupColumn.groups.length > 0 || popupColumn.implicitHeight > 0)
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
-      readonly property bool takesKeyboard: service.keyboardMode && service.targetMonitors.length > 0 && service.targetMonitors[0] === screen.name
+      // The output that actually shows the selected card owns the keyboard.
+      readonly property bool takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name
       WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
@@ -1893,7 +1924,7 @@ Item {
         anchors.rightMargin: popupWindow.placement.margins.right + Style.space(8)
         width: Math.max(1,Math.min(Style.space(service.preferences.width),popupWindow.width - anchors.rightMargin - Style.space(8)))
         spacing: Style.space(8)
-        groups: service.displayGroups.filter(function(group) { return !popupWindow.fullscreen || (group.urgency === 2 && service.preferences.fullscreenCritical) })
+        groups: service.displayGroups.filter(function(group) { return service.showsGroupOn(popupWindow.screen.name, group) })
         onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)
         delegate:
           NotificationCard {

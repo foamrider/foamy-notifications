@@ -5,11 +5,11 @@ const Qt={Key_Escape:1,Key_Down:2,Key_J:3,Key_Tab:4,Key_Up:5,Key_K:6,Key_Backtab
 function fixture(groups) {
  const events=[]
  const s=vm.createContext({Qt,NotificationLogic:require('../NotificationLogic.js'),Features:{offers:row=>row.offers||{codes:'',link:''}},
-  displayGroups:groups,liveRefs:{},busyKeys:{},keyboardMode:false,keyboardKey:'',isRestoredRow:()=>false,
+  displayGroups:groups,targetMonitors:['A'],fullscreenMonitors:[],preferences:{suppressFullscreen:false,fullscreenCritical:true},liveRefs:{},busyKeys:{},keyboardMode:false,keyboardKey:'',isRestoredRow:()=>false,
   keyboardIdle:{restart(){},stop(){}},activateGroup:(g,id)=>events.push('activate:'+g.key+':'+id),
   featureAction:(g,k,v)=>events.push(k+':'+v),dismissGroup:(g,x)=>events.push('dismiss:'+g.key+':'+x)})
  s.service=s
- for(const name of ['groupFor','newestGroup','deedsFor','clickable','runDeed','actOnNewest','startKeyboard','stopKeyboard','moveSelection','keyboardPressed']) {
+ for(const name of ['showsGroupOn','screenShowing','groupFor','newestGroup','deedsFor','clickable','runDeed','actOnNewest','startKeyboard','stopKeyboard','moveSelection','keyboardPressed']) {
   const start=source.indexOf(`  function ${name}(`);assert.notEqual(start,-1,name)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),s)
  }
@@ -41,4 +41,15 @@ test('stock IPC methods and the shortcut entry point exist on the notifications 
   assert.ok(block.includes('function '+fn),fn)
  assert.ok(source.includes('  function runShortcut(method)'))
  assert.match(source,/FoamyIpc \{\s+id: ipcHandler\s+target: "notifications"/)
+})
+test('keyboard focus goes to an output that shows the card, never to a fullscreen one hiding it',()=>{
+ const f=fixture([card('2-2',{urgency:1}),card('1-1',{urgency:2})])
+ f.s.targetMonitors=['A','B'];f.s.preferences.suppressFullscreen=true;f.s.fullscreenMonitors=['A']
+ assert.equal(f.s.screenShowing(f.s.groupFor('2-2')),'B')
+ assert.equal(f.s.screenShowing(f.s.groupFor('1-1')),'A','critical cards stay on a fullscreen output when allowed')
+ f.s.fullscreenMonitors=['A','B']
+ assert.equal(f.s.startKeyboard(''),true);assert.equal(f.s.keyboardKey,'1-1','normal cards hidden everywhere are skipped')
+ f.s.keyboardPressed(Qt.Key_Up,'');assert.equal(f.s.keyboardKey,'1-1')
+ f.s.preferences.fullscreenCritical=false;f.s.stopKeyboard();assert.equal(f.s.startKeyboard(''),false)
+ assert.match(source,/takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name/)
 })

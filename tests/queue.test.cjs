@@ -201,3 +201,13 @@ test('live-source and compositor backlogs reject new native objects without exte
   assert.equal(s.pendingNotifications.length,100)
   assert.equal(errors.length,2)
 })
+
+test('a history clear turns deferred archives into deletes so they cannot refill history', () => {
+  const s = fixture()
+  load(s, 'deleteDeferredArchives')
+  s.deferredMoves = {'1-1':'archive','2-2':'delete','300-3':'archive'}
+  s.deleteDeferredArchives(key => Number(key.split('-')[0]) <= 100)
+  assert.deepEqual({...s.deferredMoves}, {'1-1':'delete','2-2':'delete','300-3':'archive'})
+  const clear = source.slice(source.indexOf('  function clearHistory('), source.indexOf('\n  }', source.indexOf('  function clearHistory(')))
+  assert.ok(clear.indexOf('deleteDeferredArchives') < clear.indexOf('enqueueHelperJob("clear"'))
+})

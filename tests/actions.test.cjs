@@ -2,12 +2,12 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const source=fs.readFileSync(path.join(__dirname,'../Service.qml'),'utf8')
 function fixture() {
  const jobs=[],events=[]
- const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
+ const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},deferredMoves:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
   NotificationLogic:{...require('../NotificationLogic.js')},isRestoredRow:()=>false,
   enqueueHelperJob:(op,data,done)=>jobs.push({command:op,done:done||null,payload:JSON.stringify(data)}),
   notifyCenter:()=>events.push('center'),removeKeys:()=>events.push('remove'),Util:{execArgv:()=>events.push('launch')}})
  state.service=state
- for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','dismissGroup','commitHandled','finishAction','pruneHandledKeys']) {
+ for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
