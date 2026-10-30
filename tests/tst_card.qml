@@ -44,7 +44,7 @@ Item {
       var footer=findChild(card,"notificationFooter"), copy=findChild(card,"notificationCopyCode"), link=findChild(card,"notificationOpenLink")
       compare(footer.width,card.width-2);compare(copy.width,link.width)
       compare(copy.height,34);compare(link.height,34)
-      compare(copy.y,link.y);compare(link.glyph,"󰏌")
+      compare(copy.y,link.y);compare(link.glyph,"\u{f03cc}")
       verify(Math.abs(footer.mapToItem(card,0,footer.height).y-(card.height-1))<1)
       for (var button of [copy,link]) {
         var label=findChild(button,"notificationFooterLabel")
@@ -55,7 +55,7 @@ Item {
       compare(feature.count,1);compare(feature.signalArguments[0][1],"482913")
       card.copiedCode="482913";waitForRendering(card)
       compare(findChild(card,"notificationCopyCode"),copy);verify(copy.activeFocus)
-      compare(copy.text,"Copied 482913");compare(copy.glyph,"󰄬");compare(copy.height,34)
+      compare(copy.text,"Copied 482913");compare(copy.glyph,"\u{f012c}");compare(copy.height,34)
       compare(opened.count,0)
       var before=hidden.count
       mouseClick(link,link.width/2,link.height/2,Qt.RightButton)

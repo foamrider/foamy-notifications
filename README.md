@@ -191,7 +191,7 @@ with `foamy.notifications storeInfo`, and answers `invokeDefault`,
 `preferences` and `setPreference` (Foamy writes its own `shell.json` entry). It
 appends handled keys to its `handled` journal before running a click command,
 then calls `foamy.notification-center.store handled` and `peerChanged`. The
-shared helper (`components/PeerIpc.qml`) answers in-process on 4.5 and falls back
+foamy-kit `FoamyPeerIpc` answers in-process on 4.5 and falls back
 to `omarchy-shell`. Shared files are listed in `tests/shared-files.sha256`.
 
 ## Remove

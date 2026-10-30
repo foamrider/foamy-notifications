@@ -61,7 +61,7 @@ Rectangle {
       if (deed.kind === "action") senders++
       out.push({kind: deed.kind, value: deed.value, number: i + 1,
         text: deed.kind === "link" ? (deed.meeting ? FoamyI18n.t("Join meeting") : FoamyI18n.t("Open link")) : deed.text,
-        glyph: deed.kind === "code" ? "󰆏" : deed.kind === "link" ? (deed.meeting ? "󰕧" : "󰏌") : deed.kind === "action" && deed.value === "reply" ? "󰑚" : ""})
+        glyph: deed.kind === "code" ? "\u{f018f}" : deed.kind === "link" ? (deed.meeting ? "\u{f0567}" : "\u{f03cc}") : deed.kind === "action" && deed.value === "reply" ? "\u{f045a}" : ""})
     }
     return out
   }
@@ -158,7 +158,7 @@ Rectangle {
           Text {
             anchors.centerIn: parent
             visible: icon.status !== Image.Ready && faviconIcon.status !== Image.Ready
-            text: root.glyph || "󰂚"
+            text: root.glyph || "\u{f009a}"
             textFormat: Text.PlainText
             font.family: root.glyphFamily
             font.pixelSize: FoamyStyle.font.title
@@ -195,7 +195,7 @@ Rectangle {
           enabled: !root.busy
           Accessible.name: FoamyI18n.t("Snooze this sender")
           background: Rectangle { radius: FoamyStyle.radius; color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(root.ink, 0.09) : "transparent" }
-          contentItem: Text { text: "󰥔"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: root.ink; font.family: root.glyphFamily; font.pixelSize: FoamyStyle.font.body }
+          contentItem: Text { text: "\u{f0954}"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: root.ink; font.family: root.glyphFamily; font.pixelSize: FoamyStyle.font.body }
           onClicked: root.snoozeExpanded = !root.snoozeExpanded
         }
         Text {
@@ -389,7 +389,7 @@ Rectangle {
     property bool roundLeft: false
     property bool roundRight: false
     readonly property bool copied: entry.kind === "code" && root.copiedCode === entry.value
-    readonly property string glyph: copied ? "󰄬" : entry.glyph
+    readonly property string glyph: copied ? "\u{f012c}" : entry.glyph
     readonly property string label: entry.kind === "code" ? (copied ? FoamyI18n.t("Copied %1", entry.value) : FoamyI18n.t("Copy %1", entry.value)) : entry.text
     // In keyboard mode the number key that presses it leads the label.
     text: root.selected && entry.number <= 9 ? FoamyI18n.number(entry.number) + "  " + label : label
