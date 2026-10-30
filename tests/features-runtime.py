@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import hostenv
 
 if '--inside' not in sys.argv:
     raise SystemExit(subprocess.run(['dbus-run-session', '--', sys.executable, __file__, '--inside', *sys.argv[1:]], timeout=30).returncode)
@@ -16,7 +17,7 @@ base = Path(tempfile.mkdtemp(prefix='foamy-features-runtime-'))
 app = base/'app'; app.mkdir()
 home = base/'home'; home.mkdir()
 runtime = base/'runtime'; runtime.mkdir(mode=0o700)
-host = Path(os.environ.get('OMARCHY_TEST_ROOT', '/usr/share/omarchy'))
+host = hostenv.root()
 for name in ['Commons', 'Ui']:
     (app/name).symlink_to(host/'shell'/name, target_is_directory=True)
 shutil.copytree(source, app/'plugin', ignore=shutil.ignore_patterns('.git', '__pycache__'))
@@ -49,7 +50,7 @@ cli=base/'bin';cli.mkdir()
 # The helper uses actual stdin and exit statuses; it cannot touch the real clipboard.
 (cli/'wl-copy').write_text('#!/bin/bash\n[[ ${1:-} == --sensitive ]] || exit 2\ncat > "$HOME/copied"\n')
 (cli/'wl-copy').chmod(0o755)
-env=dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home/'.config'), XDG_STATE_HOME=str(home/'.local/state'), XDG_RUNTIME_DIR=str(runtime), PATH=str(cli)+':'+os.environ['PATH'], OMARCHY_PATH=str(host), QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', QT_QPA_PLATFORMTHEME='basic')
+env=dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home/'.config'), XDG_STATE_HOME=str(home/'.local/state'), XDG_RUNTIME_DIR=str(runtime), QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', QT_QPA_PLATFORMTHEME='basic')
 for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
 if desktop:
     env['QT_QPA_PLATFORM'] = 'wayland'
@@ -66,6 +67,9 @@ context.modules = [
  { name = libpipewire-module-access args = { access.socket = { pipewire-0 = unrestricted } } }
 ]
 ''')
+# Host QML/data only: OMARCHY_PATH exposes shell/ and default/; omarchy-* are stubs.
+env.update(hostenv.make(base, app))
+env['PATH']=str(cli)+':'+env['PATH']
 log=(base/'runtime.log').open('w')
 pw=subprocess.Popen(['pipewire','-c',str(pw_config)],env=env,stdout=log,stderr=log,start_new_session=True)
 proc=None
@@ -123,3 +127,4 @@ finally:
     for child in [proc,pw]:
         if child and child.poll() is None:os.killpg(child.pid,signal.SIGTERM);child.wait(timeout=3)
     log.close();print('Evidence:',base)
+    hostenv.check(env, (base/'runtime.log').read_text(), (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')

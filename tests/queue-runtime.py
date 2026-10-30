@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import hostenv
 
 from gi.repository import Gio, GLib
 
@@ -16,7 +17,7 @@ if '--inside' not in sys.argv:
     raise SystemExit(subprocess.run(['dbus-run-session', '--', sys.executable, __file__, '--inside'], timeout=60).returncode)
 base = Path(tempfile.mkdtemp(prefix='foamy-popup-queue-'))
 app = base/'app'; app.mkdir()
-(app/'Commons').symlink_to('/usr/share/omarchy/shell/Commons', target_is_directory=True)
+(app/'Commons').symlink_to(hostenv.root()/'shell/Commons', target_is_directory=True)
 shutil.copytree(SOURCE, app/'plugin', ignore=shutil.ignore_patterns('.git', '__pycache__'))
 service = (SOURCE/'Service.qml').read_text()
 # Keep the real service/server/queue; presentation has separate desktop coverage.
@@ -61,6 +62,9 @@ env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home/'.config'), XDG_
            XDG_RUNTIME_DIR=str(runtime), PATH=str(cli)+':'+os.environ['PATH'], QT_QPA_PLATFORM='offscreen',
            QT_QUICK_BACKEND='software', QT_QPA_PLATFORMTHEME='basic', QT_STYLE_OVERRIDE='Fusion')
 for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']: env.pop(key, None)
+cli_path = env['PATH'].split(':')[0]
+env.update(hostenv.make(base, app))
+env['PATH'] = cli_path + ':' + env['PATH']
 log = (base/'runtime.log').open('w')
 process = subprocess.Popen(['quickshell','-p',str(app),'--no-color'], env=env, stdout=log, stderr=log, start_new_session=True)
 
@@ -215,4 +219,5 @@ finally:
     context_stall.unlink(missing_ok=True)
     if process.poll() is None: os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
     log.close()
+    hostenv.check(env, (base/'runtime.log').read_text(), (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')
     print('Runtime log:', base/'runtime.log')
