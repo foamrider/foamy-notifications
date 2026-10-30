@@ -134,4 +134,16 @@ class HelperTest(unittest.TestCase):
             self.assertEqual([r['ok'] for r in replies],[True,True,True,True,True,False])
             self.assertEqual([json.loads(l)['summary'] for l in replies[4]['out'].splitlines()],['B'])
 
+    def test_history_write_removes_the_stale_popup_copy(self):
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d}):
+            h.private_dirs()
+            image=h.base()/'images'/('5-5-image-'+'a'*64+'.png');image.write_bytes(b'png')
+            h.write({'entry':{'timestamp':5,'originalId':5,'summary':'Shown'}})
+            self.assertTrue((h.popups()/'5-5.json').exists())
+            # A queued update converted into a history write after the popup was dismissed.
+            h.write({'entry':{'timestamp':5,'originalId':5,'summary':'Updated'},'history':True})
+            self.assertFalse((h.popups()/'5-5.json').exists())
+            self.assertEqual(json.loads((h.history()/'5-5.json').read_text())['summary'],'Updated')
+            self.assertTrue(image.exists())
+
 if __name__=='__main__':unittest.main()

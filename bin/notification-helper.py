@@ -204,6 +204,10 @@ def write(data):
     target = history() if data.get('history') else popups()
     atomic(target/(key+'.json'), (json.dumps(entry,ensure_ascii=True)+'\n').encode())
     if data.get('history'):
+        # A history write means the popup is gone; an earlier (or in-flight) popup
+        # write for the same key must not survive to be restored after a restart.
+        # Images stay: the history entry references them.
+        (popups()/(key+'.json')).unlink(missing_ok=True)
         trim_history()
 
     if 'sources' in data:
