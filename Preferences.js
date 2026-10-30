@@ -53,7 +53,8 @@ function duration(settings, urgency, requested) {
 }
 function groupKey(row) {
   // Different click targets must never merge, even if their visible text matches.
-  return JSON.stringify([row.app,row.desktopEntry,row.summary,row.body,row.appIcon,row.image,row.urgency,row.execArgv,row.actionsJson])
+  // execActions too: --action buttons with different targets are different click targets.
+  return JSON.stringify([row.app,row.desktopEntry,row.summary,row.body,row.appIcon,row.image,row.urgency,row.execArgv,row.execActions || "",row.actionsJson])
 }
 function groups(rows, enabled, browserGrouping, browserIdentity) {
   browserIdentity = browserIdentity || (typeof require === "function" ? require("./BrowserIdentity.js") : null)

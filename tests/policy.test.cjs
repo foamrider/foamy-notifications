@@ -114,3 +114,10 @@ test('omarchy-actions hint becomes up to three structured --action buttons, numb
  assert.equal(L.popupEntry({...snap,execActions:'garbage'},1).execActions,'');
  assert.equal(L.popupEntry(snap,1).execActions,snap.execActions);
 });
+test('duplicates with different --action targets stay separate cards',()=>{
+ const base={originalId:1,timestamp:1,app:'Recorder',summary:'Saved',body:'',appIcon:'',image:'',urgency:1,execArgv:'',actionsJson:'[]'}
+ const a={...base,execActions:JSON.stringify([{label:'Open',argv:['mpv','/tmp/a.mp4']}])}
+ const b={...base,originalId:2,timestamp:2,execActions:JSON.stringify([{label:'Open',argv:['mpv','/tmp/b.mp4']}])}
+ assert.equal(P.groups([a,b],true,'browser',{browser:()=>false,hostname:()=>''}).length,2)
+ assert.equal(P.groups([a,{...a,originalId:3,timestamp:3}],true,'browser',{browser:()=>false,hostname:()=>''}).length,1)
+});
