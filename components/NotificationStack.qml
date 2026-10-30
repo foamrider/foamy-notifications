@@ -1,4 +1,5 @@
 import QtQuick
+import "../kit"
 
 ListView {
   id: root
@@ -14,7 +15,7 @@ ListView {
   HoverHandler { id: pointer }
   ListModel { id: entries }
   removeDisplaced: Transition {
-    NumberAnimation { properties: "y"; duration: 140; easing.type: Easing.OutCubic }
+    NumberAnimation { properties: "y"; duration: FoamyMotion.slider; easing.type: Easing.OutCubic }
   }
   onGroupsChanged: Qt.callLater(reconcile)
   Component.onCompleted: reconcile()

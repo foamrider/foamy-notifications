@@ -10,6 +10,7 @@ import Quickshell.Services.Pipewire
 import Quickshell.Services.Notifications
 import qs.Commons
 
+import "kit"
 import "components"
 import "NotificationLogic.js" as NotificationLogic
 import "Features.js" as Features
@@ -25,27 +26,24 @@ Item {
 
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   readonly property string home: Quickshell.env("HOME")
-  // History + DND live under XDG_STATE_HOME: they're persistent user state
-  // (the notifications received, the last-set DND preference), not
-  // regeneratable cache that a `rm -rf ~/.cache` should wipe.
-  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/omarchy/"
-  readonly property string settingsPath: stateDir + "notifications.json"
-  // One file per on-screen popup, so live toasts survive shell restarts.
-  // A file exists exactly as long as its popup is showing: written when the
-  // toast appears, moved into historyDir when it expires, is dismissed, or is
-  // acted upon.
-  readonly property string popupStateDir: stateDir + "notifications/"
-  // The notifications that already left the screen, one file each, trimmed to
-  // the newest historyLimit. This directory IS the history: `showHistory`
-  // replays exactly what has been moved in here.
-  readonly property string historyDir: popupStateDir + "history/"
-  // Copies of the avatars/images persisted entries reference — the sender's
-  // originals don't outlive the notification (see persistablePopup). Each
-  // copy lives and dies with the JSON file whose stem it carries.
-  readonly property string imagesDir: popupStateDir + "images/"
-  // Corner radius is shared with the menu and shell panels.
-  // It uses twice Hyprland's current decoration:rounding value.
-  readonly property int cornerRadius: Style.cornerRadius * 2
+  // Foamy keeps its own state directory. Omarchy 4.5 owns omarchy/notifications
+  // (its upgrade migration deletes the 4.0 per-file layout found there), so the
+  // helper moves Foamy's old files here once, before anything reads them.
+  // Layout and IPC contract: README "Notification Center contract".
+  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/foamy-notifications/"
+  readonly property string settingsPath: stateDir + "state.json"
+  // One file per on-screen popup, written when the toast appears and moved
+  // into historyDir when it expires or is dismissed; handled ones are removed.
+  readonly property string popupStateDir: stateDir + "popups/"
+  // The notifications that already left the screen, newest historyLimit.
+  readonly property string historyDir: stateDir + "history/"
+  // Normalized copies of the images persisted entries reference.
+  readonly property string imagesDir: stateDir + "images/"
+  // Keys handled here (clicked/acted on), newest last; the center reads it.
+  readonly property string handledPath: stateDir + "handled"
+  // True once the one-time migration ran and live popups were restored.
+  property bool stateMigrated: false
+  property bool storeReady: false
   // Toasts are fixed to the top-right corner. They only clear the omarchy bar
   // when the bar occupies the top or right edge, so left/bottom bars do not
   // pull notification popups away from the expected top-right location.
@@ -54,7 +52,14 @@ Item {
   readonly property string barPosition: shell && shell.barConfig ? String(shell.barConfig.position || "top") : "top"
   readonly property bool barVertical: barPosition === "left" || barPosition === "right"
   readonly property int defaultBarSize: barVertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
-  readonly property int liveBarSize: shell && shell.bar && !shell.bar.barHidden ? Math.max(0, shell.bar.barSize) : defaultBarSize
+  readonly property int liveBarSize: {
+    var bar = shell && shell.bar ? shell.bar : null
+    if (!bar) return defaultBarSize
+    if (bar.barHidden) return 0
+    // 4.5: a notch can thicken the bar on one screen; 4.0 has barSize only.
+    var size = Number(typeof bar.barSizeFor === "function" ? bar.barSizeFor(service.focusedMonitor) : bar.barSize)
+    return isFinite(size) && size > 0 ? size : defaultBarSize
+  }
   readonly property int barClearance: liveBarSize + Style.gapsOut
 
   // Live Notification objects by originalId, kept OUT of the ListModels: a
@@ -131,7 +136,7 @@ Item {
     }
     onLoadFailed: service.configError = "Cannot read notification settings; using last valid settings"
   }
-  onPreferencesChanged: { scheduleRebuild(); refreshContext() }
+  onPreferencesChanged: { scheduleRebuild(); refreshContext(); pokeCenter("preferences") }
 
   // DND bypass: only let through notifications we trust to be intentional
   // and rare.
@@ -212,6 +217,7 @@ Item {
       if (snoozeSource(Features.source(row), value) !== "ok") finishAction(row.key, "Could not snooze this sender. Resume an existing snooze and try again.")
       return
     }
+    if (kind === "exec") { runExecAction(row, Number(value)); return }
     var offers = Features.offers(row)
     if (kind === "code" && offers.codes.split(" ").indexOf(value) >= 0) {
       if (clipboardProc.running) { finishAction(row.key, "Clipboard is busy. Try again."); return }
@@ -222,6 +228,20 @@ Item {
     } else if (kind === "link" && value === offers.link && Security.safeHttpUrl(value)) {
       if (!Qt.openUrlExternally(Security.safeHttpUrl(value))) finishAction(row.key, "Could not open the link. Try again.")
     }
+  }
+
+  // An omarchy-notification-send --action button. Its argv runs like the click
+  // command: handling is persisted first, because the command may restart the shell.
+  function runExecAction(group, index) {
+    var actions = Security.parseExecActions(group.execActions)
+    if (!actions || !(index >= 0 && index < actions.length)) { finishAction(group.key, "This action is no longer available."); return }
+    var row = Object.assign({}, group)
+    var keys = group.keys.slice()
+    var busy = Object.assign({}, busyKeys); busy[row.key] = true; busyKeys = busy
+    actionErrors = ({})
+    lastError = ""
+    var argv = actions[index].argv
+    commitHandled(row, keys, function() { Util.execArgv(argv) })
   }
 
   property string clipboardSecret: ""
@@ -374,7 +394,8 @@ Item {
       if (shouldArchiveSilenced(snapshot)) writeHistoryFile(snapshot)
       return
     }
-    if (!persistPopupFile(snapshot)) return
+    // Persistence degrades, display does not: a rejected write is reported and the toast still shows.
+    persistPopupFile(snapshot)
     Qt.callLater(function() {
       removePopupsByOriginalId(snapshot.originalId, NotificationLogic.popupFileName(snapshot))
       popupModel.insert(0, snapshot)
@@ -433,10 +454,8 @@ Item {
       return
     }
 
-    if (!persistPopupFile(snapshot)) {
-      releaseSilenced(notification, snapshot.originalId)
-      return
-    }
+    // A full persistence queue only costs restart survival; the popup still shows.
+    persistPopupFile(snapshot)
     watchForUpdates(notification, snapshot)
     // Qt.callLater avoids "QV4::Object::insertMember" crashes when a
     // Repeater is mid-incubation while we mutate its model.
@@ -616,6 +635,8 @@ Item {
     keys.forEach(function(key) { service.releaseHistoryAction(key) })
     // Removing history while a popup is visible must not retain its callback later.
     removeKeys(keys, "historyDismissed")
+    // The center removed these durably; Foamy drops its own copies (the center never deletes them).
+    enqueueHelperJob("drop", {keys: keys})
   }
 
   function releaseHistoryBefore(timestamp) {
@@ -623,7 +644,8 @@ Item {
     var keys = Object.keys(liveKeys).map(function(id) { return liveKeys[id] }).filter(function(key) {
       return Number(key.split("-")[0]) <= timestamp
     })
-    releaseHistoryKeys(keys)
+    releaseHistoryKeys(keys.slice(0, 100))
+    enqueueHelperJob("drop", {before: Math.floor(timestamp)})
   }
 
   // A restored row carries an id from the previous server generation, and
@@ -796,33 +818,51 @@ Item {
     var invoked = invokeLiveAction(row, identifier)
     if (invoked) commitHandled(row, keys)
     else if (identifier === "default") {
-      enqueuePopupFileJob(["python3", helper, "focus"], function(focused) {
+      enqueueHelperJob("focus", {app:row.app, desktopEntry:row.desktopEntry, body:row.body, mappings:preferences.browserMappings}, function(focused) {
         // Failed focus must leave both popup persistence and center history retryable.
         if (focused) service.commitHandled(row, keys)
         else service.finishAction(row.key, "Could not identify the window. Configure browserMappings or dismiss this popup.")
-      }, JSON.stringify({app:row.app, desktopEntry:row.desktopEntry, body:row.body, mappings:preferences.browserMappings}))
+      })
     } else finishAction(row.key, "This action is no longer available.")
   }
 
   function commitHandled(row, keys, beforeDismiss) {
-    enqueuePopupFileJob(["python3", helper, "forget"], function(ok) {
+    enqueueHelperJob("forget", {keys: keys}, function(ok) {
       if (!ok) { service.finishAction(row.key, "Could not remove this notification from history. Try again."); return }
       // Keep prior writes on failure; only durable handling may cancel later snapshots.
       service.cancelPendingWrites(keys)
       keys.forEach(function(key) { service.handledKeys[key] = true })
+      service.pruneHandledKeys()
       service.notifyCenter(keys)
       if (beforeDismiss) beforeDismiss()
       service.removeKeys(keys, "handled")
       keys.forEach(function(key) { service.releaseHistoryAction(key) })
       service.finishAction(row.key, "")
-    }, JSON.stringify({keys:keys}))
+    })
   }
 
+  // handledKeys guards late refreshes of handled rows; keep the newest only.
+  function pruneHandledKeys() {
+    var keys = Object.keys(handledKeys)
+    if (keys.length <= 512) return
+    keys.sort(function(a, b) { return Number(a.split("-")[0]) - Number(b.split("-")[0]) })
+    var next = ({})
+    keys.slice(-256).forEach(function(key) { next[key] = true })
+    handledKeys = next
+  }
+
+  // The handled journal is already durable (helper `forget`); this only updates
+  // the center's list now. Contract: README "Notification Center contract".
   function notifyCenter(keys) {
     if (!centerEnabled) return
-    // Public IPC updates the in-memory badge; the helper already committed disk tombstones.
-    enqueuePopupFileJob(["omarchy-shell", "foamy.notification-center.store", "handled", keys.join(",")])
+    peer.call("foamy.notification-center.store", "handled", [keys.join(",")])
   }
+
+  function pokeCenter(what) {
+    if (centerEnabled) peer.call("foamy.notification-center.store", "peerChanged", [what])
+  }
+
+  PeerIpc { id: peer }
 
   function finishAction(key, error) {
     var busy = Object.assign({}, busyKeys); delete busy[key]; busyKeys = busy
@@ -834,12 +874,6 @@ Item {
   function removeKeys(keys, reason) {
     for (var i = popupModel.count - 1; i >= 0; i--)
       if (keys.indexOf(NotificationLogic.imageStem(popupModel.get(i))) >= 0) removePopup(i, reason)
-  }
-
-  Process {
-    id: ensureDirsProc
-    command: ["mkdir", "-p", service.stateDir, service.popupStateDir, service.historyDir, service.imagesDir]
-    running: false
   }
 
   // ---------------------------------------------------- popup persistence
@@ -856,12 +890,10 @@ Item {
   // match these rows against fresh notifications.
   property var restoredPopups: ({})
 
-  // Entries are either { command, done } for a file job or { read: true } for
-  // a replay's directory read. Queueing the read rather than running it beside
-  // the queue is what makes it a barrier: it takes its place in line, so the
-  // history it sees is the one that existed when the replay was asked for.
-  // Everything queued after it — a clear, an archive, a silenced write — waits
-  // for it, and no amount of later traffic can push it back.
+  // Jobs are { op, payload, done } for the long-lived helper (`serve`): one
+  // python process for the whole session, fed newline-delimited JSON, one job
+  // in flight. Reads are jobs too, so a replay sees the history that existed
+  // when it was asked for: everything queued after it waits for it.
   property var popupFileQueue: []
   readonly property int popupQueueLimit: 128
   readonly property int popupWriteLimit: 64
@@ -869,26 +901,22 @@ Item {
   readonly property int popupWriteByteLimit: 786432
   readonly property int popupPayloadLimit: 131072
 
-  // Done callback of the job popupFileProc is currently running.
-  property var runningPopupFileJobDone: null
-  property string runningPayload: ""
+  property var runningJob: null
+  property double nextJobId: 0
   property bool runningImageWrite: false
 
   function rejectPopupFileJob(job, message) {
     reportPersistenceError(message)
-    if (job.done) job.done(false)
+    if (job.done) job.done(false, "")
     return false
   }
 
   function enqueuePopupJob(job) {
-    var payload = job.payload || ""
+    var payload = job.payload || "{}"
     // Bound before copying the queue. UTF-8 accounts for escaped and non-ASCII sender data.
     if (payload.length > popupPayloadLimit || NotificationLogic.utf8Bytes(payload) > popupPayloadLimit)
       return rejectPopupFileJob(job, "Notification operation exceeds the 128 KiB payload limit")
-    var command = JSON.stringify(job.command || [])
-    if (command.length > 8192 || NotificationLogic.utf8Bytes(command) > 8192)
-      return rejectPopupFileJob(job, "Notification operation exceeds the command limit")
-    job.bytes = NotificationLogic.utf8Bytes(payload) + NotificationLogic.utf8Bytes(command)
+    job.bytes = NotificationLogic.utf8Bytes(payload) + 64
     var queue = popupFileQueue.slice()
     var last = queue.length ? queue[queue.length - 1] : null
     // Callback-bearing writes, reads, actions and cleanup remain ordering barriers.
@@ -910,10 +938,9 @@ Item {
     return true
   }
 
-  function enqueuePopupFileJob(command, done, payload, replaceKey, historyWrite) {
-    return enqueuePopupJob({command:command, done:done || null, payload:payload || "",
-      replaceKey:replaceKey || "", historyWrite:!!historyWrite,
-      writeKey:command[1] === helper && command[2] === "write" ? replaceKey : ""})
+  function enqueueHelperJob(op, data, done, replaceKey, historyWrite) {
+    return enqueuePopupJob({op:op, payload:JSON.stringify(data || {}), done:done || null,
+      replaceKey:replaceKey || "", historyWrite:!!historyWrite, writeKey:op === "write" ? (replaceKey || "") : ""})
   }
 
   function cancelPendingWrites(keys, historyOnly) {
@@ -925,79 +952,75 @@ Item {
     }
     // Remove references before callbacks run, so release/re-entrancy cannot revisit a cancelled job.
     popupFileQueue = kept
-    for (var c = 0; c < cancelled.length; c++) if (cancelled[c].done) cancelled[c].done(false)
+    for (var c = 0; c < cancelled.length; c++) if (cancelled[c].done) cancelled[c].done(false, "")
     runNextPopupFileJob()
   }
 
-  function enqueueHistoryRead() {
-    return enqueuePopupJob({read:true})
-  }
-
   function runNextPopupFileJob() {
-    if (readHistoryProc.running || restorePopupsProc.running || popupFileProc.running) return
-    if (popupFileQueue.length === 0) return
-
+    if (!runningJob && popupFileQueue.length === 0 && Object.keys(deferredMoves).length) {
+      var moves = deferredMoves, archive = [], remove = []
+      deferredMoves = ({})
+      for (var key in moves) (moves[key] === "delete" ? remove : archive).push(key)
+      var batch = []
+      if (archive.length) batch.push({op:"archive", payload:JSON.stringify({keys:archive}), bytes:0})
+      if (remove.length) batch.push({op:"delete", payload:JSON.stringify({keys:remove}), bytes:0})
+      popupFileQueue = batch
+    }
+    if (runningJob || popupFileQueue.length === 0) return
+    if (!helperProc.running) { if (!helperRestart.running) helperRestart.start(); return }
     var job = popupFileQueue[0]
     popupFileQueue = popupFileQueue.slice(1)
+    job.id = ++nextJobId
+    runningJob = job
+    runningImageWrite = job.op === "write" && !!job.replaceKey && !job.historyWrite
+    helperProc.write('{"id":' + job.id + ',"op":' + JSON.stringify(job.op) + ',"data":' + job.payload + '}\n')
+  }
 
-    if (job.restore) {
-      restorePopupsProc.command = ["python3", helper, "read"]
-      restorePopupsProc.running = true
-      return
+  function helperReplied(line) {
+    var reply
+    try { reply = JSON.parse(line) } catch (e) { console.warn("foamy.notifications: invalid helper reply"); return }
+    var job = runningJob
+    if (!job || reply.id !== job.id) return
+    runningJob = null
+    var ok = reply.ok === true
+    var out = String(reply.out || "")
+    if (!ok) { lastError = "Notification operation failed: " + String(reply.error || ""); console.warn(lastError) }
+    if (ok && runningImageWrite) {
+      try { acceptNormalizedImages(JSON.parse(out)) }
+      catch (e) { lastError = "Invalid notification image result"; console.warn(lastError) }
     }
-
-    if (job.read) {
-      startHistoryRead()
-      return
+    runningImageWrite = false
+    if (job.done) {
+      try { job.done(ok, out) } catch (e) { console.warn("notifications: file job callback failed:", e) }
     }
-
-    runningImageWrite = job.command[1] === helper && job.command[2] === "write" && !!job.replaceKey && !job.historyWrite
-    runningPayload = job.payload || ""
-    popupFileProc.command = job.command
-    service.runningPopupFileJobDone = job.done || null
-    popupFileProc.stdinEnabled = true
-    popupFileProc.running = true
+    runNextPopupFileJob()
   }
 
   Process {
-    id: popupFileProc
+    id: helperProc
+    command: ["python3", "-I", service.helper, "serve"]
     running: false
     stdinEnabled: true
-    onStarted: {
-      if (service.runningPayload) write(service.runningPayload)
-      service.runningPayload = ""
-      stdinEnabled = false
-    }
-    stdout: StdioCollector { id: fileResult }
-    stderr: StdioCollector { id: fileErrors }
+    stdout: SplitParser { onRead: function(line) { service.helperReplied(line) } }
+    stderr: SplitParser { onRead: function(line) { if (String(line).trim()) console.warn(String(line).trim()) } }
+    onRunningChanged: if (running) service.runNextPopupFileJob()
     onExited: function(exitCode, exitStatus) {
-      var ok = exitCode === 0 && exitStatus === 0
-      if (!ok) { service.lastError = "Notification operation failed: " + fileErrors.text.trim(); console.warn(service.lastError) }
-      if (ok && service.runningImageWrite) {
-        try { service.acceptNormalizedImages(JSON.parse(fileResult.text)) }
-        catch (e) { service.lastError = "Invalid notification image result"; console.warn(service.lastError) }
-      }
-      if (ok && fileErrors.text.trim()) console.warn(fileErrors.text.trim())
-      var done = service.runningPopupFileJobDone
-      service.runningPopupFileJobDone = null
-      service.runningPayload = ""
-      if (done) {
-        try {
-          done(ok)
-        } catch (e) {
-          console.warn("notifications: file job callback failed:", e)
-        }
-      }
-      service.runNextPopupFileJob()
+      var job = service.runningJob
+      service.runningJob = null
+      service.runningImageWrite = false
+      service.reportPersistenceError("Notification helper stopped; restarting it")
+      if (job && job.done) { try { job.done(false, "") } catch (e) {} }
+      helperRestart.start()
     }
   }
+  Timer { id: helperRestart; interval: 1000; onTriggered: if (!helperProc.running) helperProc.running = true }
 
   function persistPopupFile(snapshot) {
     var safeSnapshot = Features.redact(snapshot)
     var persistable = NotificationLogic.persistablePopup(safeSnapshot, imagesDir)
     var version = ++nextImageWriteVersion
     imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
-    var accepted = enqueuePopupFileJob(["python3", helper, "write"], null, JSON.stringify({entry:persistable.entry, copies:persistable.copies, imageVersion:version, sources:{appIcon:String(safeSnapshot.appIcon || ""), image:String(safeSnapshot.image || "")}}), NotificationLogic.imageStem(snapshot))
+    var accepted = enqueueHelperJob("write", {entry:persistable.entry, copies:persistable.copies, imageVersion:version, sources:{appIcon:String(safeSnapshot.appIcon || ""), image:String(safeSnapshot.image || "")}}, null, NotificationLogic.imageStem(snapshot))
     if (!accepted) delete imageWriteVersions[NotificationLogic.imageStem(snapshot)]
     return accepted
   }
@@ -1005,11 +1028,20 @@ Item {
   function deletePopupFileFor(row) {
     if (!row) return
     cancelPendingWrites([NotificationLogic.imageStem(row)])
-    // History replays and the "no recent notifications" placeholder never
-    // had a file — rm -f on the computed paths is a harmless no-op there.
-    enqueuePopupFileJob(["bash", "-c",
-      "rm -f \"$1/$2.json\" \"$3/$2\"-*", "--",
-      popupStateDir, NotificationLogic.imageStem(row), imagesDir])
+    // History replays and the placeholder never had a file; the delete is a no-op there.
+    var key = NotificationLogic.imageStem(row)
+    if (!enqueueHelperJob("delete", {key: key})) deferMove(key, "delete")
+  }
+
+  // Moves and deletes refused by a full queue (a sender flood) are not lost:
+  // they run as one batched job once the queue drains. Bounded; anything past
+  // the bound is archived by the restore age check on the next start.
+  property var deferredMoves: ({})
+  function deferMove(key, op) {
+    if (!deferredMoves[key] && Object.keys(deferredMoves).length >= 2048) return
+    var next = Object.assign({}, deferredMoves)
+    next[key] = op
+    deferredMoves = next
   }
 
   // ---------------------------------------------------- history
@@ -1019,24 +1051,26 @@ Item {
   // job: the names sort numerically by their leading millisecond timestamp,
   // so everything but the newest historyLimit files is the tail to drop,
   // image copies included. Callers set $hist, $limit and $imgs first.
-  readonly property string trimHistoryScript:
-    "ls -1 \"$hist\" 2>/dev/null | sort -n | head -n \"-$limit\" | while IFS= read -r stale; do rm -f \"$hist/$stale\" \"$imgs/${stale%.json}\"-*; done"
-
   function archivePopupFileFor(row) {
     if (!row) return
-    // A history replay or the empty-history placeholder has no file to move;
-    // the failed mv leaves the history untouched, trimming included. Image
-    // copies stay put — live and archived entries share imagesDir.
-    enqueuePopupFileJob(["bash", "-c",
-      "mkdir -p \"$1\" || exit 0\n" +
-      "hist=\"$1\" limit=\"$2\" imgs=\"$5\"\n" +
-      "mv -f \"$4/$3\" \"$1/$3\" 2>/dev/null || exit 0\n" +
-      trimHistoryScript, "--",
-      historyDir,
-      String(historyLimit),
-      NotificationLogic.popupFileName(row),
-      popupStateDir,
-      imagesDir])
+    var key = NotificationLogic.imageStem(row)
+    // Its popup write has not run yet: write it straight into history instead,
+    // so a flood never leaves a popup file behind and needs no second job.
+    var converted = false
+    for (var i = 0; i < popupFileQueue.length; i++) {
+      var job = popupFileQueue[i]
+      if (job.op !== "write" || job.writeKey !== key || job.historyWrite) continue
+      var data = JSON.parse(job.payload)
+      data.history = true
+      delete data.sources
+      delete data.imageVersion
+      job.payload = JSON.stringify(data)
+      job.historyWrite = true
+      converted = true
+    }
+    if (converted) return
+    // A replay or the placeholder has no file to move; the helper tolerates that.
+    if (!enqueueHelperJob("archive", {key: key})) deferMove(key, "archive")
   }
 
   // Record a notification that never made it to the screen (DND silenced it),
@@ -1048,48 +1082,20 @@ Item {
   function writeHistoryFile(entry, done) {
     if (!entry) { if (done) done(true); return }
     var persistable = NotificationLogic.persistablePopup(Features.redact(entry), imagesDir)
-    return enqueuePopupFileJob(["python3", helper, "write"], done, JSON.stringify({entry:persistable.entry, copies:persistable.copies, history:true}), NotificationLogic.imageStem(entry), true)
+    return enqueueHelperJob("write", {entry:persistable.entry, copies:persistable.copies, history:true}, done, NotificationLogic.imageStem(entry), true)
   }
 
   function clearHistory() {
     var keys = Object.keys(liveKeys).map(function(id) { return liveKeys[id] })
     Object.keys(retainedHistory).forEach(function(key) { service.releaseHistoryAction(key) })
     cancelPendingWrites(keys, true)
-    enqueuePopupFileJob(["bash", "-c",
-      "for f in \"$1\"/*.json; do\n" +
-      "  [[ -e $f ]] || continue\n" +
-      "  stale=\"${f##*/}\"\n" +
-      "  rm -f \"$f\" \"$2/${stale%.json}\"-*\n" +
-      "done", "--", historyDir, imagesDir])
+    enqueueHelperJob("clear", {})
   }
 
-  // A restart can kill a queued job between its cp and its JSON write,
-  // leaving copies no JSON-derived cleanup can name. Swept at startup,
-  // through the queue so in-flight copies aren't mistaken for orphans.
+  // A restart can kill a job between its image copy and its JSON write.
+  // Swept at startup, through the queue so in-flight copies aren't mistaken for orphans.
   function sweepOrphanImages() {
-    enqueuePopupFileJob(["bash", "-c",
-      "for img in \"$3\"/*; do\n" +
-      "  [[ -e $img ]] || continue\n" +
-      "  [[ $img == *.tmp ]] && { rm -f -- \"$img\"; continue; }\n" +
-      "  stem=\"${img##*/}\"\n" +
-      "  [[ $stem =~ ^([0-9]+-[0-9]+)-(appIcon|image)(-[a-f0-9]+)?(\\.png)?$ ]] || continue\n" +
-      "  stem=\"${BASH_REMATCH[1]}\"\n" +
-      "  [[ -e $1/$stem.json || -e $2/$stem.json ]] || rm -f \"$img\"\n" +
-      "done", "--", popupStateDir, historyDir, imagesDir])
-  }
-
-  Process {
-    id: readHistoryProc
-    running: false
-    stdinEnabled: true
-    onStarted: { write('{"history":true}'); stdinEnabled = false }
-    // Let the file queue go again, whatever the read did — a failed or empty
-    // read must not leave archives and clears parked behind it forever.
-    onExited: service.runNextPopupFileJob()
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: service.replayHistory(text)
-    }
+    enqueueHelperJob("sweep", {})
   }
 
   // Toasts that were on screen when the replay was asked for. The clear in
@@ -1105,22 +1111,19 @@ Item {
   // queue and its own subprocess, so the replay lands in replayHistory once
   // the work queued ahead of it has finished.
   function showRecentHistory() {
-    if (readHistoryProc.running || service.historyReadQueued) return "ok"
+    if (service.historyReadQueued) return "ok"
     service.replayCarryOver = liveRowsForReplay()
     service.historyReadQueued = true
-    if (!enqueueHistoryRead()) {
+    var queued = enqueueHelperJob("read", {history: true}, function(ok, out) {
+      service.historyReadQueued = false
+      service.replayHistory(ok ? out : "")
+    })
+    if (!queued) {
       service.historyReadQueued = false
       service.replayCarryOver = []
       return "busy"
     }
     return "ok"
-  }
-
-  function startHistoryRead() {
-    service.historyReadQueued = false
-    readHistoryProc.command = ["python3", helper, "read"]
-    readHistoryProc.stdinEnabled = true
-    readHistoryProc.running = true
   }
 
   // Copy the on-screen rows out of the model. The placeholder from an earlier
@@ -1143,6 +1146,7 @@ Item {
         image: popupImageFor(row, "image"),
         glyph: row.glyph || "",
         execArgv: row.execArgv || "",
+        execActions: row.execActions || "",
         urgency: row.urgency,
         timestamp: row.timestamp
       })
@@ -1167,6 +1171,7 @@ Item {
         image: "",
         glyph: "󰂚",
         execArgv: "",
+        execActions: "",
         urgency: NotificationUrgency.Low,
         expireTimeout: 0,
         timestamp: Date.now()
@@ -1183,18 +1188,6 @@ Item {
       service.restoredPopups[NotificationLogic.popupFileName(rows[i])] = true
       rows[i].actionsJson = "[]"
       popupModel.append(rows[i])
-    }
-  }
-
-  Process {
-    id: restorePopupsProc
-    running: false
-    onExited: service.runNextPopupFileJob()
-    stdinEnabled: true
-    onStarted: { write("{}"); stdinEnabled = false }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: service.restorePopups(text)
     }
   }
 
@@ -1260,7 +1253,8 @@ Item {
 
   FileView {
     id: settingsFile
-    path: service.settingsPath
+    // Bound only after the one-time migration has carried DND over.
+    path: service.stateMigrated ? service.settingsPath : ""
     watchChanges: false
     atomicWrites: true
     printErrors: false
@@ -1290,7 +1284,7 @@ Item {
     // FileView can fire onLoaded more than once during startup — the implicit
     // preload when `path` resolves, plus the explicit `settingsFile.reload()`
     // in Component.onCompleted can both end up calling here.
-    if (service.settingsLoaded) return
+    if (service.settingsLoaded || !service.stateMigrated) return
 
     var parsed = NotificationLogic.parseSettings(raw)
     if (parsed.error) console.warn("notifications: settings parse failed:", parsed.errorMessage || "")
@@ -1310,21 +1304,24 @@ Item {
   }
 
   function flushSettings() {
-    settingsFile.setText(JSON.stringify({ version: 4, dnd: persisted.doNotDisturb, snoozes: snoozes }, null, 2) + "\n")
+    settingsFile.setText(JSON.stringify({ version: 5, dnd: persisted.doNotDisturb, snoozes: snoozes }, null, 2) + "\n")
   }
 
   Component.onCompleted: {
-    ensureDirsProc.running = true
     configFile.reload()
     refreshContext()
-    // Once mkdir has had a tick, load the existing settings file. FileView
-    // surfaces an empty string when the file doesn't exist; loadSettings
-    // handles that path.
-    Qt.callLater(function() {
-      settingsFile.reload()
-      // Migration, new writes and cleanup share the queue so none sees partial image state.
+    helperProc.running = true
+    // Ordering: migrate the 4.0 layout first, then load DND, sweep orphans and
+    // restore popups, all through the one queue, then tell the center.
+    enqueueHelperJob("migrate", {}, function(ok) {
+      if (!ok) service.reportPersistenceError("Could not prepare the notification state directory")
+      service.stateMigrated = true
       service.sweepOrphanImages()
-      service.enqueuePopupJob({restore:true})
+      service.enqueueHelperJob("read", {}, function(readOk, out) {
+        if (readOk) service.restorePopups(out)
+        service.storeReady = true
+        service.pokeCenter("store")
+      })
     })
   }
 
@@ -1332,7 +1329,17 @@ Item {
 
   // ---------------------------------------------------- IPC
 
-  IpcHandler {
+  // Keybindings run these directly when the shell resolves a service for them.
+  function runShortcut(method) {
+    if (typeof ipcHandler[method] !== "function" || ipcHandler[method].length !== 0) return false
+    ipcHandler[method]()
+    return true
+  }
+
+  // Stock-compatible target (4.0 and 4.5-rc2), so Omarchy's bindings and
+  // scripts work: SUPER+comma runs `act`, SUPER+CTRL+comma runs `keyboard`.
+  FoamyIpc {
+    id: ipcHandler
     target: "notifications"
 
     function snoozeAll(minutes: string): string { return service.snoozeSource("*", minutes) }
@@ -1365,6 +1372,32 @@ Item {
     function isDnd(): string {
       return dndState()
     }
+
+    // Dismiss, press the one button on, or click the newest card; with more
+    // than one choice it hands the keyboard to the notifications.
+    function act(): string { return service.actOnNewest() ? "ok" : "none" }
+
+    // Arrows/j/k/Tab move, Enter clicks, Delete dismisses, 1-9 press a button, Escape gives the keyboard back.
+    function keyboard(): string {
+      if (service.keyboardMode) { service.stopKeyboard(); return "off" }
+      return service.startKeyboard("") ? "on" : "none"
+    }
+
+    // Press button n (from 1) on the newest card.
+    function invokeAction(n: int): string {
+      var group = service.newestGroup()
+      return group && service.runDeed(group, n - 1) ? "ok" : "none"
+    }
+
+    function count(): string { return String(service.displayGroups.length) }
+
+    // Hold every card as hovering would (timers pause), or release them.
+    function expand(): string {
+      service.expanded = !service.expanded && service.displayGroups.length > 0
+      return service.expanded ? "expanded" : "collapsed"
+    }
+
+    function probe(): string { return JSON.stringify(service.probeState()) }
 
     // Replay the notifications that have been moved into the history dir.
     function showHistory(): string {
@@ -1566,40 +1599,197 @@ Item {
   Connections {
     target: Hyprland
     function onRawEvent(event) {
-      if (["fullscreen","activewindowv2","workspacev2","focusedmon","monitoradded","monitorremoved","activespecial"].indexOf(event.name) >= 0) service.refreshContext()
+      // Monitor context matters only while something is shown or waiting; arrivals refresh it themselves.
+      if ((service.pendingNotifications.length || service.displayGroups.length)
+          && ["fullscreen","activewindowv2","workspacev2","focusedmon","monitoradded","monitorremoved","activespecial"].indexOf(event.name) >= 0) service.refreshContext()
     }
   }
 
-  // One frame clock keeps expiry and the line in sync without per-card timers.
+  // One clock keeps expiry and the line in sync without per-card timers. It
+  // runs per frame only while the timeout line is drawn and motion is allowed;
+  // otherwise a 200 ms tick is enough for expiry.
+  readonly property bool anyTimed: displayGroups.some(function(group) {
+    return service.durationFor(group.urgency, group.expireTimeout) > 0
+  })
+  readonly property bool smoothClock: anyTimed && preferences.showTimeoutIndicator && !FoamyMotion.reduceMotion
   FrameAnimation {
-    running: service.displayGroups.some(function(group) {
-      return service.durationFor(group.urgency, group.expireTimeout) > 0
-    })
-    onTriggered: {
-      var elapsedMs = frameTime * 1000
-      if (elapsedMs <= 0) return
-      var expired = [], advanced = false
-      var hoverKeys = Object.keys(service.hoveredKeys)
-      for (var i = 0; i < service.displayGroups.length; i++) {
-        var group = service.displayGroups[i]
-        var hovered = hoverKeys.some(function(k) { return k.endsWith("|" + group.key) && service.hoveredKeys[k] })
-        if (hovered || service.busyKeys[group.key]) continue
-        if (service.durationFor(group.urgency,group.expireTimeout) <= 0) continue
-        for (var j = 0; j < group.keys.length; j++) {
-          var key = group.keys[j]
-          service.lifetimes[key] -= elapsedMs
-          advanced = true
-          if (service.lifetimes[key] <= 0) expired.push(key)
-        }
+    running: service.smoothClock
+    onTriggered: service.advanceLifetimes(frameTime * 1000)
+  }
+  Timer {
+    interval: 200
+    repeat: true
+    running: service.anyTimed && !service.smoothClock
+    property double last: 0
+    onRunningChanged: last = Date.now()
+    onTriggered: { var now = Date.now(); service.advanceLifetimes(now - last); last = now }
+  }
+
+  function advanceLifetimes(elapsedMs) {
+    if (elapsedMs <= 0 || keyboardMode || expanded) return
+    var expired = [], advanced = false
+    var hoverKeys = Object.keys(hoveredKeys)
+    for (var i = 0; i < displayGroups.length; i++) {
+      var group = displayGroups[i]
+      var hovered = hoverKeys.some(function(k) { return k.endsWith("|" + group.key) && service.hoveredKeys[k] })
+      if (hovered || busyKeys[group.key]) continue
+      if (durationFor(group.urgency, group.expireTimeout) <= 0) continue
+      for (var j = 0; j < group.keys.length; j++) {
+        var key = group.keys[j]
+        lifetimes[key] -= elapsedMs
+        advanced = true
+        if (lifetimes[key] <= 0) expired.push(key)
       }
-      // In-place map updates need one signal per shared frame for the card bindings.
-      if (advanced) service.lifetimesChanged()
-      if (expired.length) service.removeKeys(expired,"expire")
+    }
+    // In-place map updates need one signal per tick for the card bindings.
+    if (advanced) lifetimesChanged()
+    if (expired.length) removeKeys(expired, "expire")
+  }
+
+  // ---------------------------------------------------- keyboard, act, probe
+  //
+  // Like stock 4.5: notifications never take the keyboard on their own. The
+  // keybinding (SUPER+CTRL+comma, or `act` with several choices) starts this;
+  // Escape, a choice, a click or ten idle seconds give the keyboard back.
+  property bool keyboardMode: false
+  property string keyboardKey: ""
+  property bool expanded: false
+  onDisplayGroupsChanged: {
+    if (!displayGroups.length) expanded = false
+    if (keyboardMode && !groupFor(keyboardKey)) {
+      if (displayGroups.length) keyboardKey = displayGroups[0].key
+      else stopKeyboard()
+    }
+  }
+  Timer { id: keyboardIdle; interval: 10000; onTriggered: service.stopKeyboard() }
+
+  function groupFor(key) {
+    for (var i = 0; i < displayGroups.length; i++) if (displayGroups[i].key === key) return displayGroups[i]
+    return null
+  }
+  function newestGroup() { return displayGroups.length ? displayGroups[0] : null }
+
+  // The card's buttons in the order it draws and numbers them.
+  function deedsFor(group) {
+    return group ? NotificationLogic.deeds(group, Features.offers(group)) : []
+  }
+
+  // Whether a click does something of the card's own (not just app focus).
+  function clickable(group) {
+    if (!group) return false
+    if (NotificationLogic.parseExecArgv(group.execArgv)) return true
+    var ref = !isRestoredRow(group) ? liveRefs[group.originalId] : null
+    try {
+      return !!(ref && ref.tracked && ref.actions && ref.actions.some(function(a) { return a.identifier === "default" }))
+    } catch (e) { return false }
+  }
+
+  function runDeed(group, index) {
+    var deed = deedsFor(group)[index]
+    if (!deed || busyKeys[group.key]) return false
+    if (deed.kind === "action") activateGroup(group, deed.value)
+    else featureAction(group, deed.kind, deed.value)
+    return true
+  }
+
+  function actOnNewest() {
+    var group = newestGroup()
+    if (!group) return false
+    var deeds = deedsFor(group).length
+    var click = clickable(group)
+    if (deeds + (click ? 1 : 0) > 1) startKeyboard(group.key)
+    else if (click) activateGroup(group, "default")
+    else if (deeds) runDeed(group, 0)
+    else dismissGroup(group, false)
+    return true
+  }
+
+  function startKeyboard(key) {
+    if (!displayGroups.length) return false
+    keyboardMode = true
+    keyboardKey = groupFor(key) ? key : displayGroups[0].key
+    keyboardIdle.restart()
+    return true
+  }
+
+  function stopKeyboard() {
+    keyboardIdle.stop()
+    keyboardMode = false
+    keyboardKey = ""
+  }
+
+  function moveSelection(step) {
+    var index = displayGroups.findIndex(function(group) { return group.key === service.keyboardKey }) + step
+    if (index >= 0 && index < displayGroups.length) keyboardKey = displayGroups[index].key
+  }
+
+  // True when the key was ours.
+  function keyboardPressed(key, text) {
+    if (!keyboardMode) return false
+    keyboardIdle.restart()
+    var group = groupFor(keyboardKey)
+    if (key === Qt.Key_Escape) stopKeyboard()
+    else if (key === Qt.Key_Down || key === Qt.Key_J || key === Qt.Key_Tab) moveSelection(1)
+    else if (key === Qt.Key_Up || key === Qt.Key_K || key === Qt.Key_Backtab) moveSelection(-1)
+    else if (key === Qt.Key_Return || key === Qt.Key_Enter || key === Qt.Key_Space) { stopKeyboard(); if (group) activateGroup(group, "default") }
+    else if (key === Qt.Key_Delete || key === Qt.Key_Backspace) { if (group) dismissGroup(group, true) }
+    else if (/^[1-9]$/.test(text)) {
+      if (group && Number(text) <= deedsFor(group).length) { stopKeyboard(); runDeed(group, Number(text) - 1) }
+    } else return false
+    return true
+  }
+
+  function probeState() {
+    return { toasts: displayGroups.length, popups: popupModel.count, doNotDisturb: doNotDisturb, expanded: expanded,
+      keyboardMode: keyboardMode, keyboardKey: keyboardKey, displays: screenNames, focusedDisplay: focusedMonitor,
+      targetDisplay: targetMonitors.length ? targetMonitors[0] : "", notificationDisplays: targetMonitors,
+      fullscreenMonitors: fullscreenMonitors, storeReady: storeReady }
+  }
+
+  // ---------------------------------------------------- preferences (owned here)
+  //
+  // The center's settings page asks over IPC; Foamy writes its own entry.
+  readonly property var centerPreferenceKeys: ["offerSnoozeWhenSharing", "dndSilenceCritical", "groupDuplicates", "useBrowserFavicons",
+    "compact", "showImages", "closeButtonRemovesHistory", "normalTimeoutSec"]
+  property string preferenceError: ""
+  function savePreference(key, valueJson) {
+    if (centerPreferenceKeys.indexOf(key) < 0) return "error: unknown setting"
+    var value
+    try { value = JSON.parse(String(valueJson || "").trim()) } catch (e) { return "error: invalid value" }
+    var probe = {}; probe[key] = value; probe.id = "foamy.notifications"
+    if (Preferences.parse(JSON.stringify({plugins: [probe]})).error) return "error: invalid value"
+    if (prefProc.running) return "error: busy"
+    preferenceError = ""
+    prefProc.command = ["python3", "-I", Qt.resolvedUrl("bin/notification-preferences.py").toString().replace(/^file:\/\//, ""), "save", key, JSON.stringify(value)]
+    prefProc.running = true
+    return "saving"
+  }
+  Process {
+    id: prefProc
+    stdout: StdioCollector { id: prefOutput }
+    stderr: StdioCollector {}
+    onExited: function(code, status) {
+      var result = null
+      try { result = JSON.parse(prefOutput.text) } catch (e) {}
+      service.preferenceError = code === 0 && status === 0 && result && result.ok ? "" : (result && result.error ? String(result.error) : "Could not save the setting")
+      service.pokeCenter("preferences")
     }
   }
 
-  IpcHandler {
+  FoamyIpc {
     target: "foamy.notifications"
+    // Where the center reads Foamy's files (read-only). See README contract.
+    function storeInfo(): string {
+      return JSON.stringify({layout:"foamy-files", version:2, ready:service.storeReady,
+        popups:service.popupStateDir.replace(/\/$/, ""), history:service.historyDir.replace(/\/$/, ""),
+        handled:service.handledPath, state:service.settingsPath})
+    }
+    function preferences(): string {
+      return JSON.stringify({settings:service.preferences, error:service.configError,
+        saving:prefProc.running, saveError:service.preferenceError})
+    }
+    // Foamy writes its own shell.json entry; the center only asks.
+    function setPreference(key: string, valueJson: string): string { return service.savePreference(key, valueJson) }
     function invokeDefault(key: string): string { return service.invokeCenterDefault(key) }
     function releaseHistory(keysCsv: string): string {
       var keys = keysCsv.split(",")
@@ -1625,7 +1815,8 @@ Item {
         snoozes:service.snoozes, sharingActive:service.sharingActive, sharingOfferPending:service.sharingOfferPending,
         centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,
         queuedJobs:service.popupFileQueue.length, queuedBytes:service.popupFileQueue.reduce(function(total,job){return total+job.bytes},0),
-        tracked:Object.keys(service.liveRefs).length, busy:popupFileProc.running || service.popupFileQueue.length>0})
+        tracked:Object.keys(service.liveRefs).length, busy:service.runningJob !== null || service.popupFileQueue.length>0,
+        keyboardMode:service.keyboardMode, expanded:service.expanded, storeReady:service.storeReady})
     }
   }
 
@@ -1651,7 +1842,7 @@ Item {
         app: FoamyI18n.t("Notifications")
         summary: FoamyI18n.t("Screen sharing is active")
         body: FoamyI18n.t("Snooze notifications while you share?")
-        actions: [{identifier:"snooze", text:FoamyI18n.t("Snooze for 30 minutes")}, {identifier:"keep", text:FoamyI18n.t("Keep notifications")}]
+        deeds: [{kind:"action", value:"snooze", text:FoamyI18n.t("Snooze for 30 minutes")}, {kind:"action", value:"keep", text:FoamyI18n.t("Keep notifications")}]
         onCloseRequested: service.sharingOfferHandled = true
         onHideRequested: service.sharingOfferHandled = true
         onCardClicked: service.sharingOfferHandled = true
@@ -1675,7 +1866,8 @@ Item {
       visible: selected && (popupColumn.groups.length > 0 || popupColumn.implicitHeight > 0)
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      readonly property bool takesKeyboard: service.keyboardMode && service.targetMonitors.length > 0 && service.targetMonitors[0] === screen.name
+      WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       anchors { top: true; bottom: true; left: true; right: true }
@@ -1687,6 +1879,10 @@ Item {
         service.removeKeys(last.keys,"dismiss")
       }
       onHeightChanged: Qt.callLater(fitCards)
+      Item {
+        focus: popupWindow.takesKeyboard
+        Keys.onPressed: function(event) { event.accepted = service.keyboardPressed(event.key, event.text) }
+      }
       NotificationStack {
         id: popupColumn
         anchors.right: parent.right
@@ -1715,10 +1911,10 @@ Item {
             }
             ParallelAnimation {
               id: entrance
-              NumberAnimation { target: card; property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
-              NumberAnimation { target: card; property: "entranceOffset"; from: Style.space(8); to: 0; duration: 180; easing.type: Easing.OutCubic }
+              NumberAnimation { target: card; property: "opacity"; from: 0; to: 1; duration: FoamyMotion.fadeIn; easing.type: Easing.OutCubic }
+              NumberAnimation { target: card; property: "entranceOffset"; from: Style.space(8); to: 0; duration: FoamyMotion.fadeIn; easing.type: Easing.OutCubic }
             }
-            NumberAnimation { id: exitFade; target: card; property: "opacity"; to: 0; duration: 120; easing.type: Easing.OutCubic }
+            NumberAnimation { id: exitFade; target: card; property: "opacity"; to: 0; duration: FoamyMotion.fadeOut; easing.type: Easing.OutCubic }
             enabled: !retired
             width: popupColumn.width
             app: modelData.app
@@ -1742,10 +1938,11 @@ Item {
             offers: service.offersFor(modelData)
             copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
             snoozeAvailable: true
-            onFeatureRequested: function(kind, value) { service.featureAction(modelData, kind, value) }
+            onFeatureRequested: function(kind, value) { service.stopKeyboard(); service.featureAction(modelData, kind, value) }
             busy: !!service.busyKeys[modelData.key]
             error: service.actionErrors[modelData.key] || ""
-            fontFamily: service.shell && service.shell.bar ? service.shell.bar.fontFamily : Style.font.family
+            selected: service.keyboardMode && service.keyboardKey === modelData.key
+            deeds: service.deedsFor(modelData)
             property string registeredHoverKey: ""
             function publishHover() {
               if (!modelData) return
@@ -1760,10 +1957,11 @@ Item {
             onModelDataChanged: publishHover()
             Component.onCompleted: { publishHover(); entrance.start() }
             Component.onDestruction: delete service.hoveredKeys[registeredHoverKey]
-            onCloseRequested: service.dismissGroup(modelData, true)
-            onHideRequested: service.dismissGroup(modelData, false)
-            onCardClicked: service.activateGroup(modelData,"default")
-            onActionRequested: function(identifier) { service.activateGroup(modelData,identifier) }
+            // A click is the pointer taking over: it ends keyboard mode.
+            onCloseRequested: { service.stopKeyboard(); service.dismissGroup(modelData, true) }
+            onHideRequested: { service.stopKeyboard(); service.dismissGroup(modelData, false) }
+            onCardClicked: { service.stopKeyboard(); service.activateGroup(modelData,"default") }
+            onActionRequested: function(identifier) { service.stopKeyboard(); service.activateGroup(modelData,identifier) }
           }
       }
     }

@@ -1,4 +1,3 @@
-import ".." as PluginLanguage
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Layouts
@@ -7,10 +6,12 @@ import Quickshell
 import qs.Commons
 import qs.Commons as Commons
 import "../NotificationLogic.js" as Logic
+import "../Markup.js" as Markup
+import "../kit"
 
 Rectangle {
   id: root
-  LayoutMirroring.enabled: PluginLanguage.FoamyI18n.rightToLeft
+  LayoutMirroring.enabled: FoamyI18n.rightToLeft
   LayoutMirroring.childrenInherit: true
   property string app: ""
   property string appIcon: ""
@@ -38,29 +39,39 @@ Rectangle {
   signal featureRequested(string kind, string value)
   property bool busy: false
   property string error: ""
-  property string fontFamily: Style.font.family
+  // Foamy body font; glyphs (Nerd Font code points) use the Omarchy mono font.
+  property string fontFamily: FoamyStyle.fontFamily
+  readonly property string glyphFamily: FoamyStyle.monoFamily
+  // The theme's [notifications] colours (4.0 and 4.5), foamy 1px border.
+  readonly property color surface: Commons.Color.notifications ? Commons.Color.notifications.background : Commons.Color.popups.background
+  readonly property color ink: Commons.Color.notifications ? Commons.Color.notifications.text : Commons.Color.popups.text
+  // Keyboard mode (`omarchy-shell notifications keyboard`): this card has the cursor.
+  property bool selected: false
+  // Every button in draw/number order (NotificationLogic.deeds).
+  property var deeds: []
   property real cardWidth: Style.space(390)
   property bool actionsExpanded: false
-  // Keep settings reachable without giving browser chrome a permanent action row.
-  readonly property var primaryActions: actions.filter(function(a) { return a.identifier !== "settings" }).slice(0, 2)
-  readonly property var overflowActions: actions.filter(function(a) { return primaryActions.indexOf(a) < 0 })
-  // Keep the model independent of copy feedback so keyboard focus survives it.
+  // The footer holds Omarchy --action buttons, two sender actions, codes and
+  // the link; further sender actions (and Settings) go behind "More actions".
   readonly property var footerActions: {
-    var result = primaryActions.map(function(action) {
-      return {kind: "action", value: action.identifier, text: action.text,
-        glyph: action.identifier === "reply" ? "󰑚" : ""}
-    })
-    String(offers.codes || "").split(" ").filter(Boolean).forEach(function(code) {
-      result.push({kind: "code", value: code, text: "", glyph: "󰆏"})
-    })
-    if (offers.link) result.push({kind: "link", value: offers.link,
-      text: offers.meeting ? PluginLanguage.FoamyI18n.t("Join meeting") : PluginLanguage.FoamyI18n.t("Open link"),
-      glyph: offers.meeting ? "󰕧" : "󰏌"})
-    return result
+    var out = [], senders = 0
+    for (var i = 0; i < deeds.length; i++) {
+      var deed = deeds[i]
+      if (deed.kind === "action" && (senders >= 2 || /^settings$/i.test(deed.value))) continue
+      if (deed.kind === "action") senders++
+      out.push({kind: deed.kind, value: deed.value, number: i + 1,
+        text: deed.kind === "link" ? (deed.meeting ? FoamyI18n.t("Join meeting") : FoamyI18n.t("Open link")) : deed.text,
+        glyph: deed.kind === "code" ? "󰆏" : deed.kind === "link" ? (deed.meeting ? "󰕧" : "󰏌") : deed.kind === "action" && deed.value === "reply" ? "󰑚" : ""})
+    }
+    return out
   }
-  // Omarchy exposes no success role; use readable Catppuccin green in both modes.
-  readonly property color copiedColor: Commons.Color.popups.background.hslLightness < 0.5 ? "#a6e3a1" : "#40a02b"
-  readonly property bool hovered: hover.hovered || actionsExpanded || snoozeExpanded
+  readonly property var overflowActions: {
+    var shown = footerActions.map(function(entry) { return entry.kind + ":" + entry.value })
+    return deeds.filter(function(deed) { return deed.kind === "action" && shown.indexOf("action:" + deed.value) < 0 })
+      .map(function(deed) { return {identifier: deed.value, text: deed.text} })
+  }
+  readonly property color copiedColor: FoamyPalette.success
+  readonly property bool hovered: hover.hovered || actionsExpanded || snoozeExpanded || selected
   readonly property bool hasTitle: summary.trim().length > 0
   readonly property string smallIcon: {
     if (!appIcon) return ""
@@ -82,10 +93,10 @@ Rectangle {
   signal actionRequested(string identifier)
   implicitWidth: cardWidth
   implicitHeight: content.implicitHeight + 2
-  radius: Style.cornerRadius * 2
-  color: urgency === 2 ? Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.urgent, 0.09)) : Commons.Color.popups.background
-  border.width: 1
-  border.color: Util.alpha(Commons.Color.popups.text, 0.18)
+  radius: FoamyStyle.radius
+  color: urgency === 2 ? Qt.tint(root.surface, Util.alpha(Commons.Color.urgent, 0.09)) : root.surface
+  border.width: selected ? 2 : 1
+  border.color: selected ? Commons.Color.accent : Util.alpha(root.ink, 0.15)
   HoverHandler { id: hover }
   MouseArea {
     anchors.fill: parent
@@ -113,7 +124,7 @@ Rectangle {
         height: Math.max(parent.height, topLeftRadius * 2)
         topLeftRadius: Math.max(0, root.radius - root.border.width)
         topRightRadius: topLeftRadius
-        color: Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.popups.text, 0.055))
+        color: Qt.tint(root.surface, Util.alpha(root.ink, 0.055))
       }
       RowLayout {
         id: header
@@ -149,28 +160,28 @@ Rectangle {
             visible: icon.status !== Image.Ready && faviconIcon.status !== Image.Ready
             text: root.glyph || "󰂚"
             textFormat: Text.PlainText
-            font.family: root.fontFamily
-            font.pixelSize: Style.space(14)
+            font.family: root.glyphFamily
+            font.pixelSize: FoamyStyle.font.title
             color: root.urgency === 2 ? Commons.Color.urgent : Commons.Color.accent
           }
         }
         Text {
           objectName: "notificationAppName"
           Layout.fillWidth: true
-          text: root.app || PluginLanguage.FoamyI18n.t("Notification")
+          text: root.app || FoamyI18n.t("Notification")
           textFormat: Text.PlainText
           font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          color: Commons.Color.popups.text
+          font.pixelSize: FoamyStyle.font.caption
+          color: root.ink
           elide: Text.ElideRight
           maximumLineCount: 1
         }
         Text {
           visible: root.count > 1
-          text: "· " + PluginLanguage.FoamyI18n.number(root.count)
+          text: "· " + FoamyI18n.number(root.count)
           font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          color: Util.alpha(Commons.Color.popups.text, 0.65)
+          font.pixelSize: FoamyStyle.font.caption
+          color: Util.alpha(root.ink, 0.65)
         }
         Controls.AbstractButton {
           id: snoozeButton
@@ -182,18 +193,18 @@ Rectangle {
           Layout.preferredWidth: Style.space(24)
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
-          Accessible.name: PluginLanguage.FoamyI18n.t("Snooze this sender")
-          background: Rectangle { radius: Style.cornerRadius * 2; color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
-          contentItem: Text { text: "󰥔"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+          Accessible.name: FoamyI18n.t("Snooze this sender")
+          background: Rectangle { radius: FoamyStyle.radius; color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(root.ink, 0.09) : "transparent" }
+          contentItem: Text { text: "󰥔"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: root.ink; font.family: root.glyphFamily; font.pixelSize: FoamyStyle.font.body }
           onClicked: root.snoozeExpanded = !root.snoozeExpanded
         }
         Text {
           objectName: "notificationTime"
           visible: root.timestamp > 0
-          text: visible ? Qt.locale(PluginLanguage.FoamyI18n.formatLocale).toString(new Date(root.timestamp), "hh:mm") : ""
+          text: visible ? Qt.locale(FoamyI18n.formatLocale).toString(new Date(root.timestamp), "hh:mm") : ""
           font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          color: Util.alpha(Commons.Color.popups.text, 0.65)
+          font.pixelSize: FoamyStyle.font.caption
+          color: Util.alpha(root.ink, 0.65)
         }
         Controls.AbstractButton {
           id: moreButton
@@ -202,9 +213,9 @@ Rectangle {
           Layout.preferredWidth: Style.space(24)
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
-          Accessible.name: root.actionsExpanded ? PluginLanguage.FoamyI18n.t("Hide more actions") : PluginLanguage.FoamyI18n.t("Show more actions")
-          background: Rectangle { radius: Style.cornerRadius * 2; color: moreButton.hovered || root.actionsExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
-          contentItem: Text { text: "⋯"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.title }
+          Accessible.name: root.actionsExpanded ? FoamyI18n.t("Hide more actions") : FoamyI18n.t("Show more actions")
+          background: Rectangle { radius: FoamyStyle.radius; color: moreButton.hovered || root.actionsExpanded ? Util.alpha(root.ink, 0.09) : "transparent" }
+          contentItem: Text { text: "⋯"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: root.ink; font.family: root.fontFamily; font.pixelSize: FoamyStyle.font.title }
           onClicked: root.actionsExpanded = !root.actionsExpanded
         }
         Controls.AbstractButton {
@@ -213,9 +224,9 @@ Rectangle {
           Layout.preferredWidth: Style.space(24)
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
-          Accessible.name: PluginLanguage.FoamyI18n.t("Dismiss notification")
-          background: Rectangle { radius: Style.cornerRadius * 2; color: closeButton.hovered ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
-          contentItem: Text { text: "×"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Util.alpha(Commons.Color.popups.text, 0.7); font.family: root.fontFamily; font.pixelSize: Style.font.title }
+          Accessible.name: FoamyI18n.t("Dismiss notification")
+          background: Rectangle { radius: FoamyStyle.radius; color: closeButton.hovered ? Util.alpha(root.ink, 0.09) : "transparent" }
+          contentItem: Text { text: "×"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Util.alpha(root.ink, 0.7); font.family: root.fontFamily; font.pixelSize: FoamyStyle.font.title }
           onClicked: root.closeRequested()
         }
       }
@@ -235,8 +246,8 @@ Rectangle {
           Layout.preferredHeight: Style.space(root.imageSize)
           Layout.alignment: Qt.AlignTop
           visible: contentImage.status === Image.Ready
-          color: Util.alpha(Commons.Color.popups.text, 0.055)
-          radius: Style.cornerRadius * 2
+          color: Util.alpha(root.ink, 0.055)
+          radius: FoamyStyle.radius
           // Keep the mask layer stable while asynchronous loading and screen scaling settle.
           layer.enabled: true
           layer.effect: MultiEffect {
@@ -267,8 +278,8 @@ Rectangle {
             text: root.summary
             textFormat: Text.PlainText
             font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            color: Commons.Color.popups.text
+            font.pixelSize: FoamyStyle.font.body
+            color: root.ink
             wrapMode: Text.Wrap
             maximumLineCount: 2
             elide: Text.ElideRight
@@ -276,11 +287,12 @@ Rectangle {
           Text {
             Layout.fillWidth: true
             visible: text.length > 0
-            text: Logic.styledBody(root.body, root.app, root.appIcon)
+            // Stock 4.5 Markup semantics: decode, escape all, allow b/i/u/s/em/strong/br only.
+            text: Markup.render(Logic.sanitizeBody(root.body, root.app, root.appIcon))
             textFormat: Text.StyledText
             font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            color: Util.alpha(Commons.Color.popups.text, 0.75)
+            font.pixelSize: FoamyStyle.font.caption
+            color: Util.alpha(root.ink, 0.75)
             wrapMode: Text.Wrap
             maximumLineCount: 3
             elide: Text.ElideRight
@@ -296,7 +308,7 @@ Rectangle {
           FeatureButton {
             required property int modelData
             objectName: "notificationSnooze" + modelData
-            text: modelData < 60 ? PluginLanguage.FoamyI18n.t("%1 min", PluginLanguage.FoamyI18n.number(modelData)) : PluginLanguage.FoamyI18n.t("%1 h", PluginLanguage.FoamyI18n.number(modelData / 60))
+            text: modelData < 60 ? FoamyI18n.t("%1 min", FoamyI18n.number(modelData)) : FoamyI18n.t("%1 h", FoamyI18n.number(modelData / 60))
             width: Math.min(implicitWidth, parent.width)
             onClicked: { root.snoozeExpanded = false; root.featureRequested("snooze", String(modelData)) }
           }
@@ -307,7 +319,7 @@ Rectangle {
         Layout.fillWidth: true
         visible: root.actionsExpanded && root.overflowActions.length > 0
         spacing: Style.space(3)
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Util.alpha(Commons.Color.popups.text, 0.2) }
+        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Util.alpha(root.ink, 0.2) }
         Repeater {
           model: root.overflowActions
           ActionButton {
@@ -321,11 +333,11 @@ Rectangle {
       Text {
         Layout.fillWidth: true
         visible: root.error.length > 0
-        text: PluginLanguage.FoamyI18n.t(root.error)
+        text: FoamyI18n.t(root.error)
         textFormat: Text.PlainText
         color: Commons.Color.urgent
         font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: FoamyStyle.font.caption
         wrapMode: Text.Wrap
       }
     }
@@ -354,8 +366,8 @@ Rectangle {
           leftDivider: index % 2 === 1
           readonly property bool firstInLastRow: index === root.footerActions.length - (root.footerActions.length % 2 === 0 ? 2 : 1)
           readonly property bool lastInLastRow: index === root.footerActions.length - 1
-          roundLeft: PluginLanguage.FoamyI18n.rightToLeft ? lastInLastRow : firstInLastRow
-          roundRight: PluginLanguage.FoamyI18n.rightToLeft ? firstInLastRow : lastInLastRow
+          roundLeft: FoamyI18n.rightToLeft ? lastInLastRow : firstInLastRow
+          roundRight: FoamyI18n.rightToLeft ? firstInLastRow : lastInLastRow
         }
       }
     }
@@ -378,7 +390,9 @@ Rectangle {
     property bool roundRight: false
     readonly property bool copied: entry.kind === "code" && root.copiedCode === entry.value
     readonly property string glyph: copied ? "󰄬" : entry.glyph
-    text: entry.kind === "code" ? (copied ? PluginLanguage.FoamyI18n.t("Copied %1", entry.value) : PluginLanguage.FoamyI18n.t("Copy %1", entry.value)) : entry.text
+    readonly property string label: entry.kind === "code" ? (copied ? FoamyI18n.t("Copied %1", entry.value) : FoamyI18n.t("Copy %1", entry.value)) : entry.text
+    // In keyboard mode the number key that presses it leads the label.
+    text: root.selected && entry.number <= 9 ? FoamyI18n.number(entry.number) + "  " + label : label
     implicitHeight: Math.max(Style.space(34), footerLabel.implicitHeight + Style.space(12))
     enabled: !root.busy
     Accessible.name: text
@@ -386,9 +400,9 @@ Rectangle {
     background: Rectangle {
       bottomLeftRadius: footerButton.roundLeft ? Math.max(0, root.radius - 1) : 0
       bottomRightRadius: footerButton.roundRight ? Math.max(0, root.radius - 1) : 0
-      color: Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.popups.text, footerButton.hovered ? 0.10 : 0.055))
-      Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Util.alpha(Commons.Color.popups.text, 0.18) }
-      Rectangle { visible: footerButton.leftDivider; anchors.left: parent.left; width: 1; height: parent.height; color: Util.alpha(Commons.Color.popups.text, 0.18) }
+      color: Qt.tint(root.surface, Util.alpha(root.ink, footerButton.hovered ? 0.10 : 0.055))
+      Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Util.alpha(root.ink, 0.15) }
+      Rectangle { visible: footerButton.leftDivider; anchors.left: parent.left; width: 1; height: parent.height; color: Util.alpha(root.ink, 0.15) }
       Rectangle {
         anchors.fill: parent; anchors.margins: 2
         visible: footerButton.activeFocus
@@ -406,9 +420,9 @@ Rectangle {
         Text {
           visible: footerButton.glyph.length > 0
           text: footerButton.glyph
-          font.family: root.fontFamily
-          font.pixelSize: Style.space(14)
-          color: footerButton.copied ? root.copiedColor : Commons.Color.popups.text
+          font.family: root.glyphFamily
+          font.pixelSize: FoamyStyle.font.title
+          color: footerButton.copied ? root.copiedColor : root.ink
           Layout.alignment: Qt.AlignVCenter
         }
         Text {
@@ -417,8 +431,8 @@ Rectangle {
           text: footerButton.text
           textFormat: Text.PlainText
           font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          color: footerButton.copied ? root.copiedColor : Commons.Color.popups.text
+          font.pixelSize: FoamyStyle.font.caption
+          color: footerButton.copied ? root.copiedColor : root.ink
           horizontalAlignment: Text.AlignHCenter
           wrapMode: Text.Wrap
           maximumLineCount: 2
@@ -443,18 +457,18 @@ Rectangle {
     enabled: !root.busy
     Accessible.name: text
     background: Rectangle {
-      radius: Style.cornerRadius * 2
-      color: Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.popups.text, featureButton.hovered || featureButton.activeFocus ? 0.12 : 0.04))
+      radius: FoamyStyle.radius
+      color: Qt.tint(root.surface, Util.alpha(root.ink, featureButton.hovered || featureButton.activeFocus ? 0.12 : 0.04))
       border.width: 1
-      border.color: featureButton.activeFocus ? Commons.Color.accent : Util.alpha(Commons.Color.popups.text, 0.2)
+      border.color: featureButton.activeFocus ? Commons.Color.accent : Util.alpha(root.ink, 0.2)
     }
     contentItem: Text {
       id: featureLabel
       text: featureButton.text
       textFormat: Text.PlainText
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      color: Commons.Color.popups.text
+      font.pixelSize: FoamyStyle.font.caption
+      color: root.ink
       horizontalAlignment: Text.AlignHCenter
       verticalAlignment: Text.AlignVCenter
       elide: Text.ElideRight
@@ -469,18 +483,18 @@ Rectangle {
     enabled: !root.busy
     Accessible.name: actionData.text
     background: Rectangle {
-      radius: Style.cornerRadius * 2
-      color: Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.popups.text, actionButton.hovered ? 0.1 : 0.04))
+      radius: FoamyStyle.radius
+      color: Qt.tint(root.surface, Util.alpha(root.ink, actionButton.hovered ? 0.1 : 0.04))
       border.width: 1
-      border.color: Util.alpha(Commons.Color.popups.text, 0.2)
+      border.color: Util.alpha(root.ink, 0.2)
     }
     contentItem: Text {
       id: label
       text: actionButton.actionData.text
       textFormat: Text.PlainText
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      color: Commons.Color.popups.text
+      font.pixelSize: FoamyStyle.font.caption
+      color: root.ink
       horizontalAlignment: Text.AlignHCenter
       verticalAlignment: Text.AlignVCenter
       elide: Text.ElideRight
