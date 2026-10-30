@@ -1059,14 +1059,21 @@ Item {
   // job: the names sort numerically by their leading millisecond timestamp,
   // so everything but the newest historyLimit files is the tail to drop,
   // image copies included. Callers set $hist, $limit and $imgs first.
+  readonly property var historyBarrierOps: ["clear", "drop", "forget", "read", "migrate"]
   function archivePopupFileFor(row) {
     if (!row) return
     var key = NotificationLogic.imageStem(row)
     // Its popup write has not run yet: write it straight into history instead,
     // so a flood never leaves a popup file behind and needs no second job.
+    // Only writes after the last history barrier (a clear, drop, forget, read or
+    // migrate queued meanwhile) convert: a converted write runs where the popup
+    // write was, so one before a clear would put the entry in history before
+    // the clear removes it. Such a write stays a popup write and the archive
+    // below moves its file after the barrier.
     var converted = false
-    for (var i = 0; i < popupFileQueue.length; i++) {
+    for (var i = popupFileQueue.length - 1; i >= 0; i--) {
       var job = popupFileQueue[i]
+      if (historyBarrierOps.indexOf(job.op) >= 0) break
       if (job.op !== "write" || job.writeKey !== key || job.historyWrite) continue
       var data = JSON.parse(job.payload)
       data.history = true

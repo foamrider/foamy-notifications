@@ -249,3 +249,28 @@ test('history clears and center releases report "busy" when the queue refuses th
   assert.equal(s.releaseHistoryKeys(['2-2']), false)
   assert.equal(s.clearHistory(), false)
 })
+
+test('a dismissal converts only popup writes queued after the last history barrier', () => {
+  const s = fixture()
+  s.historyBarrierOps = JSON.parse(source.match(/readonly property var historyBarrierOps: (\[[^\]]*\])/)[1])
+  s.deferMove = () => assert.fail('nothing is refused here')
+  load(s, 'archivePopupFileFor')
+  const row = {timestamp:1000, originalId:1}, key = Logic.imageStem(row)
+  // No barrier: the queued popup write goes straight to history, no second job.
+  s.put(JSON.stringify({entry:{}, sources:{}, imageVersion:1}), key)
+  s.archivePopupFileFor(row)
+  assert.deepEqual(s.popupFileQueue.map(j => [j.op, j.historyWrite]), [['write', true]])
+  // Still on screen when history was cleared, dismissed afterwards: it must survive the clear.
+  for (const barrier of s.historyBarrierOps) {
+    s.popupFileQueue = []
+    s.put(JSON.stringify({entry:{}, sources:{}, imageVersion:1}), key)
+    s.enqueueHelperJob(barrier, barrier === 'drop' || barrier === 'forget' ? {keys:['9-9']} : {})
+    s.archivePopupFileFor(row)
+    assert.deepEqual(s.popupFileQueue.map(j => [j.op, !!j.historyWrite]), [['write', false], [barrier, false], ['archive', false]], barrier)
+  }
+  // A newer write after the barrier converts; the one before it stays a popup write.
+  s.popupFileQueue = []
+  s.put('{"entry":{}}', key); s.enqueueHelperJob('clear', {}); s.put('{"entry":{}}', key)
+  s.archivePopupFileFor(row)
+  assert.deepEqual(s.popupFileQueue.map(j => [j.op, !!j.historyWrite]), [['write', false], ['clear', false], ['write', true]])
+})
