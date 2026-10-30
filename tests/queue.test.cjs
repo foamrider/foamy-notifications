@@ -211,3 +211,41 @@ test('a history clear turns deferred archives into deletes so they cannot refill
   const clear = source.slice(source.indexOf('  function clearHistory('), source.indexOf('\n  }', source.indexOf('  function clearHistory(')))
   assert.ok(clear.indexOf('deleteDeferredArchives') < clear.indexOf('enqueueHelperJob("clear"'))
 })
+
+test('a refused or failed history read never replays, so live popups keep their actions', () => {
+  const s = fixture()
+  let replays = 0
+  s.historyReadQueued = false; s.replayCarryOver = []
+  s.liveRowsForReplay = () => [{key:'1-1', actionsJson:'[{"identifier":"reply"}]'}]
+  s.replayHistory = () => { replays++ }
+  load(s, 'showRecentHistory')
+  for (let i = 0; i < s.popupQueueLimit; i++) s.enqueueHelperJob('delete', {key: '9-' + i})
+  // Full queue: enqueueHelperJob calls the callback synchronously with ok === false.
+  assert.equal(s.showRecentHistory(), 'busy')
+  assert.equal(replays, 0)
+  assert.equal(s.historyReadQueued, false)
+  assert.deepEqual(Array.from(s.replayCarryOver), [])
+  // A read that is queued but later fails (helper exit, cancellation) replays nothing either.
+  s.popupFileQueue = []
+  assert.equal(s.showRecentHistory(), 'ok')
+  s.popupFileQueue[0].done(false, '')
+  assert.equal(replays, 0)
+  s.showRecentHistory(); s.popupFileQueue[s.popupFileQueue.length - 1].done(true, '{"summary":"x"}\n')
+  assert.equal(replays, 1)
+})
+
+test('history clears and center releases report "busy" when the queue refuses them', () => {
+  const ipc = source.slice(source.indexOf('    function clear(): string {'), source.indexOf('    function dismissAll(): string {'))
+  assert.match(ipc, /clearHistory\(\) \? "ok" : "busy"/)
+  assert.match(source, /releaseHistoryKeys\(keys\) \? "ok" : "busy"/)
+  assert.match(source, /releaseHistoryBefore\(Number\(timestamp\)\) \? "ok" : "busy"/)
+  const s = fixture()
+  for (const name of ['deleteDeferredArchives']) load(s, name)
+  s.deferredMoves = {}; s.liveKeys = {}; s.retainedHistory = {}
+  s.releaseHistoryAction = () => {}; s.removeKeys = () => {}
+  load(s, 'releaseHistoryKeys'); load(s, 'clearHistory')
+  assert.equal(s.releaseHistoryKeys(['1-1']), true)
+  for (let i = 0; i < s.popupQueueLimit; i++) s.enqueueHelperJob('delete', {key: '9-' + i})
+  assert.equal(s.releaseHistoryKeys(['2-2']), false)
+  assert.equal(s.clearHistory(), false)
+})

@@ -637,8 +637,12 @@ Item {
     removeKeys(keys, "historyDismissed")
     deleteDeferredArchives(function(key) { return keys.indexOf(key) >= 0 })
     // The center removed these durably; Foamy drops its own copies (the center never deletes them).
-    // The helper takes at most 100 keys per job.
-    for (var i = 0; i < keys.length; i += 100) enqueueHelperJob("drop", {keys: keys.slice(i, i + 100)})
+    // The helper takes at most 100 keys per job. False when the queue refused
+    // one: the IPC answers "busy" and the center retries.
+    var accepted = true
+    for (var i = 0; i < keys.length; i += 100)
+      if (!enqueueHelperJob("drop", {keys: keys.slice(i, i + 100)})) accepted = false
+    return accepted
   }
 
   function releaseHistoryBefore(timestamp) {
@@ -647,9 +651,9 @@ Item {
       return Number(key.split("-")[0]) <= timestamp
     })
     // Every eligible key: a retained callback left behind could rewrite the history dropped below.
-    releaseHistoryKeys(keys)
+    var accepted = releaseHistoryKeys(keys)
     deleteDeferredArchives(function(key) { return Number(key.split("-")[0]) <= timestamp })
-    enqueueHelperJob("drop", {before: Math.floor(timestamp)})
+    return enqueueHelperJob("drop", {before: Math.floor(timestamp)}) && accepted
   }
 
   // A restored row carries an id from the previous server generation, and
@@ -1095,7 +1099,7 @@ Item {
     cancelPendingWrites(keys, true)
     // A deferred archive would run after the clear and refill history.
     deleteDeferredArchives(function() { return true })
-    enqueueHelperJob("clear", {})
+    return enqueueHelperJob("clear", {})
   }
 
   // Deferred archives (refused by a full queue) run once the queue drains, so
@@ -1131,7 +1135,14 @@ Item {
     service.historyReadQueued = true
     var queued = enqueueHelperJob("read", {history: true}, function(ok, out) {
       service.historyReadQueued = false
-      service.replayHistory(ok ? out : "")
+      // A refused (full queue, called synchronously), cancelled or failed read
+      // replays nothing: the popups on screen keep their live action buttons.
+      if (!ok) {
+        service.replayCarryOver = []
+        service.reportPersistenceError("Could not read notification history")
+        return
+      }
+      service.replayHistory(out)
     })
     if (!queued) {
       service.historyReadQueued = false
@@ -1420,9 +1431,9 @@ Item {
     }
 
     // `clear` forgets the recorded history; the toasts on screen stay put.
+    // "busy" when the persistence queue refused the clear (nothing was cleared).
     function clear(): string {
-      service.clearHistory()
-      return "ok"
+      return service.clearHistory() ? "ok" : "busy"
     }
 
     function dismissAll(): string {
@@ -1827,13 +1838,12 @@ Item {
     function releaseHistory(keysCsv: string): string {
       var keys = keysCsv.split(",")
       if (keys.length > 100 || keys.some(function(key) { return !/^[0-9]+-[0-9]+$/.test(key) })) return "invalid"
-      service.releaseHistoryKeys(keys)
-      return "ok"
+      // "busy": a drop was refused by a full queue; the center retries the batch.
+      return service.releaseHistoryKeys(keys) ? "ok" : "busy"
     }
     function releaseHistoryBefore(timestamp: string): string {
       if (!/^[0-9]{1,16}$/.test(timestamp)) return "invalid"
-      service.releaseHistoryBefore(Number(timestamp))
-      return "ok"
+      return service.releaseHistoryBefore(Number(timestamp)) ? "ok" : "busy"
     }
     function invokeAction(key: string, identifier: string): string {
       var group = service.displayGroups.filter(function(g) { return g.key === key })[0]
