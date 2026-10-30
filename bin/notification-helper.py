@@ -62,6 +62,7 @@ def atomic(path, data):
 
 IMAGE_LIMIT = 5 * 1024 * 1024
 IMAGE_NAME = re.compile(r"^([0-9]+-[0-9]+)-(appIcon|image)-([a-f0-9]{64})\.png$")
+LEGACY_IMAGE = re.compile(r"^([0-9]+-[0-9]+)-(appIcon|image)$")
 THEME_ICON = re.compile(r"^[A-Za-z0-9_.-]+$")
 POLICY = Path(__file__).with_name('policy.xml')
 
@@ -340,7 +341,8 @@ def migrate(data):
         return row
     if old_images.is_dir() and not old_images.is_symlink():
         for path in old_images.iterdir():
-            if IMAGE_NAME.fullmatch(path.name) and path.is_file() and not path.is_symlink() and not (new_images/path.name).exists():
+            # Hashed PNGs and the older unhashed `<key>-<role>` copies (normalized on first read).
+            if (IMAGE_NAME.fullmatch(path.name) or LEGACY_IMAGE.fullmatch(path.name)) and path.is_file() and not path.is_symlink() and not (new_images/path.name).exists():
                 shutil.copyfile(path, new_images/path.name)
                 os.chmod(new_images/path.name, 0o600)
                 path.unlink(missing_ok=True)

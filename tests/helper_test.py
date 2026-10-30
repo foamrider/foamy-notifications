@@ -146,4 +146,14 @@ class HelperTest(unittest.TestCase):
             self.assertEqual(json.loads((h.history()/'5-5.json').read_text())['summary'],'Updated')
             self.assertTrue(image.exists())
 
+    def test_migration_moves_legacy_unhashed_image_copies(self):
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d}):
+            old=Path(d)/'omarchy/notifications';(old/'history').mkdir(parents=True);(old/'images').mkdir()
+            (old/'images/900-2-image').write_bytes(b'legacy')
+            (old/'history/900-2.json').write_text(json.dumps({'timestamp':900,'originalId':2,'summary':'Old','image':(old/'images/900-2-image').as_uri()}))
+            h.migrate({})
+            moved=h.base()/'images/900-2-image'
+            self.assertTrue(moved.exists())
+            self.assertEqual(json.loads((h.history()/'900-2.json').read_text())['image'],moved.as_uri())
+
 if __name__=='__main__':unittest.main()
