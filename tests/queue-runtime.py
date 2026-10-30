@@ -27,19 +27,29 @@ helper.rename(helper.with_name('notification-helper-real.py'))
 stall = base/'stall'; started = base/'started'
 context_stall = base/'context-stall'; context_started = base/'context-started'
 # Stall selected writes/context queries, not startup restoration. The timeout also protects failed tests.
-helper.write_text('''import os,sys,time
+helper.write_text('''import importlib.util,os,sys,time
 from pathlib import Path
-stall=Path(STALL)
-if sys.argv[1] == 'context' and Path(CONTEXT_STALL).exists():
-    Path(CONTEXT_STARTED).touch()
-    deadline=time.monotonic()+15
-    while Path(CONTEXT_STALL).exists() and time.monotonic()<deadline: time.sleep(.02)
-if sys.argv[1] == 'write' and stall.exists():
-    Path(STARTED).touch()
-    deadline=time.monotonic()+30
-    while stall.exists() and time.monotonic()<deadline: time.sleep(.02)
-    if stall.exists(): raise SystemExit('test worker stall timed out')
-os.execv(sys.executable,[sys.executable,str(Path(__file__).with_name('notification-helper-real.py')),*sys.argv[1:]])
+# Wrap the real long-lived worker: selected operations stall while a flag file exists.
+spec=importlib.util.spec_from_file_location('real', Path(__file__).with_name('notification-helper-real.py'))
+real=importlib.util.module_from_spec(spec); spec.loader.exec_module(real)
+def stalled(name, flag, started, seconds):
+    original=real.OPERATIONS[name]
+    def run(data):
+        if Path(flag).exists():
+            Path(started).touch()
+            deadline=time.monotonic()+seconds
+            while Path(flag).exists() and time.monotonic()<deadline: time.sleep(.02)
+            if Path(flag).exists(): raise ValueError('test worker stall timed out')
+        return original(data)
+    real.OPERATIONS[name]=run
+stalled('write', STALL, STARTED, 30)
+stalled('context', CONTEXT_STALL, CONTEXT_STARTED, 15)
+os.umask(0o077)
+try:
+    if sys.argv[1]=='serve': real.serve()
+    else: real.OPERATIONS[sys.argv[1]](real.packet())
+except Exception as error:
+    print('foamy.notifications: '+str(error), file=sys.stderr); sys.exit(1)
 '''.replace('CONTEXT_STALL', repr(str(context_stall))).replace('CONTEXT_STARTED', repr(str(context_started))).replace('STALL', repr(str(stall))).replace('STARTED', repr(str(started))))
 home = base/'home'; home.mkdir()
 config = home/'.config/omarchy'; config.mkdir(parents=True)
@@ -105,7 +115,7 @@ try:
     wait(lambda:state()['queuedJobs'] == 1 and state()['tracked'] <= 1, 'cancelled DND callbacks release')
     stall.unlink()
     wait(lambda:not state()['busy'] and state()['tracked'] == 0, 'clear drains without catch-up retries')
-    assert not list((base/'state/omarchy/notifications/history').glob('*.json'))
+    assert not list((base/'state/foamy-notifications/history').glob('*.json'))
     ipc('notifications','setDnd','off')
     send('Oversized icon', 'x'*5000)
     wait(lambda:'sender limits' in state()['lastError'], 'oversized metadata rejection')
@@ -151,7 +161,7 @@ try:
         if mode=='silenced': assert state()['retainedActions']==1
         send_buffer('Raw replacement '+mode, replace=identifier)
         wait(lambda:state()['nativeTracked']==state()['tracked']==state()['retainedActions']==0 and not state()['busy'], 'raw replacement releases '+mode)
-        files=list((base/'state/omarchy/notifications').glob('*.json')) if mode=='visible' else list((base/'state/omarchy/notifications/history').glob('*.json'))
+        files=list((base/'state/foamy-notifications/popups').glob('*.json')) if mode=='visible' else list((base/'state/foamy-notifications/history').glob('*.json'))
         assert any(json.loads(p.read_text())['summary']=='Raw replacement '+mode for p in files), files
         if mode=='visible': assert state()['popups']==1 and state()['groups'][0]['actions']==0, state()
         ipc('notifications','dismissAll'); ipc('notifications','clear')
@@ -172,7 +182,7 @@ try:
     assert raw_second-raw_first < 20*1024, (raw_first,raw_second)
     stall.unlink()
     wait(lambda:not state()['busy'] and state()['nativeTracked']==0, 'raw writes drain')
-    assert any(json.loads(p.read_text())['summary']=='Raw during first write' for p in (base/'state/omarchy/notifications/history').glob('*.json'))
+    assert any(json.loads(p.read_text())['summary']=='Raw during first write' for p in (base/'state/foamy-notifications/history').glob('*.json'))
     print('Raw 4 MiB buffer plateau:',json.dumps({'rssKiB':[raw_first,raw_second],'nativeTracked':raw_state['nativeTracked'],'queuedJobs':raw_state['queuedJobs']}))
     ipc('notifications','dismissAll'); ipc('notifications','clear'); ipc('notifications','setDnd','off')
     wait(lambda:not state()['busy'], 'context test cleanup')
@@ -187,13 +197,16 @@ try:
     wait(lambda:state()['pending']==2 and state()['nativeTracked']==0, 'context retains primitives only')
     context_stall.unlink()
     wait(lambda:state()['pending']==0 and not state()['busy'], 'detached context delivery')
-    files=list((base/'state/omarchy/notifications').glob('*.json'))
+    files=list((base/'state/foamy-notifications/popups').glob('*.json'))
     assert {json.loads(p.read_text())['summary'] for p in files}=={'Raw replacement awaiting context','Raw initial awaiting context'}, files
     assert process.poll() is None
     log.flush()
     output=(base/'runtime.log').read_text()
+    # The private XDG_RUNTIME_DIR has no PipeWire socket; the screen-share prompt's
+    # PipeWire import logs that as an ERROR line, which is expected here.
+    lines=[line for line in output.splitlines() if 'Failed to connect pipewire context' not in line]
     for unexpected in ['Invalid notification image result','callback failed','ReferenceError','TypeError','ERROR']:
-        assert unexpected not in output, output
+        assert not any(unexpected in line for line in lines), output
     print('PASS: real stalled-worker DND/popup floods, byte/count plateaus, cancellation, oversized intake/replacement rejection, cleanup, raw-pixel release/retention replacements, primitive context backlog and recovery')
     print('DND plateau:', json.dumps({'jobs':second['queuedJobs'],'bytes':second['queuedBytes'],'tracked':second['tracked'],'rssKiB':[first_rss,second_rss]}))
     print('Popup plateau:', json.dumps({'jobs':popup_second['queuedJobs'],'bytes':popup_second['queuedBytes'],'popups':popup_second['popups']}))

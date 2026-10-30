@@ -16,8 +16,10 @@ function fixture() {
   state.service = state
   for (const name of ['popupQueueLimit', 'popupWriteLimit', 'popupQueueByteLimit', 'popupWriteByteLimit', 'popupPayloadLimit'])
     state[name] = Number(source.match(new RegExp('readonly property int ' + name + ': ([0-9]+)'))[1])
-  for (const name of ['reportPersistenceError', 'rejectPopupFileJob', 'enqueuePopupJob', 'enqueuePopupFileJob', 'cancelPendingWrites', 'enqueueHistoryRead']) load(state, name)
-  state.put = (payload, key='1-1', done=null, history=false) => state.enqueuePopupFileJob(['python3','/helper','write'], done, payload, key, history)
+  for (const name of ['reportPersistenceError', 'rejectPopupFileJob', 'enqueuePopupJob', 'enqueueHelperJob', 'cancelPendingWrites']) load(state, name)
+  // Raw payload strings stand in for serialized job data (the helper protocol carries JSON).
+  state.put = (payload, key='1-1', done=null, history=false) => state.enqueuePopupJob({op:'write', payload, done, replaceKey:key, historyWrite:history, writeKey:key})
+  state.enqueueHistoryRead = () => state.enqueueHelperJob('read', {history:true})
   return state
 }
 function bytes(state) { return state.popupFileQueue.reduce((sum, job) => sum + job.bytes, 0) }
@@ -43,18 +45,17 @@ test('UTF-8, escape expansion and per-packet limits apply before retention; fail
   for(let i=0; i<100; i++) s.put('🙂'.repeat(20000), '1-' + i)
   assert.ok(s.popupFileQueue.length < s.popupWriteLimit)
   assert.ok(bytes(s) <= s.popupWriteByteLimit)
-  assert.equal(s.enqueuePopupFileJob(['x'.repeat(8193)], null, ''), false)
 })
 
 test('writes cannot consume action/cleanup reserves, and every kind of work shares the hard bounds', () => {
   const s = fixture()
   for(let i=0; i<s.popupWriteLimit; i++) assert.equal(s.put('small', '1-' + i), true)
-  for(let i=s.popupWriteLimit; i<s.popupQueueLimit; i++) assert.equal(s.enqueuePopupFileJob(['cleanup'], null, ''), true)
+  for(let i=s.popupWriteLimit; i<s.popupQueueLimit; i++) assert.equal(s.enqueueHelperJob('delete', {key:'1-1'}), true)
   assert.equal(s.popupFileQueue.length, s.popupQueueLimit)
   let failed = 0
-  assert.equal(s.enqueuePopupFileJob(['focus'], ok => { assert.equal(ok, false); failed++ }, '{}'), false)
+  assert.equal(s.enqueueHelperJob('focus', {}, ok => { assert.equal(ok, false); failed++ }), false)
   assert.equal(s.enqueueHistoryRead(), false)
-  assert.equal(s.enqueuePopupJob({restore:true}), false)
+  assert.equal(s.enqueueHelperJob('read', {}), false)
   assert.equal(failed, 1)
   assert.equal(s.popupFileQueue.length, s.popupQueueLimit)
   assert.ok(bytes(s) <= s.popupQueueByteLimit)
@@ -66,7 +67,7 @@ test('coalescing and cancellation preserve callback, read and cleanup barriers',
   assert.equal(s.popupFileQueue.length, 1)
   assert.equal(s.popupFileQueue[0].payload, 'new')
   s.enqueueHistoryRead(); s.put('after read')
-  s.enqueuePopupFileJob(['delete'], null, ''); s.put('after delete')
+  s.enqueueHelperJob('delete', {key:'2-2'}); s.put('after delete')
   let cancelled = 0
   s.put('callback', '1-1', ok => { assert.equal(ok, false); cancelled++ }, true)
   s.put('after callback')
@@ -77,25 +78,28 @@ test('coalescing and cancellation preserve callback, read and cleanup barriers',
   s.cancelPendingWrites(['1-1'])
   assert.equal(cancelled, 1)
   assert.equal(s.popupFileQueue.length, 2)
-  assert.equal(s.popupFileQueue[0].read, true)
-  assert.deepEqual(Array.from(s.popupFileQueue[1].command), ['delete'])
+  assert.equal(s.popupFileQueue[0].op, 'read')
+  assert.equal(s.popupFileQueue[1].op, 'delete')
 })
 
 test('draining a write releases its pending slot and bytes; a read remains a barrier', () => {
   const s = fixture()
-  s.popupFileProc = {running:true}; s.readHistoryProc = {running:false}; s.restorePopupsProc = {running:false}
-  s.startHistoryRead = () => { s.readHistoryProc.running = true }
-  load(s, 'runNextPopupFileJob')
-  s.put('first'); s.enqueueHistoryRead(); s.put('last', '1-2')
-  s.popupFileProc.running = false; s.runNextPopupFileJob()
-  assert.equal(s.runningPayload, 'first')
+  const sent = []
+  s.helperProc = {running:true, write(line) { sent.push(JSON.parse(line)) }}; s.helperRestart = {running:false, start() {}}
+  s.runningJob = null; s.nextJobId = 0; s.acceptNormalizedImages = () => {}
+  load(s, 'runNextPopupFileJob'); load(s, 'helperReplied')
+  s.put('"first"'); s.enqueueHistoryRead(); s.put('"last"', '1-2')
+  s.runNextPopupFileJob()
+  assert.equal(sent[0].data, 'first')
   assert.equal(s.popupFileQueue.length, 2)
-  s.popupFileProc.running = false; s.runNextPopupFileJob()
-  assert.equal(s.readHistoryProc.running, true)
+  // One job in flight: nothing else is sent until the helper answers.
+  s.runNextPopupFileJob(); assert.equal(sent.length, 1)
+  s.helperReplied(JSON.stringify({id:sent[0].id, ok:true, out:''}))
+  assert.equal(sent[1].op, 'read')
   assert.equal(s.popupFileQueue.length, 1)
-  s.runNextPopupFileJob(); assert.equal(s.popupFileQueue.length, 1)
-  s.readHistoryProc.running = false; s.runNextPopupFileJob()
-  assert.equal(s.runningPayload, 'last')
+  s.helperReplied(JSON.stringify({id:999, ok:true, out:''})); assert.equal(sent.length, 2)
+  s.helperReplied(JSON.stringify({id:sent[1].id, ok:true, out:''}))
+  assert.equal(sent[2].data, 'last')
   assert.equal(bytes(s), 0)
 })
 
@@ -138,10 +142,10 @@ test('oversized fields/actions are rejected at intake and replacements without c
 
 test('history writes have cancellation keys but never expect a live-image result', () => {
   const s=fixture()
-  s.popupFileProc={running:true}; s.readHistoryProc={running:false}; s.restorePopupsProc={running:false}
+  s.helperProc={running:true, write() {}}; s.helperRestart={running:false, start() {}}; s.runningJob=null; s.nextJobId=0
   load(s, 'runNextPopupFileJob')
   s.put('{}', '1-1', () => {}, true)
-  s.popupFileProc.running=false; s.runNextPopupFileJob()
+  s.runNextPopupFileJob()
   assert.equal(s.runningImageWrite, false)
 })
 
@@ -170,10 +174,10 @@ test('popup and history writes with the same identity cannot replace each other'
 test('the hard byte budget also bounds control jobs before the job-count limit', () => {
   const s=fixture()
   for(let i=0;i<6;i++) assert.equal(s.put('x'.repeat(131000),'1-'+i),true)
-  assert.equal(s.enqueuePopupFileJob(['focus'],null,'x'.repeat(131000)),true)
-  assert.equal(s.enqueuePopupFileJob(['focus'],null,'x'.repeat(131000)),true)
+  assert.equal(s.enqueuePopupJob({op:'focus',payload:'x'.repeat(131000)}),true)
+  assert.equal(s.enqueuePopupJob({op:'focus',payload:'x'.repeat(131000)}),true)
   let failed=0
-  assert.equal(s.enqueuePopupFileJob(['focus'],ok=>{assert.equal(ok,false);failed++},'x'.repeat(131000)),false)
+  assert.equal(s.enqueuePopupJob({op:'focus',payload:'x'.repeat(131000),done:ok=>{assert.equal(ok,false);failed++}}),false)
   assert.equal(s.popupFileQueue.length,8)
   assert.ok(bytes(s)<=s.popupQueueByteLimit)
   assert.equal(failed,1)

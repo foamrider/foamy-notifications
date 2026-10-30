@@ -56,11 +56,15 @@ class HelperTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d,'XDG_CONFIG_HOME':d+'/config'}):
             row={'timestamp':1000,'originalId':3,'summary':'Hello','body':'$(touch nope)'}
             h.write({'entry':dict(row, actionsJson='[{"identifier":"reply"}]')})
-            path=h.base()/'1000-3.json'
+            path=h.popups()/'1000-3.json'
             self.assertEqual(json.loads(path.read_text()),dict(row, appIcon="", image="", imageFormat=1))
             self.assertEqual(path.stat().st_mode & 0o777,0o600)
             h.forget({'keys':['1000-3']})
             self.assertFalse(path.exists())
+            # The center reads this journal; Foamy never runs the center's scripts.
+            self.assertEqual((h.base()/'handled').read_text().split(),['1000-3'])
+            h.forget({'keys':['1000-4','1000-3']})
+            self.assertEqual((h.base()/'handled').read_text().split(),['1000-4','1000-3'])
             with self.assertRaises(ValueError):h.forget({'keys':['../secrets']})
 
     def test_fifo_image_cannot_block_storage(self):
@@ -70,11 +74,11 @@ class HelperTest(unittest.TestCase):
             row={'timestamp':1000,'originalId':3,'summary':'Hello','appIcon':'file://'+str(destination)}
             result=subprocess.run(['python3',str(ROOT/'bin/notification-helper.py'),'write'],input=json.dumps({'entry':row,'copies':[{'from':str(fifo),'to':str(destination)}]}),text=True,capture_output=True,timeout=2)
             self.assertEqual(result.returncode,0,result.stderr)
-            saved=json.loads((h.base()/'1000-3.json').read_text());self.assertEqual(saved['appIcon'],'')
+            saved=json.loads((h.popups()/'1000-3.json').read_text());self.assertEqual(saved['appIcon'],'')
 
     def test_corrupt_and_oversized_restores_are_skipped(self):
         with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d}):
-            root=h.base();root.mkdir(parents=True)
+            root=h.popups();root.mkdir(parents=True)
             (root/'1000-1.json').write_text('')
             (root/'1000-2.json').write_text('x'*(h.LIMIT+1))
             h.write({'entry':{'timestamp':1000,'originalId':3,'summary':'Good'}})
@@ -89,5 +93,45 @@ class HelperTest(unittest.TestCase):
             (folder/'shell.json').write_text(json.dumps({'plugins':[{'id':'foamy.notifications','browserMappings':[mapping]}]}))
             h.focus_configured({'app':'Vivaldi','body':'teams.microsoft.com','execArgv':'["ignored"]'})
             self.assertEqual(focus.call_args.args[0]['mappings'],[mapping]);self.assertNotIn('execArgv',focus.call_args.args[0])
+
+    def test_one_time_migration_from_the_4_0_layout(self):
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d}):
+            old=Path(d)/'omarchy/notifications';(old/'history').mkdir(parents=True);(old/'images').mkdir()
+            image='1000-1-image-'+'a'*64+'.png'
+            (old/'images'/image).write_bytes(b'png')
+            (old/'1000-1.json').write_text(json.dumps({'timestamp':1000,'originalId':1,'summary':'Live','image':(old/'images'/image).as_uri()}))
+            (old/'history/900-2.json').write_text(json.dumps({'timestamp':900,'originalId':2,'summary':'Old'}))
+            for stock in ('live.json','history.json','quiet.json'): (old/stock).write_text('[]')
+            (Path(d)/'omarchy/notifications.json').write_text(json.dumps({'dnd':True,'snoozes':{}}))
+            h.migrate({})
+            live=json.loads((h.popups()/'1000-1.json').read_text())
+            self.assertEqual(live['image'],(h.base()/'images'/image).as_uri())
+            self.assertTrue((h.history()/'900-2.json').exists())
+            self.assertFalse((old/'1000-1.json').exists())
+            for stock in ('live.json','history.json','quiet.json'): self.assertTrue((old/stock).exists())
+            self.assertTrue(json.loads((h.base()/'state.json').read_text())['dnd'])
+            self.assertEqual(h.base().stat().st_mode & 0o777,0o700)
+            # Once only: later 4.0-layout files belong to whoever wrote them (stock 4.0).
+            (old/'1100-3.json').write_text(json.dumps({'timestamp':1100,'originalId':3,'summary':'Stock'}))
+            h.migrate({});self.assertTrue((old/'1100-3.json').exists())
+
+    def test_migration_reads_dnd_from_stock_quiet_after_the_4_5_migration(self):
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d}):
+            old=Path(d)/'omarchy/notifications';old.mkdir(parents=True)
+            (old/'quiet.json').write_text(json.dumps({'dnd':True,'snoozes':{}}))
+            h.migrate({});self.assertTrue(json.loads((h.base()/'state.json').read_text())['dnd'])
+
+    def test_serve_answers_each_job_and_drop_removes_own_copies(self):
+        with tempfile.TemporaryDirectory() as d:
+            env=dict(os.environ,XDG_STATE_HOME=d)
+            jobs=[{'id':1,'op':'write','data':{'entry':{'timestamp':10,'originalId':1,'summary':'A'},'history':True}},
+                  {'id':2,'op':'write','data':{'entry':{'timestamp':20,'originalId':2,'summary':'B'}}},
+                  {'id':3,'op':'drop','data':{'before':15}},{'id':4,'op':'archive','data':{'key':'20-2'}},
+                  {'id':5,'op':'read','data':{'history':True}},{'id':6,'op':'unknown','data':{}}]
+            result=subprocess.run(['python3','-I',str(ROOT/'bin/notification-helper.py'),'serve'],input=''.join(json.dumps(j)+'\n' for j in jobs),text=True,capture_output=True,timeout=5,env=env)
+            replies=[json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual([r['id'] for r in replies],[1,2,3,4,5,6])
+            self.assertEqual([r['ok'] for r in replies],[True,True,True,True,True,False])
+            self.assertEqual([json.loads(l)['summary'] for l in replies[4]['out'].splitlines()],['B'])
 
 if __name__=='__main__':unittest.main()

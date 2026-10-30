@@ -83,7 +83,7 @@ def wait(fn):
     raise AssertionError((base/'runtime.log').read_text())
 def send(app,title,body='Message'):
     subprocess.run(['notify-send','-a',app,'-u','critical',title,body],env=env,check=True,timeout=2)
-def files():return list((home/'.local/state/omarchy/notifications').glob('**/*.json'))
+def files():return list([p for p in (home/'.local/state/foamy-notifications').glob('*/*.json')])
 try:
     wait(lambda:(runtime/'pipewire-0').exists())
     proc=start();wait(lambda:ipc('notifications','ping')=='ok')
@@ -101,7 +101,7 @@ try:
     send('Mail','Other sender')
     wait(lambda:state()['popups']==1 and not state()['busy'])
     ipc('notifications','dismissAll');wait(lambda:state()['popups']==0 and not state()['busy'])
-    wait(lambda:'app:Chat' in json.loads((home/'.local/state/omarchy/notifications.json').read_text()).get('snoozes',{}))
+    wait(lambda:'app:Chat' in json.loads((home/'.local/state/foamy-notifications/state.json').read_text()).get('snoozes',{}))
     os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=3)
     proc=start();wait(lambda:'app:Chat' in state()['snoozes'])
     ipc('feature-test','shortSnooze');wait(lambda:not state()['snoozes'])

@@ -158,7 +158,7 @@ try:
     cfg['plugins'][0]['dndSilenceCritical']=True
     (config/'shell.json').write_text(json.dumps(cfg))
     wait_for(lambda:state()['settings']['dndSilenceCritical'],'critical DND option reloads')
-    history=home/'.local/state/omarchy/notifications/history'
+    history=home/'.local/state/foamy-notifications/history'
     for app_name in ['omarchy-action','notify-send','Foamy Test']:
         title='DND policy silenced '+app_name
         send(title,('-a',app_name))
@@ -221,8 +221,8 @@ try:
             wait_for(lambda:state()['popups']==0 and not state()['busy'],'close test popup removed')
             if enabled and click=='closeFirst':
                 wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0 and json.loads(ipc('foamy.notification-center.test','state'))['unread']==0,'X clears history and badge')
-                assert not list((home/'.local/state/omarchy/notifications/history').glob('*.json')),'X entered history'
-                assert not list((home/'.local/state/omarchy/notifications').glob('*-*.json')),'X popup persisted'
+                assert not list((home/'.local/state/foamy-notifications/history').glob('*.json')),'X entered history'
+                assert not list((home/'.local/state/foamy-notifications/popups').glob('*-*.json')),'X popup persisted'
                 ipc('foamy.notification-center.test','reload')
                 time.sleep(.3)
                 assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'X entry reappeared after refresh'
@@ -253,7 +253,7 @@ try:
         wait_for(lambda:bool(state()['lastError']) and not state()['busy'],'popup failure reports error')
         assert state()['popups']==1
         assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'failed popup lost center history'
-        assert len(list((home/'.local/state/omarchy/notifications').glob('*.json')))==1,'failed popup lost persistence'
+        assert len(list((home/'.local/state/foamy-notifications/popups').glob('*.json')))==1,'failed popup lost persistence'
         ctx['clients']=ctx['clients'][:1];context_path.write_text(json.dumps(ctx))
         ipc('notifications','invokeLast')
         wait_for(lambda:state()['popups']==0 and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'popup retry succeeds')
@@ -275,7 +275,7 @@ try:
         time.sleep(10.2)
         assert json.loads(ipc('foamy.notification-center.test','state'))['listLoads']==reads,'idle center still polls the archive'
 
-    assert not list((home/'.local/state/omarchy/notifications/history').glob('*.json')),'handled click entered history'
+    assert not list((home/'.local/state/foamy-notifications/history').glob('*.json')),'handled click entered history'
     # Use Vivaldi's actual identity format through both consumers of the shared helper.
     ctx=json.loads(context_path.read_text());original_clients=ctx['clients']
     browser={'class':'vivaldi-stable','address':'0x100'}
@@ -342,7 +342,7 @@ try:
             wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'history callback archived '+mode)
             if mode=='silenced':
                 wait_for(lambda:state()['retainedActions']==1,'silenced callback retained')
-                files=list((home/'.local/state/omarchy/notifications/history').glob('*-*.json'))
+                files=list((home/'.local/state/foamy-notifications/history').glob('*-*.json'))
                 key=next(p.stem for p in files if json.loads(p.read_text()).get('summary')=='Zendesk history '+mode)
                 ipc('notifications','setDnd','off')
             else:
@@ -388,10 +388,10 @@ try:
         else:
             wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'raw text reaches center')
             if target=='center-history':ipc('notifications','dismissAll')
-            center_rows=list((home/'.local/state/omarchy/notifications/history' if target=='center-silenced' else home/'.local/state/omarchy/notifications').glob('*.json'))
+            center_rows=list((home/'.local/state/foamy-notifications/history' if target=='center-silenced' else home/'.local/state/foamy-notifications/popups').glob('*.json'))
             if target=='center-history':
                 wait_for(lambda:state()['popups']==0 and not state()['busy'],'raw popup archived')
-                center_rows=list((home/'.local/state/omarchy/notifications/history').glob('*.json'))
+                center_rows=list((home/'.local/state/foamy-notifications/history').glob('*.json'))
             key=next(p.stem for p in center_rows if json.loads(p.read_text()).get('summary')=='Raw focus '+target)
             assert ipc('foamy.notifications','invokeDefault',key)=='unavailable'
             ipc('foamy.notification-center.test','focus',key)
@@ -406,7 +406,7 @@ try:
     wait_for(lambda:state()['popups']==1 and not state()['busy'],'new popup')
     ipc('notifications','dismissOne')
     wait_for(lambda:state()['popups']==0 and not state()['busy'],'dismiss drains')
-    assert list((home/'.local/state/omarchy/notifications/history').glob('*.json')),'dismiss did not retain history'
+    assert list((home/'.local/state/foamy-notifications/history').glob('*.json')),'dismiss did not retain history'
     ipc('notifications','setDnd','on');send('Silenced')
     wait_for(lambda:not state()['busy'],'DND drains')
     assert state()['popups']==0,'DND showed popup'
@@ -434,7 +434,7 @@ try:
     wait_for(lambda:marker.exists() and state()['popups']==0 and not state()['busy'],'screenshot default action')
     assert marker.read_text()==str(image),'screenshot action changed the image path'
     if CENTER:
-        wait_for(lambda:not any('Screenshot saved to clipboard and file' in item.read_text() for item in (home/'.local/state/omarchy/notifications/history').glob('*.json')),'handled screenshot stays out of history')
+        wait_for(lambda:not any('Screenshot saved to clipboard and file' in item.read_text() for item in (home/'.local/state/foamy-notifications/history').glob('*.json')),'handled screenshot stays out of history')
     if CENTER:
         ipc('foamy.notification-center.test','clear')
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'clear unrelated history before editor scenarios')
