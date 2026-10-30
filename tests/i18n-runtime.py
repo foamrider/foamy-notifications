@@ -17,11 +17,10 @@ with tempfile.TemporaryDirectory(prefix='foamy-language-test-') as directory:
     app.mkdir()
     plugin = app / 'plugin'
     plugin.mkdir()
-    shutil.copy(source / 'FoamyI18n.qml', plugin)
+    shutil.copytree(source / 'kit', plugin / 'kit')
     shutil.copytree(source / 'i18n', plugin / 'i18n')
     shutil.copytree(source / 'components', plugin / 'components')
-    shutil.copy(source / 'NotificationLogic.js', plugin)
-    (plugin / 'qmldir').write_text('singleton FoamyI18n 1.0 FoamyI18n.qml\n')
+    for name in ('NotificationLogic.js', 'Markup.js', 'BrowserIdentity.js'): shutil.copy(source / name, plugin)
     # The added catalog entry exists only in this fixture, never in a release.
     en = json.loads((plugin / 'i18n/en.json').read_text())
     en['English only'] = 'English only'
@@ -34,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='foamy-language-test-') as directory:
     qml = '''import QtQuick
 import Quickshell
 import Quickshell.Io
-import "plugin" as Plugin
+import "plugin/kit" as Plugin
 import "plugin/components"
 ShellRoot {
   property var translator: Plugin.FoamyI18n
@@ -57,6 +56,7 @@ ShellRoot {
       snoozeAvailable: true
       offers: ({codes:"482913 731208", link:"https://example.com", meeting: stepper.step % 2 === 1})
       copiedCode: "482913"
+      deeds: [{kind:"code", value:"482913", text:""}, {kind:"code", value:"731208", text:""}, {kind:"link", value:"https://example.com", text:"", meeting: stepper.step % 2 === 1}]
     }
   }
   FileView { id: choice; path: LANGUAGE_FILE }
