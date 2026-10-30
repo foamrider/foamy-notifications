@@ -172,3 +172,14 @@ test('center never runs a command from a detached or reused native identity',()=
   assert.equal(state.invokeCenterDefault('10-1'),'unavailable');assert.equal(jobs.length,0);assert.deepEqual(events,[])
  }
 })
+test('clearing before a cutoff releases every eligible live key, not just the first 100',()=>{
+ const {state,jobs}=fixture()
+ const released=[]
+ for(let i=1;i<=150;i++){state.liveKeys[i]=`${i}-${i}`;state.liveRefs[i]={tracked:true,dismiss(){released.push(i)}};state.retainedHistory[`${i}-${i}`]={originalId:i,timestamp:i}}
+ state.releaseHistoryBefore(1000)
+ assert.equal(released.length,150)
+ const drops=jobs.filter(j=>j.command==='drop').map(j=>JSON.parse(j.payload))
+ assert.ok(drops.every(d=>!d.keys||d.keys.length<=100),'helper batches stay within 100 keys')
+ assert.equal(drops.filter(d=>d.keys).reduce((n,d)=>n+d.keys.length,0),150)
+ assert.ok(drops.some(d=>d.before===1000))
+})

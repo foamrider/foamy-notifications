@@ -636,7 +636,8 @@ Item {
     // Removing history while a popup is visible must not retain its callback later.
     removeKeys(keys, "historyDismissed")
     // The center removed these durably; Foamy drops its own copies (the center never deletes them).
-    enqueueHelperJob("drop", {keys: keys})
+    // The helper takes at most 100 keys per job.
+    for (var i = 0; i < keys.length; i += 100) enqueueHelperJob("drop", {keys: keys.slice(i, i + 100)})
   }
 
   function releaseHistoryBefore(timestamp) {
@@ -644,7 +645,8 @@ Item {
     var keys = Object.keys(liveKeys).map(function(id) { return liveKeys[id] }).filter(function(key) {
       return Number(key.split("-")[0]) <= timestamp
     })
-    releaseHistoryKeys(keys.slice(0, 100))
+    // Every eligible key: a retained callback left behind could rewrite the history dropped below.
+    releaseHistoryKeys(keys)
     enqueueHelperJob("drop", {before: Math.floor(timestamp)})
   }
 
