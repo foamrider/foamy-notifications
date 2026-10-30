@@ -78,8 +78,10 @@ continue to work.
   enable **X removes from history** in the center's Foamy Notifications settings
   to remove the popup's whole duplicate group from history instead.
 - Exact duplicates share a card. Overflow goes to history.
-- The clock button snoozes that sender for 15 minutes, 30 minutes, 1 hour, or
-  4 hours. Browser notifications use the identified website. Snoozed arrivals
+- Hover the card to reveal the snooze button to the left of the timestamp.
+  It also appears on keyboard focus. The button snoozes that sender for
+  15 minutes, 30 minutes, 1 hour, or 4 hours. Browser notifications use the
+  identified website. Snoozed arrivals
   stay in history; expiry resumes new arrivals without replaying the backlog.
 - Detected verification codes have a copy button. New saved notifications with
   a detected code become a redacted placeholder, including their sender metadata,
@@ -89,6 +91,10 @@ continue to work.
   leave the popup available with an error.
 - Explicit link/meeting buttons open validated HTTP(S) destinations. Normal
   body clicks and sender actions keep their existing behavior. No links open automatically.
+- Actions share a compact footer with centered icons and labels. Link buttons use
+  an external-link icon; copied codes show a green check. Multiple actions use
+  equal-width sections, with additional rows when needed. The footer follows the
+  active theme and disappears when there are no actions.
 - A Hyprland portal screen-sharing stream offers a 30-minute global snooze.
   Nothing is muted automatically. If PipeWire or stream metadata is unavailable,
   manual snooze and DND still work. Turn the prompt off in the center's settings.

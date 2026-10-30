@@ -19,6 +19,8 @@ with tempfile.TemporaryDirectory(prefix='foamy-language-test-') as directory:
     plugin.mkdir()
     shutil.copy(source / 'FoamyI18n.qml', plugin)
     shutil.copytree(source / 'i18n', plugin / 'i18n')
+    shutil.copytree(source / 'components', plugin / 'components')
+    shutil.copy(source / 'NotificationLogic.js', plugin)
     (plugin / 'qmldir').write_text('singleton FoamyI18n 1.0 FoamyI18n.qml\n')
     # The added catalog entry exists only in this fixture, never in a release.
     en = json.loads((plugin / 'i18n/en.json').read_text())
@@ -33,22 +35,59 @@ with tempfile.TemporaryDirectory(prefix='foamy-language-test-') as directory:
 import Quickshell
 import Quickshell.Io
 import "plugin" as Plugin
+import "plugin/components"
 ShellRoot {
   property var translator: Plugin.FoamyI18n
   property string rendered: translator.t(KEY)
+  function child(item, name) {
+    if (item.objectName === name) return item
+    for (var nested of item.children || []) {
+      var match = child(nested, name)
+      if (match) return match
+    }
+    return null
+  }
+  FloatingWindow {
+    visible: true; implicitWidth: 420; implicitHeight: 350
+    NotificationCard {
+      id: card
+      x: 10; y: 10; width: 280
+      app: "Preview"; summary: "Sign-in"; body: "Sample notification"
+      timestamp: 1790930400000; count: 12
+      snoozeAvailable: true
+      offers: ({codes:"482913 731208", link:"https://example.com", meeting: stepper.step % 2 === 1})
+      copiedCode: "482913"
+    }
+  }
   FileView { id: choice; path: LANGUAGE_FILE }
   Timer {
+    id: stepper
     property int step: 0
     interval: 250; running: true; repeat: true
     onTriggered: {
-      var expected = NATIVE && step === 0 ? TRANSLATED : KEY
+      var expected = NATIVE && (step === 0 || step === 4) ? TRANSLATED : KEY
       if (rendered !== expected) { console.error("Wrong translation", step, rendered, expected); Qt.exit(1); return }
       if (translator.t("English only") !== "English only" || translator.t("Unknown label") !== "Unknown label") { Qt.exit(2); return }
       if (translator.t("Name %1 {name}", ["$& %2"]) !== "Name $& %2 {name}") { Qt.exit(3); return }
       if (translator.t("Name {name}", {name: "$& {name}"}) !== "Name $& {name}") { Qt.exit(4); return }
+      var copy = child(card, "notificationCopyCode"), link = child(card, "notificationOpenLink")
+      if (copy.text !== translator.t("Copied %1", "482913") || link.text !== translator.t(step % 2 === 1 ? "Join meeting" : "Open link")) { console.error("Stale footer translation", step, copy.text, link.text); Qt.exit(5); return }
+      var snooze = child(card, "notificationSnooze"), time = child(card, "notificationTime")
+      if (snooze.Accessible.name !== translator.t("Snooze this sender")) { Qt.exit(6); return }
+      var rtl = NATIVE && step === 3
+      if (translator.rightToLeft !== rtl || (snooze.mapToItem(card,0,0).x > time.mapToItem(card,0,0).x) !== rtl) { console.error("Wrong header direction", step); Qt.exit(7); return }
+      var buttons = Array.from(child(card,"notificationFooter").children).filter(function(item) { return item.entry !== undefined })
+      if ((buttons[0].x > buttons[1].x) !== rtl) { console.error("Wrong footer direction", step); Qt.exit(8); return }
+      for (var button of buttons) {
+        if (button.mapToItem(card,0,0).x < 0 || button.mapToItem(card,button.width,0).x > card.width) { Qt.exit(9); return }
+      }
+      var decimal = NATIVE && (step === 0 || step === 1 || step === 4) ? "13,1" : "13.1"
+      if (translator.number(13.14, 1) !== decimal) { console.error("Wrong number format", step); Qt.exit(10); return }
       if (step === 0) choice.setText("da")
       else if (step === 1) choice.setText("en")
-      else { console.log("I18N_RUNTIME_PASS", NATIVE ? "4.5 live no/da/en" : "4.0 English fallback"); Qt.quit() }
+      else if (step === 2) choice.setText("ar")
+      else if (step === 3) choice.setText("no")
+      else { console.log("I18N_RUNTIME_PASS", NATIVE ? "4.5 live no/da/en/ar/no with card bindings and RTL" : "4.0 English fallback"); Qt.quit() }
       step++
     }
   }
@@ -65,4 +104,4 @@ ShellRoot {
     output = result.stdout + result.stderr
     if result.returncode or 'I18N_RUNTIME_PASS' not in output or any(e in output for e in ['ReferenceError', 'TypeError', 'Unable to assign']):
         raise AssertionError(output)
-    print(source.name, '4.5 live no/da/en' if native else '4.0 English fallback', 'passed')
+    print(source.name, '4.5 live no/da/en/ar/no with card bindings and RTL' if native else '4.0 English fallback', 'passed')

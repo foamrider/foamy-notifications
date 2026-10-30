@@ -10,6 +10,8 @@ import "../NotificationLogic.js" as Logic
 
 Rectangle {
   id: root
+  LayoutMirroring.enabled: PluginLanguage.FoamyI18n.rightToLeft
+  LayoutMirroring.childrenInherit: true
   property string app: ""
   property string appIcon: ""
   property string favicon: ""
@@ -42,6 +44,22 @@ Rectangle {
   // Keep settings reachable without giving browser chrome a permanent action row.
   readonly property var primaryActions: actions.filter(function(a) { return a.identifier !== "settings" }).slice(0, 2)
   readonly property var overflowActions: actions.filter(function(a) { return primaryActions.indexOf(a) < 0 })
+  // Keep the model independent of copy feedback so keyboard focus survives it.
+  readonly property var footerActions: {
+    var result = primaryActions.map(function(action) {
+      return {kind: "action", value: action.identifier, text: action.text,
+        glyph: action.identifier === "reply" ? "󰑚" : ""}
+    })
+    String(offers.codes || "").split(" ").filter(Boolean).forEach(function(code) {
+      result.push({kind: "code", value: code, text: "", glyph: "󰆏"})
+    })
+    if (offers.link) result.push({kind: "link", value: offers.link,
+      text: offers.meeting ? PluginLanguage.FoamyI18n.t("Join meeting") : PluginLanguage.FoamyI18n.t("Open link"),
+      glyph: offers.meeting ? "󰕧" : "󰏌"})
+    return result
+  }
+  // Omarchy exposes no success role; use readable Catppuccin green in both modes.
+  readonly property color copiedColor: Commons.Color.popups.background.hslLightness < 0.5 ? "#a6e3a1" : "#40a02b"
   readonly property bool hovered: hover.hovered || actionsExpanded || snoozeExpanded
   readonly property bool hasTitle: summary.trim().length > 0
   readonly property string smallIcon: {
@@ -149,10 +167,25 @@ Rectangle {
         }
         Text {
           visible: root.count > 1
-          text: "· " + root.count
+          text: "· " + PluginLanguage.FoamyI18n.number(root.count)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           color: Util.alpha(Commons.Color.popups.text, 0.65)
+        }
+        Controls.AbstractButton {
+          id: snoozeButton
+          objectName: "notificationSnooze"
+          visible: root.snoozeAvailable
+          // Reserve the slot so revealing the control does not move the timestamp.
+          opacity: hover.hovered || activeFocus ? 1 : 0
+          focusPolicy: Qt.TabFocus
+          Layout.preferredWidth: Style.space(24)
+          Layout.preferredHeight: Style.space(24)
+          enabled: !root.busy
+          Accessible.name: PluginLanguage.FoamyI18n.t("Snooze this sender")
+          background: Rectangle { radius: Style.cornerRadius * 2; color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
+          contentItem: Text { text: "󰥔"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+          onClicked: root.snoozeExpanded = !root.snoozeExpanded
         }
         Text {
           objectName: "notificationTime"
@@ -173,18 +206,6 @@ Rectangle {
           background: Rectangle { radius: Style.cornerRadius * 2; color: moreButton.hovered || root.actionsExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
           contentItem: Text { text: "⋯"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.title }
           onClicked: root.actionsExpanded = !root.actionsExpanded
-        }
-        Controls.AbstractButton {
-          id: snoozeButton
-          objectName: "notificationSnooze"
-          visible: root.snoozeAvailable
-          Layout.preferredWidth: Style.space(24)
-          Layout.preferredHeight: Style.space(24)
-          enabled: !root.busy
-          Accessible.name: PluginLanguage.FoamyI18n.t("Snooze this sender")
-          background: Rectangle { radius: Style.cornerRadius * 2; color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(Commons.Color.popups.text, 0.09) : "transparent" }
-          contentItem: Text { text: "󰥔"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Commons.Color.popups.text; font.family: root.fontFamily; font.pixelSize: Style.font.body }
-          onClicked: root.snoozeExpanded = !root.snoozeExpanded
         }
         Controls.AbstractButton {
           id: closeButton
@@ -268,43 +289,6 @@ Rectangle {
       }
       Flow {
         Layout.fillWidth: true
-        Layout.topMargin: visible ? Style.space(3) : 0
-        spacing: Style.space(5)
-        visible: root.primaryActions.length > 0
-        Repeater {
-          model: root.primaryActions
-          ActionButton {
-            required property var modelData
-            objectName: "notificationAction"
-            actionData: modelData
-            width: Math.min(implicitWidth, parent.width)
-          }
-        }
-      }
-      Flow {
-        Layout.fillWidth: true
-        spacing: Style.space(5)
-        visible: !!root.offers.codes || !!root.offers.link
-        Repeater {
-          model: String(root.offers.codes || "").split(" ").filter(Boolean)
-          FeatureButton {
-            required property string modelData
-            objectName: "notificationCopyCode"
-            text: root.copiedCode === modelData ? PluginLanguage.FoamyI18n.t("Copied %1", modelData) : PluginLanguage.FoamyI18n.t("Copy %1", modelData)
-            width: Math.min(implicitWidth, parent.width)
-            onClicked: root.featureRequested("code", modelData)
-          }
-        }
-        FeatureButton {
-          objectName: "notificationOpenLink"
-          visible: !!root.offers.link
-          text: root.offers.meeting ? PluginLanguage.FoamyI18n.t("Join meeting") : PluginLanguage.FoamyI18n.t("Open link")
-          width: Math.min(implicitWidth, parent.width)
-          onClicked: root.featureRequested("link", root.offers.link)
-        }
-      }
-      Flow {
-        Layout.fillWidth: true
         spacing: Style.space(5)
         visible: root.snoozeExpanded
         Repeater {
@@ -345,6 +329,36 @@ Rectangle {
         wrapMode: Text.Wrap
       }
     }
+    GridLayout {
+      id: footer
+      objectName: "notificationFooter"
+      Layout.fillWidth: true
+      visible: root.footerActions.length > 0
+      columns: Math.min(2, root.footerActions.length)
+      columnSpacing: 0
+      rowSpacing: 0
+      uniformCellWidths: true
+      Repeater {
+        model: root.footerActions
+        FooterButton {
+          required property int index
+          required property var modelData
+          entry: modelData
+          objectName: entry.kind === "code" ? "notificationCopyCode" : entry.kind === "link" ? "notificationOpenLink" : "notificationAction"
+          Layout.fillWidth: true
+          Layout.fillHeight: true
+          Layout.minimumWidth: 0
+          Layout.preferredWidth: 1
+          // An odd final action fills its row, including on narrow cards.
+          Layout.columnSpan: index === root.footerActions.length - 1 && index % 2 === 0 ? footer.columns : 1
+          leftDivider: index % 2 === 1
+          readonly property bool firstInLastRow: index === root.footerActions.length - (root.footerActions.length % 2 === 0 ? 2 : 1)
+          readonly property bool lastInLastRow: index === root.footerActions.length - 1
+          roundLeft: PluginLanguage.FoamyI18n.rightToLeft ? lastInLastRow : firstInLastRow
+          roundRight: PluginLanguage.FoamyI18n.rightToLeft ? firstInLastRow : lastInLastRow
+        }
+      }
+    }
   }
 
   Rectangle {
@@ -354,6 +368,72 @@ Rectangle {
     color: "white"
     visible: false
     layer.enabled: true
+  }
+
+  component FooterButton: Controls.AbstractButton {
+    id: footerButton
+    required property var entry
+    property bool leftDivider: false
+    property bool roundLeft: false
+    property bool roundRight: false
+    readonly property bool copied: entry.kind === "code" && root.copiedCode === entry.value
+    readonly property string glyph: copied ? "󰄬" : entry.glyph
+    text: entry.kind === "code" ? (copied ? PluginLanguage.FoamyI18n.t("Copied %1", entry.value) : PluginLanguage.FoamyI18n.t("Copy %1", entry.value)) : entry.text
+    implicitHeight: Math.max(Style.space(34), footerLabel.implicitHeight + Style.space(12))
+    enabled: !root.busy
+    Accessible.name: text
+    hoverEnabled: true
+    background: Rectangle {
+      bottomLeftRadius: footerButton.roundLeft ? Math.max(0, root.radius - 1) : 0
+      bottomRightRadius: footerButton.roundRight ? Math.max(0, root.radius - 1) : 0
+      color: Qt.tint(Commons.Color.popups.background, Util.alpha(Commons.Color.popups.text, footerButton.hovered ? 0.10 : 0.055))
+      Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Util.alpha(Commons.Color.popups.text, 0.18) }
+      Rectangle { visible: footerButton.leftDivider; anchors.left: parent.left; width: 1; height: parent.height; color: Util.alpha(Commons.Color.popups.text, 0.18) }
+      Rectangle {
+        anchors.fill: parent; anchors.margins: 2
+        visible: footerButton.activeFocus
+        color: "transparent"; border.width: 1; border.color: Commons.Color.accent
+        radius: Style.cornerRadius
+      }
+    }
+    contentItem: Item {
+      RowLayout {
+        id: footerLabel
+        objectName: "notificationFooterLabel"
+        anchors.centerIn: parent
+        width: Math.min(implicitWidth, Math.max(0, parent.width - Style.space(16)))
+        spacing: Style.space(7)
+        Text {
+          visible: footerButton.glyph.length > 0
+          text: footerButton.glyph
+          font.family: root.fontFamily
+          font.pixelSize: Style.space(14)
+          color: footerButton.copied ? root.copiedColor : Commons.Color.popups.text
+          Layout.alignment: Qt.AlignVCenter
+        }
+        Text {
+          Layout.fillWidth: true
+          Layout.minimumWidth: 0
+          text: footerButton.text
+          textFormat: Text.PlainText
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          color: footerButton.copied ? root.copiedColor : Commons.Color.popups.text
+          horizontalAlignment: Text.AlignHCenter
+          wrapMode: Text.Wrap
+          maximumLineCount: 2
+          elide: Text.ElideRight
+        }
+      }
+    }
+    Controls.ToolTip.visible: hovered && footerLabel.implicitWidth > width - Style.space(16)
+    Controls.ToolTip.text: text
+    onClicked: {
+      if (entry.kind === "action") {
+        root.actionsExpanded = false
+        root.actionRequested(entry.value)
+      } else root.featureRequested(entry.kind, entry.value)
+    }
   }
 
   component FeatureButton: Controls.AbstractButton {

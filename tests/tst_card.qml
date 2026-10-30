@@ -19,7 +19,79 @@ Item {
     onCompletedChanged: if (completed) console.log("UI_RESULT",qtest_results.passCount,"passed",qtest_results.failCount,"failed")
     when: windowShown
     function init() { card.offers={codes:"",link:"",meeting:false};card.snoozeAvailable=false;card.snoozeExpanded=false;feature.clear(); card.showTimeoutIndicator=true;card.timeoutMs=0;card.remainingMs=0;card.compact=true;card.app="Test";card.showImages=true;card.imageSize=56;card.width=420;card.summary="Test title";card.busy=false;card.image="";card.appIcon="";card.favicon="";card.actionsExpanded=false;card.actions=[{identifier:"read",text:"Mark read"}];opened.clear();dismissed.clear();action.clear() }
-    function cleanup() { if (qtest_results.failed) console.log("FAILED_CASE", qtest_results.functionName) }
+    function cleanup() { card.error="";card.copiedCode="";if (qtest_results.failed) console.log("FAILED_CASE", qtest_results.functionName) }
+    function test_snooze_hover_slot_does_not_shift_time_and_supports_keyboard() {
+      card.snoozeAvailable=true;card.timestamp=1790930400000
+      card.forceActiveFocus();mouseMove(card,-10,-10);waitForRendering(card)
+      var snooze=findChild(card,"notificationSnooze"),time=findChild(card,"notificationTime")
+      compare(snooze.opacity,0)
+      var position=time.mapToItem(card,0,0),height=card.height
+      verify(snooze.mapToItem(card,snooze.width,0).x<position.x)
+      mouseMove(card,100,52);tryCompare(snooze,"opacity",1)
+      compare(time.mapToItem(card,0,0),position);compare(card.height,height)
+      mouseMove(card,-10,-10);tryCompare(snooze,"opacity",0)
+      snooze.forceActiveFocus(Qt.TabFocusReason);compare(snooze.opacity,1)
+      keyClick(Qt.Key_Space);verify(card.snoozeExpanded)
+      keyClick(Qt.Key_Escape);verify(!card.snoozeExpanded)
+      card.forceActiveFocus();compare(snooze.opacity,0)
+      compare(opened.count,0);compare(feature.count,0)
+      card.timestamp=0
+    }
+    function test_footer_centers_actions_and_preserves_focus_after_copy() {
+      card.actions=[];card.width=280
+      card.offers={codes:"482913",link:"https://example.com",meeting:false}
+      waitForRendering(card)
+      var footer=findChild(card,"notificationFooter"), copy=findChild(card,"notificationCopyCode"), link=findChild(card,"notificationOpenLink")
+      compare(footer.width,card.width-2);compare(copy.width,link.width)
+      compare(copy.height,34);compare(link.height,34)
+      compare(copy.y,link.y);compare(link.glyph,"󰏌")
+      verify(Math.abs(footer.mapToItem(card,0,footer.height).y-(card.height-1))<1)
+      for (var button of [copy,link]) {
+        var label=findChild(button,"notificationFooterLabel")
+        verify(Math.abs(label.mapToItem(button,label.width/2,label.height/2).x-button.width/2)<1)
+        verify(Math.abs(label.mapToItem(button,label.width/2,label.height/2).y-button.height/2)<1)
+      }
+      copy.forceActiveFocus();keyClick(Qt.Key_Space)
+      compare(feature.count,1);compare(feature.signalArguments[0][1],"482913")
+      card.copiedCode="482913";waitForRendering(card)
+      compare(findChild(card,"notificationCopyCode"),copy);verify(copy.activeFocus)
+      compare(copy.text,"Copied 482913");compare(copy.glyph,"󰄬");compare(copy.height,34)
+      compare(opened.count,0)
+      var before=hidden.count
+      mouseClick(link,link.width/2,link.height/2,Qt.RightButton)
+      compare(hidden.count,before+1);compare(feature.count,1)
+    }
+    function test_footer_wraps_without_losing_actions() {
+      card.width=280
+      card.actions=[{identifier:"reply",text:"Reply"},{identifier:"read",text:"Mark read"}]
+      card.offers={codes:"482913 731208",link:"https://example.com",meeting:false}
+      waitForRendering(card)
+      var footer=findChild(card,"notificationFooter")
+      var buttons=Array.from(footer.children).filter(function(child) { return child.entry !== undefined })
+      compare(buttons.length,5)
+      compare(buttons[4].width,footer.width)
+      for (var button of buttons) {
+        verify(button.width>=footer.width/2)
+        verify(button.mapToItem(card,button.width,button.height).x<=card.width)
+        verify(button.mapToItem(card,button.width,button.height).y<=card.height)
+        mouseClick(button)
+      }
+      compare(action.count,2);compare(feature.count,3);compare(opened.count,0)
+      compare(feature.signalArguments[0][1],"482913");compare(feature.signalArguments[1][1],"731208")
+      compare(feature.signalArguments[2][0],"link")
+    }
+    function test_footer_busy_error_and_empty_state() {
+      card.actions=[];card.offers={codes:"482913",link:"",meeting:false}
+      waitForRendering(card)
+      var button=findChild(card,"notificationCopyCode"),footer=findChild(card,"notificationFooter")
+      card.busy=true;mouseClick(button);compare(feature.count,0);compare(opened.count,0)
+      card.busy=false;card.error="Clipboard is busy. Try again.";waitForRendering(card)
+      mouseClick(button);compare(feature.count,1);verify(footer.visible)
+      card.error="";waitForRendering(card)
+      var height=card.height
+      card.offers={};waitForRendering(card)
+      verify(!footer.visible);compare(card.height,height-34)
+    }
     function test_feature_buttons_do_not_trigger_default_actions() {
       card.offers={codes:"482913",link:"https://meet.google.com/abc",meeting:true}
       card.width=280

@@ -61,7 +61,14 @@ ShellRoot {
           else if (step.index===13) { card.width=280;card.snoozeExpanded=true }
           else if (step.index===14) { Commons.Color.background="#eff1f5";Commons.Color.foreground="#4c4f69";card.width=390 }
           else if (step.index===15) { card.snoozeAvailable=false;card.snoozeExpanded=false;card.offers={};card.app="Notifications";card.summary="Screen sharing is active";card.body="Snooze notifications while you share?";card.actions=[{identifier:"snooze",text:"Snooze for 30 minutes"},{identifier:"keep",text:"Keep notifications"}] }
-          else { console.log("PASS: compact and roomy modes,  wide, narrow, urgent, long text, actions, empty body, light theme, shared avatars/screenshots, failed/disabled images");Qt.quit();return }
+          else if (step.index===16) { card.width=390;card.app="GitHub";card.appIcon="";card.glyph="󰊤";card.summary="Review is ready";card.body="The latest changes are ready to review.";card.actions=[];card.offers={codes:"",link:"https://example.com/review",meeting:false};Commons.Color.background="#1e1e2e";Commons.Color.foreground="#cdd6f4";Commons.Color.accent="#89b4fa" }
+          else if (step.index===17) { card.app="Account security";card.glyph="󰌾";card.summary="Your sign-in code";card.body="Use 482913 to finish signing in.";card.offers={codes:"482913",link:"",meeting:false} }
+          else if (step.index===18) { card.copiedCode="482913" }
+          else if (step.index===19) { card.width=280;card.offers={codes:"482913 731208",link:"https://example.com",meeting:false};card.body="Sign-in code: 482913. Approval code: 731208." }
+          else if (step.index===20) { card.width=390;card.copiedCode="";card.app="Calendar";card.summary="Design review starts now";card.body="Product team · 30 minutes";card.offers={codes:"",link:"https://meet.google.com/abc",meeting:true} }
+          else if (step.index===21) { card.app="Messages";card.summary="Review requested";card.body="Could you check the latest changes?";card.actions=[{identifier:"reply",text:"Reply"}];card.offers={codes:"",link:"https://example.com",meeting:false} }
+          else if (step.index===22) { card.width=280;card.actions=[{identifier:"read",text:"Mark this notification as read"}];card.offers={codes:"12345678",link:"https://example.com",meeting:false};card.copiedCode="12345678";Commons.Color.background="#eff1f5";Commons.Color.foreground="#4c4f69";Commons.Color.accent="#1e66f5" }
+          else { console.log("PASS: compact and roomy modes, wide/narrow, urgent, long text, actions, empty body, light/dark themes, avatars/screenshots, failed/disabled images, footer links/codes/meetings/copy feedback and wrapped actions");Qt.quit();return }
           step.restart()
         })
       }
@@ -81,7 +88,7 @@ if not desktop:
 # Desktop rendering uses the GPU for rounded image masks; it owns only this test window.
 process=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
 try:
-    output=process.communicate(timeout=15)[0]
+    output=process.communicate(timeout=20)[0]
 except subprocess.TimeoutExpired:
     os.killpg(process.pid,signal.SIGTERM)
     output=process.communicate(timeout=3)[0]
