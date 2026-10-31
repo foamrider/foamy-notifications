@@ -128,17 +128,36 @@ Popups enter with a 180 ms fade and an 8 px upward movement, then fade out over
 cards stop accepting input immediately; the final popup surface closes when its
 fade finishes. Replacements and duplicate updates keep the existing card.
 
+## Caveat: raw `image-data` senders lose live actions
+
+Apps that send avatars as raw `image-data` pixels (many GTK/libnotify apps,
+Telegram, Thunderbird, …) lose their sender buttons (Reply, Mark read) and
+in-place updates in Foamy: Quickshell keeps the raw buffer for as long as the
+native notification is tracked, so Foamy releases those notifications at once
+instead of letting the buffers accumulate in popups and retained history. Stock
+4.5 keeps both. Text, Omarchy `--action`/`--exec` commands, favicons, theme
+icons and app-focus clicks are unaffected, as are notifications with file images.
+
 ## State and privacy
 
-Foamy Notification Center is optional. Its public
-`foamy.notification-center.store handled` IPC method is required for immediate
-unread-badge updates after a handled click. The helper commits removal first;
-this acknowledgement updates the UI without rewriting the archive again.
+Foamy keeps its own state in `$XDG_STATE_HOME/foamy-notifications/`
+(normally `~/.local/state/foamy-notifications/`, mode 0700): `popups/` (one
+file per visible popup), `history/` (newest 100), `images/` (normalized PNGs),
+`state.json` (DND and snoozes) and `handled` (keys of handled notifications,
+newest 1,000, read by Notification Center). Omarchy 4.5 owns
+`~/.local/state/omarchy/notifications`; on its first start this version moves
+Foamy's old files out of there once (see README, "Omarchy 4.5"). All writes go
+through one long-lived helper process (`bin/notification-helper.py serve`).
 
-The plugin shares Omarchy's notification state under
-`$XDG_STATE_HOME/omarchy/notifications` (normally `~/.local/state/omarchy/notifications`).
-DND is stored in the adjacent `notifications.json` file. Foamy Notification Center
-continues to manage its own archive and retention.
+Notification Center is optional and never touches these files: it reads them
+(paths from `foamy.notifications storeInfo`) and asks Foamy over IPC to drop
+entries (`releaseHistory`, `releaseHistoryBefore`) or change settings
+(`setPreference`). Foamy tells the center about handled clicks with
+`foamy.notification-center.store handled`.
+
+DND bypass trusts `app_name` `omarchy-action` and critical `notify-send`, as
+stock does. Any session-bus client can claim those names, so DND is a courtesy
+filter, not a security boundary.
 
 Notification content reaches persistence and window-matching helpers through
 standard input, not process arguments. Adjacent queued snapshots for the same notification are coalesced, while reads,
@@ -158,8 +177,8 @@ notifications are released before tracking or queuing; raw replacements also
 release existing popup/history callbacks. Their bounded text snapshots remain,
 but sender actions and further in-place updates are unavailable. Clicks use app
 focus instead. A local `image-path` is converted if it survives native closure.
-File-only and text-only notifications retain callbacks. Sender image tags are
-filtered before rendering. No network image retrieval is added.
+File-only and text-only notifications retain callbacks. Body markup follows stock 4.5: only `b i u s em strong br` render; other tags
+stay literal text, and links are offered as footer buttons, never as clickable text. No network image retrieval is added.
 
 Critical alerts remain persistent by default, but restored popups are subject to
 the configured maximum age. No message content appears in the diagnostic IPC:
@@ -205,9 +224,9 @@ fullscreen behavior must also be checked in a desktop session.
 
 `offerSnoozeWhenSharing` (boolean, default `true`) controls the screen-sharing
 snooze prompt. It is also available in Notification Center's settings. Snoozes
-are bounded to 128 source entries and persist beside DND in `notifications.json`.
-The service keeps its existing file format on both Omarchy 4.0 and 4.5; it does
-not write stock 4.5's `live.json`, `history.json`, or `quiet.json` arrays.
+are bounded to 128 source entries and persist beside DND in `state.json`.
+The service keeps its per-file format on both Omarchy 4.0 and 4.5 in its own
+directory; it never writes stock 4.5's `live.json`, `history.json` or `quiet.json`.
 
 Verification-code detection, redaction, validated link buttons and the sender
 snooze control are built in. Copying needs the standard `wl-clipboard` tools;

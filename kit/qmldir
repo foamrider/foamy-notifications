@@ -1,0 +1,8 @@
+# foamy-kit 0.3.4 cc09938553bbcd7ec8c894a1bba41b1e8e20db875b5713d41f04419e5675d8dc — do not edit; change foamy-kit and run sync
+singleton FoamyI18n 1.0 FoamyI18n.qml
+FoamyIpc 1.0 FoamyIpc.qml
+FoamyIpcPreference 1.0 FoamyIpcPreference.qml
+singleton FoamyMotion 1.0 FoamyMotion.qml
+singleton FoamyPalette 1.0 FoamyPalette.qml
+FoamyPeerIpc 1.0 FoamyPeerIpc.qml
+singleton FoamyStyle 1.0 FoamyStyle.qml

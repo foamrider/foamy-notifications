@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../components"
+import "../NotificationLogic.js" as Logic
 Item {
   width: 500; height: 400
   NotificationCard {
@@ -8,6 +9,8 @@ Item {
     x: 20; y: 20; width: 420
     app: "Test"; summary: "Test title"; body: "Test message"
     actions: [{identifier:"read",text:"Mark read"}]
+    // As the service passes them: buttons in draw/number order from actions and offers.
+    deeds: Logic.deeds({actionsJson: JSON.stringify(actions || []), execActions: ""}, offers || {})
   }
   SignalSpy { id: opened; target: card; signalName: "cardClicked" }
   SignalSpy { id: dismissed; target: card; signalName: "closeRequested" }
@@ -44,7 +47,7 @@ Item {
       var footer=findChild(card,"notificationFooter"), copy=findChild(card,"notificationCopyCode"), link=findChild(card,"notificationOpenLink")
       compare(footer.width,card.width-2);compare(copy.width,link.width)
       compare(copy.height,34);compare(link.height,34)
-      compare(copy.y,link.y);compare(link.glyph,"󰏌")
+      compare(copy.y,link.y);compare(link.glyph,"\u{f03cc}")
       verify(Math.abs(footer.mapToItem(card,0,footer.height).y-(card.height-1))<1)
       for (var button of [copy,link]) {
         var label=findChild(button,"notificationFooterLabel")
@@ -55,7 +58,7 @@ Item {
       compare(feature.count,1);compare(feature.signalArguments[0][1],"482913")
       card.copiedCode="482913";waitForRendering(card)
       compare(findChild(card,"notificationCopyCode"),copy);verify(copy.activeFocus)
-      compare(copy.text,"Copied 482913");compare(copy.glyph,"󰄬");compare(copy.height,34)
+      compare(copy.text,"Copied 482913");compare(copy.glyph,"\u{f012c}");compare(copy.height,34)
       compare(opened.count,0)
       var before=hidden.count
       mouseClick(link,link.width/2,link.height/2,Qt.RightButton)
@@ -165,7 +168,8 @@ Item {
       compare(card.contentImageSource,"")
     }
     function test_full_width_title_wraps_without_hover_reflow() {
-      card.width=280;card.summary="Process crashed: xdg-desktop-portal-hyprland"
+      // Long enough to wrap in the foamy body font (narrower than the bar's mono font).
+      card.width=280;card.summary="Process crashed: xdg-desktop-portal-hyprland (signal 11, core dumped)"
       waitForRendering(card)
       var title=findChild(card,"notificationTitle"), appName=findChild(card,"notificationAppName")
       compare(appName.text,"Test");compare(title.lineCount,2);verify(title.width>card.width*0.88)
@@ -200,7 +204,9 @@ Item {
     function test_app_action_only_invokes_action() { var button=findChild(card,"notificationAction");verify(button);mouseClick(button);compare(action.count,1);compare(action.signalArguments[0][0],"read");compare(opened.count,0) }
     function test_settings_and_overflow_remain_reachable() {
       card.actions=[{identifier:"settings",text:"Innstillinger"},{identifier:"reply",text:"Reply"},{identifier:"read",text:"Mark read"},{identifier:"snooze",text:"Snooze"}]
-      waitForRendering(card);compare(card.primaryActions.length,2);compare(card.overflowActions.length,2)
+      waitForRendering(card)
+      // Footer: two sender actions; Settings and the rest behind "More actions" (deeds order).
+      compare(card.footerActions.filter(function(e) { return e.kind === "action" }).length,2);compare(card.overflowActions.length,2)
       var more=findChild(card,"moreActionsButton");verify(more.visible)
       mouseClick(more);compare(card.actionsExpanded,true);compare(opened.count,0)
       mouseMove(card,-10,-10);compare(card.hovered,true)

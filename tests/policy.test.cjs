@@ -36,10 +36,13 @@ test('snapshots keep primitive live actions and restore never exposes dead callb
  assert.equal(L.popupEntry(snap,1).actionsJson,'[]');assert.equal(L.popupEntry(snap,1).desktopEntry,'app');
 });
 test('sender markup never manufactures an image tag and command arguments stay structured',()=>{
- assert.equal(L.styledBody('<img src="https://example.invalid/x">','Chat',''),'');
- const nested='<im<img src="x">g src="x">';
- assert.equal(L.styledBody(nested,'Chat',''),nested);
- assert.ok(!L.styledBody('<x\n<img src="x">','Chat','').endsWith('<img src="x">'));
+ const M=require('./qml-js.cjs')('Markup.js'), body=(b)=>M.render(L.sanitizeBody(b,'Chat',''));
+ assert.equal(body('<img src="https://example.invalid/x">'),'');
+ // Stock 4.5 allowlist: unknown tags survive as escaped text, never as live markup.
+ for(const b of ['<im<img src="x">g src="x">','<x\n<img src="x">','<font color="#000">hidden</font>','<h1>big</h1>','<a href="https://x.test">link</a>'])
+  assert.ok(!/<(img|font|h1|a)\b/i.test(body(b)), b);
+ assert.equal(body('<b>bold</b> &amp;amp; <i>it</i>\nnext'),'<b>bold</b> &amp; <i>it</i><br/>next');
+ assert.equal(M.oneLine('Tom &amp;amp; Jerry <b>x</b>'),'Tom & Jerry x');
  assert.equal(L.parseExecArgv('echo unsafe'),null);assert.deepEqual(L.parseExecArgv('["printf","$(touch nope)"]'),['printf','$(touch nope)']);
 });
 
@@ -101,3 +104,20 @@ test('DND critical silencing overrides trusted critical alerts without changing 
  assert.equal(L.shouldBypassDnd({appName:'omarchy-action',urgency:1},2,true),true)
  assert.equal(L.shouldBypassDnd({appName:'Chat',urgency:1},2,true),false)
 })
+test('omarchy-actions hint becomes up to three structured --action buttons, numbered before sender actions',()=>{
+ const hint=JSON.stringify([{label:'Open',argv:['mpv','/tmp/a b.mp4']},{label:'Omacut',argv:['omacut','/tmp/a b.mp4']}]);
+ const snap=L.snapshotOf({id:7,summary:'Recording saved',hints:{'omarchy-actions':hint},actions:[{identifier:'reply',text:'Reply'},{identifier:'settings',text:'Settings'}]},1);
+ assert.deepEqual(JSON.parse(snap.execActions).map(a=>a.label),['Open','Omacut']);
+ assert.deepEqual(L.deeds(snap,{codes:'123456',link:''}).map(d=>d.kind+':'+d.value),['exec:0','exec:1','action:reply','code:123456','action:settings']);
+ for(const bad of ['[]','[{"label":"x","argv":["-rf"]}]','[{"label":" ","argv":["ls"]}]',JSON.stringify(Array(4).fill({label:'x',argv:['ls']})),'[{"label":"x","argv":["a\u0000b"]}]'])
+  assert.equal(L.parseExecActions(bad),null,bad);
+ assert.equal(L.popupEntry({...snap,execActions:'garbage'},1).execActions,'');
+ assert.equal(L.popupEntry(snap,1).execActions,snap.execActions);
+});
+test('duplicates with different --action targets stay separate cards',()=>{
+ const base={originalId:1,timestamp:1,app:'Recorder',summary:'Saved',body:'',appIcon:'',image:'',urgency:1,execArgv:'',actionsJson:'[]'}
+ const a={...base,execActions:JSON.stringify([{label:'Open',argv:['mpv','/tmp/a.mp4']}])}
+ const b={...base,originalId:2,timestamp:2,execActions:JSON.stringify([{label:'Open',argv:['mpv','/tmp/b.mp4']}])}
+ assert.equal(P.groups([a,b],true,'browser',{browser:()=>false,hostname:()=>''}).length,2)
+ assert.equal(P.groups([a,{...a,originalId:3,timestamp:3}],true,'browser',{browser:()=>false,hostname:()=>''}).length,1)
+});

@@ -77,18 +77,9 @@ function stripImageTags(text) {
   return out
 }
 
-// What the card renders, and the last thing to touch the string before Qt parses
-// it. The newline rewrite belongs here rather than in the card because it inserts
-// `<br/>` into text stripImageTags chose to KEEP, and a kept tag may hold a `<` of
-// its own: `<x`, newline, `<img src="http://…">` is one tag named `x` to both the
-// stripper and Qt, until the rewrite splits it into `<x<br/>` and a live image tag
-// the input never contained. Measured against Qt 6.11.2 — the rewritten form
-// fetches, the original does not. So strip again after, and what Qt parses is what
-// was checked last.
-function styledBody(body, app, appIcon) {
-  return stripImageTags(sanitizeBody(body, app, appIcon).replace(/\r\n|\r|\n/g, "<br/>"))
-}
-
+// The card renders Markup.render(sanitizeBody(…)) (stock 4.5 allowlist
+// semantics, see Markup.js). sanitizeBody only drops image tags and a
+// Chromium-family sender's leading origin label before that.
 function sanitizeBody(body, app, appIcon) {
   var text = stripImageTags(String(body || ""))
   if (!isChromiumDerived(app, appIcon)) return text
@@ -143,7 +134,7 @@ function notificationWithinLimits(notification) {
   var n = notification || {}
   var limits = {appName:256, appIcon:4096, summary:4096, body:16384, desktopEntry:512, image:12288}
   for (var name in limits) if (String(n[name] || "").length > limits[name]) return false
-  var hints = {"image-path":4096, "image_path":4096, "omarchy-glyph":64, "omarchy-exec-argv":8192}
+  var hints = {"image-path":4096, "image_path":4096, "omarchy-glyph":64, "omarchy-exec-argv":8192, "omarchy-actions":8192}
   for (var hint in hints) if (stringHint(n.hints, hint).length > hints[hint]) return false
   var actions = n.actions || []
   if (actions.length > 32) return false
@@ -203,12 +194,59 @@ function parseExecArgv(value) {
     return null
   }
 
-  if (!Array.isArray(parsed) || parsed.length === 0) return null
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 32) return null
   for (var i = 0; i < parsed.length; i++) {
-    if (typeof parsed[i] !== "string") return null
+    // A NUL cannot travel in an argv: Qt would cut the argument short there.
+    if (typeof parsed[i] !== "string" || parsed[i].length > 4096 || parsed[i].indexOf("\u0000") >= 0) return null
   }
   if (!parsed[0] || parsed[0].charAt(0) === "-") return null
   return parsed
+}
+
+// The omarchy-actions hint (4.5 `omarchy-notification-send --action label prog … --with`):
+// up to three buttons, each a label and an argv held to the click's rules.
+// Same structural validation as stock Security.parseExecActions.
+function parseExecActions(value) {
+  var text = String(value || "")
+  if (!text || text.length > 8192) return null
+  var parsed
+  try { parsed = JSON.parse(text) } catch (e) { return null }
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 3) return null
+  var out = []
+  for (var i = 0; i < parsed.length; i++) {
+    var entry = parsed[i]
+    if (!entry || typeof entry !== "object" || typeof entry.label !== "string") return null
+    var label = entry.label.slice(0, 256)
+    var argv = parseExecArgv(Array.isArray(entry.argv) ? JSON.stringify(entry.argv) : entry.argv)
+    if (!label.trim() || !argv) return null
+    out.push({ label: label, argv: argv })
+  }
+  return out
+}
+
+function execActionsFromHints(hints) {
+  var actions = parseExecActions(limitedString(stringHint(hints, "omarchy-actions"), 8192))
+  return actions ? JSON.stringify(actions) : ""
+}
+
+// The card's buttons in the order it draws and the number keys count them:
+// Omarchy --action buttons, then the sender's own actions (settings last),
+// then copying each detected code, then the offered link.
+function deeds(row, offers) {
+  var out = []
+  var exec = parseExecActions(row && row.execActions) || []
+  for (var e = 0; e < exec.length; e++) out.push({ kind: "exec", value: String(e), text: exec[e].label })
+  var actions = []
+  try { actions = JSON.parse((row && row.actionsJson) || "[]") } catch (err) { actions = [] }
+  var settings = []
+  for (var i = 0; i < actions.length; i++) {
+    var deed = { kind: "action", value: String(actions[i].identifier), text: String(actions[i].text || actions[i].identifier) }
+    if (/^settings$/i.test(deed.value)) settings.push(deed); else out.push(deed)
+  }
+  var codes = String((offers && offers.codes) || "").split(" ").filter(Boolean)
+  for (var c = 0; c < codes.length; c++) out.push({ kind: "code", value: codes[c], text: "" })
+  if (offers && offers.link) out.push({ kind: "link", value: offers.link, text: "", meeting: !!offers.meeting })
+  return out.concat(settings)
 }
 
 function shouldRenderCompactGlyph(glyph, iconSource, singleLineToast) {
@@ -271,6 +309,7 @@ function snapshotOf(notification, timestamp) {
     image: popupImage(n),
     glyph: glyphFromHints(n.hints),
     execArgv: execArgvFromHints(n.hints),
+    execActions: execActionsFromHints(n.hints),
     urgency: n.urgency,
     expireTimeout: expireTimeout,
     timestamp: timestamp === undefined ? Date.now() : timestamp
@@ -279,7 +318,7 @@ function snapshotOf(notification, timestamp) {
 
 // Everything the popup card draws, and therefore everything an in-place
 // update has to write through to the row and its file.
-var POPUP_ROLES = ["desktopEntry", "transient", "actionsJson", "app", "appIcon", "summary", "body", "image", "glyph", "execArgv", "urgency", "expireTimeout"]
+var POPUP_ROLES = ["desktopEntry", "transient", "actionsJson", "app", "appIcon", "summary", "body", "image", "glyph", "execArgv", "execActions", "urgency", "expireTimeout"]
 
 function popupRoles() {
   return POPUP_ROLES
@@ -325,6 +364,7 @@ function historyEntry(value, normalUrgency) {
     image: e.image || "",
     glyph: e.glyph || "",
     execArgv: e.execArgv || "",
+    execActions: parseExecActions(e.execActions) ? String(e.execActions) : "",
     urgency: typeof e.urgency === "number" ? e.urgency : normalUrgency,
     expireTimeout: 0,
     timestamp: e.timestamp || 0
@@ -354,7 +394,7 @@ function parseSettings(raw) {
 // ---------------------------------------------------- popup persistence
 //
 // Each on-screen popup is mirrored to its own file under
-// ~/.local/state/omarchy/notifications/ so toasts survive shell restarts
+// $XDG_STATE_HOME/foamy-notifications/popups/ so toasts survive shell restarts
 // (e.g. the restart `omarchy-update` performs). The file exists exactly as
 // long as the popup is on screen: it is written when the toast appears and
 // moved into the history/ subdirectory when the toast expires, is dismissed,
@@ -529,7 +569,6 @@ if (typeof module !== "undefined") {
   module.exports = {
     isChromiumDerived: isChromiumDerived,
     sanitizeBody: sanitizeBody,
-    styledBody: styledBody,
     summaryStartsWithGlyph: summaryStartsWithGlyph,
     shouldBypassDnd: shouldBypassDnd,
     isEphemeralApp: isEphemeralApp,
@@ -539,6 +578,9 @@ if (typeof module !== "undefined") {
     glyphFromHints: glyphFromHints,
     execArgvFromHints: execArgvFromHints,
     parseExecArgv: parseExecArgv,
+    parseExecActions: parseExecActions,
+    execActionsFromHints: execActionsFromHints,
+    deeds: deeds,
     shouldRenderCompactGlyph: shouldRenderCompactGlyph,
     snapshotOf: snapshotOf,
     themeIcon: themeIcon,

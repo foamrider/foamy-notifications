@@ -2,12 +2,12 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const source=fs.readFileSync(path.join(__dirname,'../Service.qml'),'utf8')
 function fixture() {
  const jobs=[],events=[]
- const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
+ const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},deferredMoves:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
   NotificationLogic:{...require('../NotificationLogic.js')},isRestoredRow:()=>false,
-  enqueuePopupFileJob:(argv,done,payload)=>jobs.push({command:argv[2],done,payload}),
+  enqueueHelperJob:(op,data,done)=>jobs.push({command:op,done:done||null,payload:JSON.stringify(data)}),
   notifyCenter:()=>events.push('center'),removeKeys:()=>events.push('remove'),Util:{execArgv:()=>events.push('launch')}})
  state.service=state
- for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','dismissGroup','commitHandled','finishAction']) {
+ for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
@@ -171,4 +171,15 @@ test('center never runs a command from a detached or reused native identity',()=
   state.isRestoredRow=()=>mode==='restored'
   assert.equal(state.invokeCenterDefault('10-1'),'unavailable');assert.equal(jobs.length,0);assert.deepEqual(events,[])
  }
+})
+test('clearing before a cutoff releases every eligible live key, not just the first 100',()=>{
+ const {state,jobs}=fixture()
+ const released=[]
+ for(let i=1;i<=150;i++){state.liveKeys[i]=`${i}-${i}`;state.liveRefs[i]={tracked:true,dismiss(){released.push(i)}};state.retainedHistory[`${i}-${i}`]={originalId:i,timestamp:i}}
+ state.releaseHistoryBefore(1000)
+ assert.equal(released.length,150)
+ const drops=jobs.filter(j=>j.command==='drop').map(j=>JSON.parse(j.payload))
+ assert.ok(drops.every(d=>!d.keys||d.keys.length<=100),'helper batches stay within 100 keys')
+ assert.equal(drops.filter(d=>d.keys).reduce((n,d)=>n+d.keys.length,0),150)
+ assert.ok(drops.some(d=>d.before===1000))
 })

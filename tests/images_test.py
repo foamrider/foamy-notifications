@@ -110,7 +110,7 @@ class Images(unittest.TestCase):
         source = self.image()
         row = {'timestamp':1000,'originalId':1,'summary':'Picture','image':source.as_uri(),'appIcon':'foot','actionsJson':'[]'}
         with contextlib.redirect_stdout(io.StringIO()):h.write({'entry':row,'sources':{'image':row['image'],'appIcon':'foot'}})
-        saved = json.loads((h.base()/'1000-1.json').read_text())
+        saved = json.loads((h.popups()/'1000-1.json').read_text())
         self.assertNotIn('actionsJson',saved)
         self.assertTrue(saved['image'].endswith('.png'))
         self.assertEqual(saved['appIcon'],'foot')
@@ -119,13 +119,13 @@ class Images(unittest.TestCase):
         with contextlib.redirect_stdout(output):h.read({})
         self.assertEqual(json.loads(output.getvalue())['image'],saved['image'])
         legacy = self.image('legacy.jpg','-size','64x64','xc:red','-interlace','Plane')
-        h.atomic(h.base()/'1001-2.json',json.dumps({'timestamp':1001,'originalId':2,'summary':'Legacy','image':str(legacy)}).encode())
+        h.atomic(h.popups()/'1001-2.json',json.dumps({'timestamp':1001,'originalId':2,'summary':'Legacy','image':str(legacy)}).encode())
         with contextlib.redirect_stdout(io.StringIO()):h.read({})
-        migrated=json.loads((h.base()/'1001-2.json').read_text());self.assertEqual(migrated['imageFormat'],1)
+        migrated=json.loads((h.popups()/'1001-2.json').read_text());self.assertEqual(migrated['imageFormat'],1)
         self.assertIn('-image-',migrated['image']);self.assertNotIn('legacy.jpg',migrated['image'])
         with contextlib.redirect_stderr(io.StringIO()):
             h.write({'entry':{'timestamp':1002,'originalId':3,'summary':'Text retained','image':str(self.root/'missing'),'appIcon':'image://unsafe'}})
-        rejected=json.loads((h.base()/'1002-3.json').read_text())
+        rejected=json.loads((h.popups()/'1002-3.json').read_text())
         self.assertEqual(rejected['image'],'');self.assertEqual(rejected['appIcon'],'');self.assertEqual(rejected['summary'],'Text retained')
         h.forget({'keys':['1000-1','1001-2','1002-3']})
         self.assertFalse(list((h.base()/'images').glob('*.png')))
@@ -134,7 +134,7 @@ class Images(unittest.TestCase):
         source=self.image()
         row={'timestamp':1000,'originalId':1,'summary':'Useful text','image':str(source)}
         with patch.object(h.shutil,'which',return_value=None),contextlib.redirect_stderr(io.StringIO()):h.write({'entry':row})
-        saved=json.loads((h.base()/'1000-1.json').read_text());self.assertEqual(saved['image'],'');self.assertEqual(saved['summary'],'Useful text')
+        saved=json.loads((h.popups()/'1000-1.json').read_text());self.assertEqual(saved['image'],'');self.assertEqual(saved['summary'],'Useful text')
 
 
 if __name__=='__main__':unittest.main()

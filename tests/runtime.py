@@ -10,6 +10,7 @@ import tempfile
 import time
 import struct
 import zlib
+import hostenv
 
 from gi.repository import Gio, GLib
 
@@ -22,8 +23,8 @@ if '--inside' not in sys.argv:
     raise SystemExit(result.returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-runtime-'))
 app=base/'app';app.mkdir()
-(app/'Commons').symlink_to(os.environ.get('OMARCHY_TEST_ROOT', '/usr/share/omarchy')+'/shell/Commons',target_is_directory=True)
-(app/'Ui').symlink_to(os.environ.get('OMARCHY_TEST_ROOT', '/usr/share/omarchy')+'/shell/Ui',target_is_directory=True)
+(app/'Commons').symlink_to(hostenv.root()/'shell/Commons',target_is_directory=True)
+(app/'Ui').symlink_to(hostenv.root()/'shell/Ui',target_is_directory=True)
 # Offscreen Qt has no layer-shell backend. Keep the real service and D-Bus server,
 # with presentation tested independently by render.py and the installed desktop.
 shutil.copytree(SOURCE,app/'plugin',ignore=shutil.ignore_patterns('__pycache__'))
@@ -120,7 +121,10 @@ ShellRoot {
  }
 }
 '''.replace('STACK_DELEGATE',card_delegate).replace('ShellRoot {', 'import \"center\" as Center\nimport qs.Ui as Ui\nShellRoot { Center.Service {} Ui.Panel { ipcTarget: "foamy.notification-center" }' if CENTER else 'ShellRoot {'))
-env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),XDG_RUNTIME_DIR=str(runtime),QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion',PATH=str(bin_dir)+':'+os.environ['PATH'])
+env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),XDG_RUNTIME_DIR=str(runtime),QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion')
+# Host QML only: omarchy-* are stubs, omarchy-shell reaches this test shell, no host script runs.
+env.update(hostenv.make(base, app))
+env['PATH']=str(bin_dir)+':'+env['PATH']
 for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
 log=(base/'runtime.log').open('w')
 process=subprocess.Popen(['quickshell','-p',str(app),'--no-color'],env=env,stdout=log,stderr=log,start_new_session=True)
@@ -140,6 +144,14 @@ def wait_for(predicate,message):
     raise AssertionError(message+'\n'+(base/'runtime.log').read_text())
 def send(summary,extra=(),body='Sample body'):
     return subprocess.run(['notify-send','-p','-a','Foamy Test','-u','critical',*extra,summary,body],env=env,capture_output=True,text=True,timeout=3).stdout.strip()
+def omarchy_send(app_name, summary, body, image, argv):
+    """What `omarchy notification send -u critical --image … --exec …` sends, over the test's
+    private bus, without running a host script (the same hints: image-path, omarchy-exec-argv)."""
+    quote = lambda text: "'" + str(text).replace('\\', '\\\\').replace("'", "\\'") + "'"
+    hints = "{'urgency': <byte 2>, 'image-path': <" + quote(image) + ">, 'omarchy-exec-argv': <" + quote(json.dumps(argv)) + ">}"
+    subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications',
+        '--method','org.freedesktop.Notifications.Notify',app_name,'0','',summary,body,'[]',hints,'0'],env=env,check=True,timeout=3,stdout=subprocess.DEVNULL)
+
 def dispatches():
     return dispatch_path.read_text().splitlines() if dispatch_path.exists() else []
 try:
@@ -158,7 +170,7 @@ try:
     cfg['plugins'][0]['dndSilenceCritical']=True
     (config/'shell.json').write_text(json.dumps(cfg))
     wait_for(lambda:state()['settings']['dndSilenceCritical'],'critical DND option reloads')
-    history=home/'.local/state/omarchy/notifications/history'
+    history=home/'.local/state/foamy-notifications/history'
     for app_name in ['omarchy-action','notify-send','Foamy Test']:
         title='DND policy silenced '+app_name
         send(title,('-a',app_name))
@@ -221,8 +233,8 @@ try:
             wait_for(lambda:state()['popups']==0 and not state()['busy'],'close test popup removed')
             if enabled and click=='closeFirst':
                 wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0 and json.loads(ipc('foamy.notification-center.test','state'))['unread']==0,'X clears history and badge')
-                assert not list((home/'.local/state/omarchy/notifications/history').glob('*.json')),'X entered history'
-                assert not list((home/'.local/state/omarchy/notifications').glob('*-*.json')),'X popup persisted'
+                assert not list((home/'.local/state/foamy-notifications/history').glob('*.json')),'X entered history'
+                assert not list((home/'.local/state/foamy-notifications/popups').glob('*-*.json')),'X popup persisted'
                 ipc('foamy.notification-center.test','reload')
                 time.sleep(.3)
                 assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'X entry reappeared after refresh'
@@ -253,7 +265,7 @@ try:
         wait_for(lambda:bool(state()['lastError']) and not state()['busy'],'popup failure reports error')
         assert state()['popups']==1
         assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'failed popup lost center history'
-        assert len(list((home/'.local/state/omarchy/notifications').glob('*.json')))==1,'failed popup lost persistence'
+        assert len(list((home/'.local/state/foamy-notifications/popups').glob('*.json')))==1,'failed popup lost persistence'
         ctx['clients']=ctx['clients'][:1];context_path.write_text(json.dumps(ctx))
         ipc('notifications','invokeLast')
         wait_for(lambda:state()['popups']==0 and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'popup retry succeeds')
@@ -275,7 +287,7 @@ try:
         time.sleep(10.2)
         assert json.loads(ipc('foamy.notification-center.test','state'))['listLoads']==reads,'idle center still polls the archive'
 
-    assert not list((home/'.local/state/omarchy/notifications/history').glob('*.json')),'handled click entered history'
+    assert not list((home/'.local/state/foamy-notifications/history').glob('*.json')),'handled click entered history'
     # Use Vivaldi's actual identity format through both consumers of the shared helper.
     ctx=json.loads(context_path.read_text());original_clients=ctx['clients']
     browser={'class':'vivaldi-stable','address':'0x100'}
@@ -342,7 +354,7 @@ try:
             wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'history callback archived '+mode)
             if mode=='silenced':
                 wait_for(lambda:state()['retainedActions']==1,'silenced callback retained')
-                files=list((home/'.local/state/omarchy/notifications/history').glob('*-*.json'))
+                files=list((home/'.local/state/foamy-notifications/history').glob('*-*.json'))
                 key=next(p.stem for p in files if json.loads(p.read_text()).get('summary')=='Zendesk history '+mode)
                 ipc('notifications','setDnd','off')
             else:
@@ -388,10 +400,10 @@ try:
         else:
             wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'raw text reaches center')
             if target=='center-history':ipc('notifications','dismissAll')
-            center_rows=list((home/'.local/state/omarchy/notifications/history' if target=='center-silenced' else home/'.local/state/omarchy/notifications').glob('*.json'))
+            center_rows=list((home/'.local/state/foamy-notifications/history' if target=='center-silenced' else home/'.local/state/foamy-notifications/popups').glob('*.json'))
             if target=='center-history':
                 wait_for(lambda:state()['popups']==0 and not state()['busy'],'raw popup archived')
-                center_rows=list((home/'.local/state/omarchy/notifications/history').glob('*.json'))
+                center_rows=list((home/'.local/state/foamy-notifications/history').glob('*.json'))
             key=next(p.stem for p in center_rows if json.loads(p.read_text()).get('summary')=='Raw focus '+target)
             assert ipc('foamy.notifications','invokeDefault',key)=='unavailable'
             ipc('foamy.notification-center.test','focus',key)
@@ -406,7 +418,7 @@ try:
     wait_for(lambda:state()['popups']==1 and not state()['busy'],'new popup')
     ipc('notifications','dismissOne')
     wait_for(lambda:state()['popups']==0 and not state()['busy'],'dismiss drains')
-    assert list((home/'.local/state/omarchy/notifications/history').glob('*.json')),'dismiss did not retain history'
+    assert list((home/'.local/state/foamy-notifications/history').glob('*.json')),'dismiss did not retain history'
     ipc('notifications','setDnd','on');send('Silenced')
     wait_for(lambda:not state()['busy'],'DND drains')
     assert state()['popups']==0,'DND showed popup'
@@ -428,13 +440,13 @@ try:
     marker=base/'image-action.txt'
     action_script=base/'image-action.py'
     action_script.write_text('from pathlib import Path\nimport sys\nPath('+repr(str(marker))+').write_text(sys.argv[1])\n')
-    subprocess.run(['omarchy','notification','send','--app-name','Foamy Test','-u','critical','--image',str(image),'Screenshot saved to clipboard and file','Click this test image','--exec',sys.executable,str(action_script),str(image)],env=env,check=True,timeout=3)
+    omarchy_send('Foamy Test','Screenshot saved to clipboard and file','Click this test image',image,[sys.executable,str(action_script),str(image)])
     wait_for(lambda:state()['popups']==1 and not state()['busy'],'screenshot notification delivery')
     ipc('notifications','invokeLast')
     wait_for(lambda:marker.exists() and state()['popups']==0 and not state()['busy'],'screenshot default action')
     assert marker.read_text()==str(image),'screenshot action changed the image path'
     if CENTER:
-        wait_for(lambda:not any('Screenshot saved to clipboard and file' in item.read_text() for item in (home/'.local/state/omarchy/notifications/history').glob('*.json')),'handled screenshot stays out of history')
+        wait_for(lambda:not any('Screenshot saved to clipboard and file' in item.read_text() for item in (home/'.local/state/foamy-notifications/history').glob('*.json')),'handled screenshot stays out of history')
     if CENTER:
         ipc('foamy.notification-center.test','clear')
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'clear unrelated history before editor scenarios')
@@ -446,7 +458,7 @@ try:
         spaced_image=base/'screenshot with spaces.png';shutil.copy(image,spaced_image)
         for mode in ['visible','history','reload','missing','launch-failure']:
             editor_marker.unlink(missing_ok=True)
-            subprocess.run(['omarchy','notification','send','--app-name','omarchy-action','-u','critical','--image',str(spaced_image),'Screenshot editor '+mode,'Click to edit','--exec','tensaku-edit',str(spaced_image)],env=env,check=True,timeout=3)
+            omarchy_send('omarchy-action','Screenshot editor '+mode,'Click to edit',spaced_image,['tensaku-edit',str(spaced_image)])
             wait_for(lambda:state()['popups']==1 and not state()['busy'],'screenshot ready '+mode)
             key=state()['groups'][0]['key']
             wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'screenshot archived '+mode)
@@ -548,3 +560,4 @@ try:
 finally:
     os.killpg(process.pid,signal.SIGTERM);process.wait(timeout=3);log.close()
     print('Runtime log:',base/'runtime.log')
+    hostenv.check(env, (base/'runtime.log').read_text(), (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')

@@ -48,6 +48,9 @@ actions are accepted, with identifiers limited to 256 characters and labels to
 path, action identifier or command. A rejected update releases its live callback;
 the previous popup text remains available.
 
+Persistence runs in one long-lived helper process fed newline-delimited JSON, so
+a burst of notifications no longer spawns a process per write. If the queue is
+full, the popup is still shown; only its restart survival is skipped and logged.
 Persistence packets are limited to 128 KiB of UTF-8 before entering the queue.
 Pending work is limited to 128 jobs and 1 MiB of serialized payload/command data;
 notification writes may use at most 64 jobs and 768 KiB, reserving the rest for
@@ -66,8 +69,8 @@ omarchy restart shell
 ```
 
 Enabling the plugin replaces `omarchy.notifications`. Run only one notification
-server. The existing Omarchy notification commands and do-not-disturb control
-continue to work.
+server. The Omarchy notification commands, keybindings and do-not-disturb control
+continue to work (see "Omarchy 4.5" below).
 
 ## Use
 
@@ -89,6 +92,12 @@ continue to work.
   Copy uses the existing `wl-copy --sensitive` command and attempts to clear the clipboard
   after 60 seconds while the service is running only when it still contains that code. Clipboard failures
   leave the popup available with an error.
+- Omarchy's own action buttons (`omarchy-notification-send --action …`, the
+  4.5 `omarchy-actions` hint, up to three, e.g. "Open" and "Omacut" on a screen
+  recording) appear first in the footer. They run like a click command: handling
+  is saved first, then the command starts.
+- Body text renders the stock 4.5 markup subset (bold, italic, underline,
+  strike, line breaks); other tags stay literal and entities are decoded.
 - Explicit link/meeting buttons open validated HTTP(S) destinations. Normal
   body clicks and sender actions keep their existing behavior. No links open automatically.
 - Actions share a compact footer with centered icons and labels. Link buttons use
@@ -138,11 +147,24 @@ These cleanup calls are optional when using stock or older notifications.
 
 ## Omarchy 4.5
 
-Foamy keeps its own popup engine and per-notification persistence on both versions.
-Only one notification daemon should run. The center also supports stock 4.5's
-array storage, so it can be used without Foamy Notifications. Switching to stock
-4.5 cleans up the old daemon's popup/history files; retain a backup before switching.
-The center's separate archive is not removed by that cleanup.
+The `notifications` IPC target matches stock 4.5-rc2, so the default bindings work:
+**SUPER+comma** (`act`: dismiss the newest card, press its only button, or click
+it; with several choices it hands over the keyboard), **SUPER+CTRL+comma**
+(`keyboard`), SUPER+SHIFT+comma (`dismissAll`), SUPER+ALT+comma (`dismissOne`)
+and SUPER+SHIFT+ALT+comma (`showHistory`). Also available: `invokeAction <n>`,
+`invokeLast`, `count`, `expand`, `probe`, `isDnd`, `toggleDnd`, `setDnd`,
+`dismiss <summary>` and `ping`; `dndState` stays for 4.0 callers. IPC is
+answered over the 4.5 shell socket and through `qs ipc` on 4.0.
+
+Keyboard mode: Up/Down, `j`/`k` or Tab move between cards, Enter or Space clicks,
+Delete dismisses, `1`–`9` press the numbered button, Escape (or ten idle seconds)
+gives the keyboard back. Notifications never take the keyboard on their own.
+
+**State directory.** Foamy keeps its state in its own folder,
+`~/.local/state/foamy-notifications/`. On its first start this version moves its
+popups, history, images, DND and snoozes out of `~/.local/state/omarchy/notifications`
+(the 4.0 layout), once. Stock files (`live.json`, `history.json`, `quiet.json`) are
+never touched.
 
 The center's More options menu offers global snooze and resume. CLI equivalents:
 
@@ -152,9 +174,20 @@ omarchy-shell notifications unsnooze ""
 ```
 
 `foamy.notifications state` reports snooze deadlines and screen-sharing state.
-Foamy's `snoozeAll` sets a timer; stock 4.5 toggles it. The center handles that
-small difference. Stock 4.0 has no timed snooze, so the center disables that menu.
+Stock 4.5-rc2 and 4.0 have no timed snooze; the center hides that menu there.
 DND bypass rules also apply to snoozes; normal Omarchy action feedback still appears.
+
+### Notification Center contract
+
+The two plugins talk over IPC only; neither reads, writes or deletes the other's
+files or runs the other's scripts. Foamy publishes its read-only file locations
+with `foamy.notifications storeInfo`, and answers `invokeDefault`,
+`releaseHistory`, `releaseHistoryBefore` (which now also delete Foamy's own copies),
+`preferences` and `setPreference` (Foamy writes its own `shell.json` entry). It
+appends handled keys to its `handled` journal before running a click command,
+then calls `foamy.notification-center.store handled` and `peerChanged`. The
+foamy-kit `FoamyPeerIpc` answers in-process on 4.5 and falls back
+to `omarchy-shell`. Shared files are listed in `tests/shared-files.sha256`.
 
 ## Remove
 
@@ -165,16 +198,19 @@ omarchy restart shell
 
 Removing an enabled plugin restores stock notifications. If you disabled it
 first, explicitly enable `omarchy.notifications`. History and do-not-disturb
-state remain on disk. Omarchy manages the plugin entry in `shell.json`; packages
+state remain on disk in `~/.local/state/foamy-notifications/`; delete that
+directory to remove them. Omarchy manages the plugin entry in `shell.json`; packages
 and data outside the plugin directory remain in place.
 
 ## License
+
+`kit/` holds shared components copied from [foamy-kit](https://github.com/foamrider/foamy-kit); edit them there, not here.
 
 [MIT](LICENSE), with [Omarchy attribution](LICENSE-OMARCHY).
 The preview uses synthetic messages and an original sample avatar.
 
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
 
-Language follows **Omarchy → Setup → Language** on Omarchy 4.5. Plugin language overrides are no longer used. Omarchy 4.0 displays the plugin in English. Missing translations fall back to English.
+Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (shared foamy-kit i18n). Plugin language overrides are no longer used. Omarchy 4.0 displays the plugin in English. Missing translations fall back to English.
 
 Translation checks: `python3 tests/i18n-runtime.py` uses the installed shell. Set `OMARCHY_PATH` to a 4.5 source tree to check live language switching against that version.

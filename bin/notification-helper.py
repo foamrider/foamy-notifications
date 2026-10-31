@@ -26,8 +26,27 @@ def packet():
         raise ValueError("Expected an object")
     return value
 
+def state_home():
+    return Path(os.environ.get('XDG_STATE_HOME', str(Path.home()/'.local/state')))
+
 def base():
-    return Path(os.environ.get('XDG_STATE_HOME', str(Path.home()/'.local/state')))/'omarchy/notifications'
+    # Foamy's own directory: Omarchy 4.5's upgrade migration deletes the 4.0 layout
+    # under omarchy/notifications, and stock 4.5 owns that directory now.
+    return state_home()/'foamy-notifications'
+
+def popups():
+    return base()/'popups'
+
+def history():
+    return base()/'history'
+
+HISTORY_LIMIT = 100
+HANDLED_LIMIT = 1000
+
+def private_dirs():
+    for folder in (base(), popups(), history(), base()/'images'):
+        folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(folder, 0o700)
 
 def atomic(path, data):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -43,6 +62,7 @@ def atomic(path, data):
 
 IMAGE_LIMIT = 5 * 1024 * 1024
 IMAGE_NAME = re.compile(r"^([0-9]+-[0-9]+)-(appIcon|image)-([a-f0-9]{64})\.png$")
+LEGACY_IMAGE = re.compile(r"^([0-9]+-[0-9]+)-(appIcon|image)$")
 THEME_ICON = re.compile(r"^[A-Za-z0-9_.-]+$")
 POLICY = Path(__file__).with_name('policy.xml')
 
@@ -182,13 +202,14 @@ def write(data):
     key = str(entry['timestamp']) + '-' + str(entry['originalId'])
     if not KEY.fullmatch(key): raise ValueError('Invalid notification identity')
     normalize_entry(entry, data.get('copies', []))
-    target = root/'history' if data.get('history') else root
+    target = history() if data.get('history') else popups()
     atomic(target/(key+'.json'), (json.dumps(entry,ensure_ascii=True)+'\n').encode())
     if data.get('history'):
-        files = sorted(target.glob('[0-9]*-*.json'), key=lambda p:p.name, reverse=True)
-        for path in files[100:]:
-            path.unlink(missing_ok=True)
-            remove_images(path.stem)
+        # A history write means the popup is gone; an earlier (or in-flight) popup
+        # write for the same key must not survive to be restored after a restart.
+        # Images stay: the history entry references them.
+        (popups()/(key+'.json')).unlink(missing_ok=True)
+        trim_history()
 
     if 'sources' in data:
         print(json.dumps({'key': key, 'version': data.get('imageVersion', 0), 'sources': data['sources'],
@@ -196,12 +217,13 @@ def write(data):
 
 
 def read(data):
-    folder = base()/('history' if data.get('history') else '')
+    folder = history() if data.get('history') else popups()
     # Stream bounded rows instead of concatenating arbitrary files into the shell.
     count = 0
-    for path in sorted(folder.glob('[0-9]*-*.json'), reverse=True):
+    paths = [p for p in folder.glob('[0-9]*-*.json') if KEY.fullmatch(p.stem)]
+    for path in sorted(paths, key=lambda p: (stamp(p.stem), p.name), reverse=True):
         if count >= 1000: break
-        if not KEY.fullmatch(path.stem) or path.is_symlink(): continue
+        if path.is_symlink(): continue
         try:
             with path.open('rb') as stream: raw = stream.read(LIMIT+1)
             if len(raw)>LIMIT: continue
@@ -221,14 +243,143 @@ def forget(data):
     keys = data['keys']
     if not isinstance(keys,list) or len(keys)>100 or any(not isinstance(k,str) or not KEY.fullmatch(k) for k in keys):
         raise ValueError('Invalid handled notification keys')
-    config_home = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home()/'.config')))
-    center = config_home/'omarchy/plugins/foamy.notification-center/bin/notification-center'
-    # Persist the center's tombstones before running an action that might restart the shell.
-    if center.is_file():
-        subprocess.run([str(center),'remove',*keys],check=True,timeout=15,stdout=subprocess.DEVNULL)
+    # The handled journal is durable before an action that might restart the shell
+    # runs; the center reads it (path from `storeInfo`) instead of being called here.
+    journal = base()/'handled'
+    try:
+        with journal.open('rb') as stream: previous = stream.read(64 * 1024).decode('ascii', 'ignore').split()
+    except OSError:
+        previous = []
+    lines = [k for k in previous if KEY.fullmatch(k) and k not in keys] + list(keys)
+    atomic(journal, ('\n'.join(lines[-HANDLED_LIMIT:]) + '\n').encode())
+    drop_keys(keys)
+
+def drop_keys(keys):
     for key in keys:
-        for folder in (base(),base()/'history'): (folder/(key+'.json')).unlink(missing_ok=True)
+        for folder in (popups(), history()): (folder/(key+'.json')).unlink(missing_ok=True)
         remove_images(key)
+
+def stamp(name):
+    return int(name.split('-', 1)[0])
+
+def trim_history():
+    files = sorted((p for p in history().glob('[0-9]*-*.json') if KEY.fullmatch(p.stem)), key=lambda p: (stamp(p.stem), p.name), reverse=True)
+    for path in files[HISTORY_LIMIT:]:
+        path.unlink(missing_ok=True)
+        remove_images(path.stem)
+
+def valid_keys(value, limit=100):
+    if not isinstance(value, list) or len(value) > limit or any(not isinstance(k, str) or not KEY.fullmatch(k) for k in value):
+        raise ValueError('Invalid notification keys')
+    return value
+
+def archive(data):
+    # A popup leaving the screen moves into history; images stay with it.
+    keys = valid_keys(data['keys'], 2048) if 'keys' in data else valid_keys([data.get('key')])
+    for key in keys:
+        source = popups()/(key + '.json')
+        if source.is_file() and not source.is_symlink():
+            os.replace(source, history()/(key + '.json'))
+    trim_history()
+
+def delete(data):
+    for key in valid_keys(data['keys'], 2048) if 'keys' in data else valid_keys([data.get('key')]):
+        (popups()/(key + '.json')).unlink(missing_ok=True)
+        for path in (base()/'images').glob(key + '-*'):
+            path.unlink(missing_ok=True)
+
+def clear(data):
+    for path in history().glob('[0-9]*-*.json'):
+        if KEY.fullmatch(path.stem):
+            path.unlink(missing_ok=True)
+            remove_images(path.stem)
+
+def drop(data):
+    # The center removed these durably: drop Foamy's own copies too.
+    if 'before' in data:
+        before = data['before']
+        if type(before) is not int or before < 0: raise ValueError('Invalid cutoff')
+        keys = [p.stem for folder in (popups(), history()) for p in folder.glob('[0-9]*-*.json') if KEY.fullmatch(p.stem) and stamp(p.stem) <= before]
+        drop_keys(keys)
+    else:
+        drop_keys(valid_keys(data.get('keys')))
+
+def sweep(data):
+    # A restart can kill a write between its image copy and its JSON.
+    images = base()/'images'
+    for path in images.iterdir() if images.is_dir() else ():
+        name = path.name
+        if name.endswith('.tmp') or name.startswith('.foamy-'):
+            if path.is_dir(): shutil.rmtree(path, ignore_errors=True)
+            else: path.unlink(missing_ok=True)
+            continue
+        match = re.fullmatch(r'([0-9]+-[0-9]+)-(appIcon|image)(-[a-f0-9]+)?(\.png)?', name)
+        if match and not (popups()/(match.group(1)+'.json')).exists() and not (history()/(match.group(1)+'.json')).exists():
+            path.unlink(missing_ok=True)
+
+MARKER = '.migrated-from-omarchy-notifications'
+
+def migrate(data):
+    """One-time move of the 4.0 layout Foamy used under omarchy/notifications.
+
+    Runs before anything else reads state. Only Foamy's per-file names move;
+    stock files (live.json, history.json, quiet.json, notifications.json) stay."""
+    private_dirs()
+    if (base()/MARKER).exists():
+        print(json.dumps({'migrated': False}))
+        return
+    old = state_home()/'omarchy/notifications'
+    old_images, new_images = old/'images', base()/'images'
+    moved = 0
+    def rewrite(row):
+        for role in ('appIcon', 'image'):
+            value = row.get(role)
+            if isinstance(value, str) and value.startswith('file://'):
+                path = local_image(value)
+                if path and path.parent == old_images:
+                    row[role] = (new_images/path.name).as_uri()
+        return row
+    if old_images.is_dir() and not old_images.is_symlink():
+        for path in old_images.iterdir():
+            # Hashed PNGs and the older unhashed `<key>-<role>` copies (normalized on first read).
+            if (IMAGE_NAME.fullmatch(path.name) or LEGACY_IMAGE.fullmatch(path.name)) and path.is_file() and not path.is_symlink() and not (new_images/path.name).exists():
+                shutil.copyfile(path, new_images/path.name)
+                os.chmod(new_images/path.name, 0o600)
+                path.unlink(missing_ok=True)
+    for source_dir, target_dir in ((old, popups()), (old/'history', history())):
+        if not source_dir.is_dir() or source_dir.is_symlink(): continue
+        for path in source_dir.glob('[0-9]*-*.json'):
+            if not KEY.fullmatch(path.stem) or path.is_symlink() or not path.is_file(): continue
+            target = target_dir/path.name
+            try:
+                if not target.exists():
+                    with path.open('rb') as stream: raw = stream.read(LIMIT + 1)
+                    if len(raw) <= LIMIT:
+                        row = json.loads(raw)
+                        if isinstance(row, dict):
+                            atomic(target, (json.dumps(rewrite(row), ensure_ascii=True) + '\n').encode())
+                            moved += 1
+                path.unlink(missing_ok=True)
+            except (OSError, ValueError):
+                continue
+    trim_history()
+    state = base()/'state.json'
+    if not state.exists():
+        carried = {'version': 5, 'dnd': False, 'snoozes': {}}
+        try:
+            legacy = json.loads((state_home()/'omarchy/notifications.json').read_text())
+            if isinstance(legacy, dict):
+                carried['dnd'] = legacy.get('dnd') is True
+                if isinstance(legacy.get('snoozes'), dict): carried['snoozes'] = legacy['snoozes']
+        except (OSError, ValueError):
+            try:
+                quiet = json.loads((old/'quiet.json').read_text())
+                carried['dnd'] = isinstance(quiet, dict) and quiet.get('dnd') is True
+            except (OSError, ValueError):
+                pass
+        atomic(state, (json.dumps(carried, indent=2) + '\n').encode())
+    atomic(base()/MARKER, b'1\n')
+    print(json.dumps({'migrated': True, 'moved': moved}))
 
 def hypr(command):
     result = subprocess.run(['hyprctl','-j',command],check=True,capture_output=True,timeout=3)
@@ -309,12 +460,54 @@ def context(data):
         if monitor['x'] <= point.get('x',-1e9) < monitor['x']+width and monitor['y'] <= point.get('y',-1e9) < monitor['y']+height: pointer = monitor['name']
     print(json.dumps({'fullscreen':fullscreen,'pointer':pointer}))
 
+OPERATIONS = {'write': write, 'read': read, 'forget': forget, 'focus': focus, 'focus-configured': focus_configured,
+              'context': context, 'archive': archive, 'delete': delete, 'clear': clear, 'drop': drop,
+              'sweep': sweep, 'migrate': migrate}
+
+
+def serve():
+    """One long-lived worker: newline-delimited JSON jobs in, one JSON reply line each.
+
+    {"id": n, "op": "write", "data": {...}} -> {"id": n, "ok": true, "out": "...", "error": ""}
+    Replaces one python/bash process per persistence job (bursts no longer spawn)."""
+    import contextlib, io
+    private_dirs()
+    stdin = sys.stdin.buffer
+    while True:
+        line = stdin.readline(LIMIT + 4096)
+        if not line:
+            return
+        reply = {'id': None, 'ok': False, 'out': '', 'error': ''}
+        try:
+            if not line.endswith(b'\n'):
+                # Oversized: discard the rest of the line, then answer the job as failed.
+                while line and not line.endswith(b'\n'):
+                    line = stdin.readline(LIMIT + 4096)
+                raise ValueError('Notification exceeds the storage limit')
+            job = json.loads(line)
+            reply['id'] = job.get('id')
+            data = job.get('data') or {}
+            if not isinstance(data, dict): raise ValueError('Expected an object')
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                OPERATIONS[job.get('op')](data)
+            reply['ok'] = True
+            reply['out'] = buffer.getvalue()
+        except Exception as error:
+            reply['error'] = str(error) or type(error).__name__
+        sys.stdout.write(json.dumps(reply, ensure_ascii=True) + '\n')
+        sys.stdout.flush()
+
+
 if __name__=='__main__':
     os.umask(0o077)
     try:
         operation = sys.argv[1]
+        if operation == 'serve':
+            serve()
+            sys.exit(0)
         data = packet()
-        {'write':write,'read':read,'forget':forget,'focus':focus,'focus-configured':focus_configured,'context':context}[operation](data)
+        OPERATIONS[operation](data)
     except Exception as error:
         print('foamy.notifications: '+str(error),file=sys.stderr)
         sys.exit(1)

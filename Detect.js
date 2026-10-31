@@ -1,4 +1,4 @@
-// Adapted from Omarchy v4.5.0-rc1 (MIT; see LICENSE-OMARCHY).
+// Adapted from Omarchy v4.5.0-rc2 (MIT; see LICENSE-OMARCHY).
 // What a notification offers: verification codes, links and meetings. Every detector guesses at someone else's prose, so a false positive
 // (offering "412" from "412 passed") is worse than a miss.
 .pragma library
