@@ -160,16 +160,11 @@ Keyboard mode: Up/Down, `j`/`k` or Tab move between cards, Enter or Space clicks
 Delete dismisses, `1`–`9` press the numbered button, Escape (or ten idle seconds)
 gives the keyboard back. Notifications never take the keyboard on their own.
 
-**State directory and the 4.5 upgrade.** Foamy now keeps its state in
+**State directory.** Foamy keeps its state in its own folder,
 `~/.local/state/foamy-notifications/`. On its first start this version moves its
 popups, history, images, DND and snoozes out of `~/.local/state/omarchy/notifications`
-(the 4.0 layout), once. Omarchy 4.5's upgrade migration deletes that 4.0 layout
-during `omarchy update`, and `omarchy update` does not update plugins. So:
-**update Foamy Notifications (and restart the shell once) before updating to
-Omarchy 4.5.** If Omarchy is updated first, the Foamy popups/history of that
-moment are lost (Notification Center's archive is separate and survives); DND
-carries over through stock's `quiet.json`, snoozes reset. Stock files
-(`live.json`, `history.json`, `quiet.json`) are never touched.
+(the 4.0 layout), once. Stock files (`live.json`, `history.json`, `quiet.json`) are
+never touched.
 
 The center's More options menu offers global snooze and resume. CLI equivalents:
 
@@ -208,6 +203,8 @@ directory to remove them. Omarchy manages the plugin entry in `shell.json`; pack
 and data outside the plugin directory remain in place.
 
 ## License
+
+`kit/` holds shared components copied from [foamy-kit](https://github.com/foamrider/foamy-kit); edit them there, not here.
 
 [MIT](LICENSE), with [Omarchy attribution](LICENSE-OMARCHY).
 The preview uses synthetic messages and an original sample avatar.
