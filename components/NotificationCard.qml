@@ -171,7 +171,7 @@ Rectangle {
           text: root.app || FoamyI18n.t("Notification")
           textFormat: Text.PlainText
           font.family: root.fontFamily
-          font.pixelSize: FoamyStyle.font.caption
+          font.pixelSize: FoamyStyle.font.body
           color: root.ink
           elide: Text.ElideRight
           maximumLineCount: 1
@@ -180,7 +180,7 @@ Rectangle {
           visible: root.count > 1
           text: "· " + FoamyI18n.number(root.count)
           font.family: root.fontFamily
-          font.pixelSize: FoamyStyle.font.caption
+          font.pixelSize: FoamyStyle.font.bodySmall
           color: Util.alpha(root.ink, 0.65)
         }
         Controls.AbstractButton {
@@ -203,7 +203,7 @@ Rectangle {
           visible: root.timestamp > 0
           text: visible ? Qt.locale(FoamyI18n.formatLocale).toString(new Date(root.timestamp), "hh:mm") : ""
           font.family: root.fontFamily
-          font.pixelSize: FoamyStyle.font.caption
+          font.pixelSize: FoamyStyle.font.bodySmall
           color: Util.alpha(root.ink, 0.65)
         }
         Controls.AbstractButton {
@@ -278,7 +278,8 @@ Rectangle {
             text: root.summary
             textFormat: Text.PlainText
             font.family: root.fontFamily
-            font.pixelSize: FoamyStyle.font.body
+            font.pixelSize: FoamyStyle.font.title
+            font.weight: Font.DemiBold
             color: root.ink
             wrapMode: Text.Wrap
             maximumLineCount: 2
@@ -291,7 +292,7 @@ Rectangle {
             text: Markup.render(Logic.sanitizeBody(root.body, root.app, root.appIcon))
             textFormat: Text.StyledText
             font.family: root.fontFamily
-            font.pixelSize: FoamyStyle.font.caption
+            font.pixelSize: FoamyStyle.font.title
             color: Util.alpha(root.ink, 0.75)
             wrapMode: Text.Wrap
             maximumLineCount: 3
@@ -337,7 +338,7 @@ Rectangle {
         textFormat: Text.PlainText
         color: Commons.Color.urgent
         font.family: root.fontFamily
-        font.pixelSize: FoamyStyle.font.caption
+        font.pixelSize: FoamyStyle.font.bodySmall
         wrapMode: Text.Wrap
       }
     }
@@ -431,7 +432,7 @@ Rectangle {
           text: footerButton.text
           textFormat: Text.PlainText
           font.family: root.fontFamily
-          font.pixelSize: FoamyStyle.font.caption
+          font.pixelSize: FoamyStyle.font.body
           color: footerButton.copied ? root.copiedColor : root.ink
           horizontalAlignment: Text.AlignHCenter
           wrapMode: Text.Wrap
@@ -467,7 +468,7 @@ Rectangle {
       text: featureButton.text
       textFormat: Text.PlainText
       font.family: root.fontFamily
-      font.pixelSize: FoamyStyle.font.caption
+      font.pixelSize: FoamyStyle.font.body
       color: root.ink
       horizontalAlignment: Text.AlignHCenter
       verticalAlignment: Text.AlignVCenter
@@ -493,7 +494,7 @@ Rectangle {
       text: actionButton.actionData.text
       textFormat: Text.PlainText
       font.family: root.fontFamily
-      font.pixelSize: FoamyStyle.font.caption
+      font.pixelSize: FoamyStyle.font.body
       color: root.ink
       horizontalAlignment: Text.AlignHCenter
       verticalAlignment: Text.AlignVCenter
