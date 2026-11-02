@@ -183,7 +183,8 @@ The two plugins talk over IPC only; neither reads, writes or deletes the other's
 files or runs the other's scripts. Foamy publishes its read-only file locations
 with `foamy.notifications storeInfo`, and answers `invokeDefault`,
 `releaseHistory`, `releaseHistoryBefore` (which now also delete Foamy's own copies),
-`preferences` and `setPreference` (Foamy writes its own `shell.json` entry). It
+`preferences` and `setPreference` (Foamy saves its own `shell.json` entry through
+the host's `shell.updateEntryInline`). It
 appends handled keys to its `handled` journal before running a click command,
 then calls `foamy.notification-center.store handled` and `peerChanged`. The
 foamy-kit `FoamyPeerIpc` answers in-process on 4.5 and falls back

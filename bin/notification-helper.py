@@ -432,7 +432,8 @@ def focus(data):
 
 def focus_configured(data):
     # Both plugins use the same resolver and user mappings; archived commands never enter this path.
-    config = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home()/'.config')))/'omarchy/shell.json'
+    # The host reads this path only; it does not follow XDG_CONFIG_HOME.
+    config = Path.home()/'.config/omarchy/shell.json'
     mappings = []
     if config.is_file():
         with config.open('rb') as stream: raw = stream.read(LIMIT+1)

@@ -120,7 +120,8 @@ Item {
 
   FileView {
     id: configFile
-    path: (Quickshell.env("XDG_CONFIG_HOME") || service.home + "/.config") + "/omarchy/shell.json"
+    // The host always reads this path; it does not follow XDG_CONFIG_HOME.
+    path: service.home + "/.config/omarchy/shell.json"
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
@@ -1799,32 +1800,53 @@ Item {
 
   // ---------------------------------------------------- preferences (owned here)
   //
-  // The center's settings page asks over IPC; Foamy writes its own entry.
+  // The center's settings page asks over IPC; Foamy writes its own entry
+  // through the host (shell.updateEntryInline), never shell.json directly.
   readonly property var centerPreferenceKeys: ["offerSnoozeWhenSharing", "dndSilenceCritical", "groupDuplicates", "useBrowserFavicons",
     "compact", "showImages", "closeButtonRemovesHistory", "normalTimeoutSec"]
   property string preferenceError: ""
+  property bool preferenceSaving: false
   function savePreference(key, valueJson) {
     if (centerPreferenceKeys.indexOf(key) < 0) return "error: unknown setting"
     var value
     try { value = JSON.parse(String(valueJson || "").trim()) } catch (e) { return "error: invalid value" }
     var probe = {}; probe[key] = value; probe.id = "foamy.notifications"
     if (Preferences.parse(JSON.stringify({plugins: [probe]})).error) return "error: invalid value"
-    if (prefProc.running) return "error: busy"
-    preferenceError = ""
-    prefProc.command = ["python3", "-I", Qt.resolvedUrl("bin/notification-preferences.py").toString().replace(/^file:\/\//, ""), "save", key, JSON.stringify(value)]
-    prefProc.running = true
+    if (preferenceSaving) return "error: busy"
+    preferenceError = writePreference(key, value)
+    preferenceSaving = true
+    preferenceSaved.restart()
     return "saving"
   }
-  Process {
-    id: prefProc
-    stdout: StdioCollector { id: prefOutput }
-    stderr: StdioCollector {}
-    onExited: function(code, status) {
-      var result = null
-      try { result = JSON.parse(prefOutput.text) } catch (e) {}
-      service.preferenceError = code === 0 && status === 0 && result && result.ok ? "" : (result && result.error ? String(result.error) : "Could not save the setting")
-      service.pokeCenter("preferences")
-    }
+  // Replaces the whole raw plugins[] entry (the host stores exactly what it is
+  // given), so unrelated and unknown keys survive. Returns "" or the error.
+  function writePreference(key, value) {
+    if (!shell || typeof shell.updateEntryInline !== "function") return "Omarchy cannot save plugin settings"
+    var config = null
+    try { config = JSON.parse(configFile.text()) } catch (e) {}
+    if (!config || typeof config !== "object" || Array.isArray(config) || (config.plugins !== undefined && !Array.isArray(config.plugins)))
+      return "Invalid notification configuration"
+    var entries = (config.plugins || []).filter(function(e) { return e && typeof e === "object" && e.id === "foamy.notifications" })
+    if (entries.length > 1) return "Duplicate Foamy Notifications entries"
+    // Omarchy accepts configs that omit plugins; saving never adds or enables the entry.
+    if (!entries.length || (Array.isArray(config.disabledPlugins) && config.disabledPlugins.indexOf("foamy.notifications") >= 0))
+      return "Foamy Notifications is not enabled"
+    var entry = JSON.parse(JSON.stringify(entries[0]))
+    entry[key] = value
+    // The legacy browser override would keep grouping off after the toggle.
+    if (key === "groupDuplicates" && value && entry.browserGrouping === "none") entry.browserGrouping = "browser"
+    var parsed = Preferences.parse(JSON.stringify({plugins: [entry]}))
+    if (parsed.error) return parsed.error
+    if (shell.updateEntryInline("foamy.notifications", entry)) return ""
+    // false: nothing changed (already stored) or the host refused.
+    return JSON.stringify(entry) === JSON.stringify(entries[0]) ? "" : "Could not save the setting"
+  }
+  // The center reads "saving" before it can hear the poke (on 4.5 its reply
+  // is delivered later in the same process), so report the result shortly after.
+  Timer {
+    id: preferenceSaved
+    interval: 150
+    onTriggered: { service.preferenceSaving = false; service.pokeCenter("preferences") }
   }
 
   FoamyIpc {
@@ -1837,7 +1859,7 @@ Item {
     }
     function preferences(): string {
       return JSON.stringify({settings:service.preferences, error:service.configError,
-        saving:prefProc.running, saveError:service.preferenceError})
+        saving:service.preferenceSaving, saveError:service.preferenceError})
     }
     // Foamy writes its own shell.json entry; the center only asks.
     function setPreference(key: string, valueJson: string): string { return service.savePreference(key, valueJson) }

@@ -87,8 +87,8 @@ class HelperTest(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['summary'],'Good')
 
     def test_center_focus_uses_current_browser_mapping_and_ignores_commands(self):
-        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_CONFIG_HOME':d}), patch.object(h,'focus') as focus:
-            folder=Path(d)/'omarchy';folder.mkdir()
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'HOME':d,'XDG_CONFIG_HOME':d+'/xdg'}), patch.object(h,'focus') as focus:
+            folder=Path(d)/'.config/omarchy';folder.mkdir(parents=True)
             mapping={'origin':'teams.microsoft.com','windowClass':'vivaldi-teams.microsoft.com__-Profile_2'}
             (folder/'shell.json').write_text(json.dumps({'plugins':[{'id':'foamy.notifications','browserMappings':[mapping]}]}))
             h.focus_configured({'app':'Vivaldi','body':'teams.microsoft.com','execArgv':'["ignored"]'})

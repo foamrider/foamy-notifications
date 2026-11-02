@@ -17,6 +17,7 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
   "groupDuplicates": true,
   "closeButtonRemovesHistory": false,
   "dndSilenceCritical": false,
+  "offerSnoozeWhenSharing": true,
   "useBrowserFavicons": true,
   "browserGrouping": "browser",
   "monitor": "focused",
@@ -41,6 +42,7 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
 | `groupDuplicates` | Groups exact duplicates. Different actions or sending applications remain separate. |
 | `closeButtonRemovesHistory` | `false` (default) keeps notifications in history when × closes a popup. `true` removes the popup's whole duplicate group from history without invoking any action. Right-click, expiry, and keyboard/IPC dismissal still keep history. Failed removal leaves the popup available for retry. |
 | `dndSilenceCritical` | `false` (default) preserves trusted critical alerts through Do Not Disturb. `true` sends all new critical alerts, including Omarchy crash notifications, directly to history during DND. Transient alerts are not stored. Normal Omarchy action feedback and delivery outside DND are unchanged. |
+| `offerSnoozeWhenSharing` | `true` (default) shows a prompt when screen sharing starts, offering to snooze all notifications for 30 minutes or keep them. It is not shown during DND or an active snooze. `false` never shows it; sharing never mutes notifications by itself. |
 | `useBrowserFavicons` | `true` (default) uses the identified website’s locally cached favicon in the header. Missing, unsupported or failed favicons fall back to the app icon, then the glyph. Independent of `showImages`. |
 | `browserGrouping` | `browser` (default) and `hostname` preserve exact-duplicate grouping; the leading origin already keeps different websites separate. `none` disables duplicate grouping for browser notifications. Native duplicates still follow `groupDuplicates`. |
 | `monitor` | `focused`, `pointer`, `named`, or `all`. Missing named outputs fall back to the focused output. Pointer placement updates when a notification arrives. |
@@ -209,6 +211,8 @@ python3 tests/layer.py
 python3 tests/runtime.py
 # Stalled-worker floods, raw 4 MiB buffers, replacements and context backlog:
 python3 tests/queue-runtime.py
+# Center preference saves through the host API (shell.updateEntryInline):
+python3 tests/preferences-runtime.py
 # Also exercise the center, if its checkout is available:
 FOAMY_CENTER_SOURCE=/path/to/foamy-notification-center python3 tests/runtime.py
 ```
