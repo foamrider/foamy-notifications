@@ -147,7 +147,7 @@ These cleanup calls are optional when using stock or older notifications.
 
 ## Omarchy 4.5
 
-The `notifications` IPC target matches stock 4.5-rc2, so the default bindings work:
+The `notifications` IPC target matches stock 4.5-rc3, so the default bindings work:
 **SUPER+comma** (`act`: dismiss the newest card, press its only button, or click
 it; with several choices it hands over the keyboard), **SUPER+CTRL+comma**
 (`keyboard`), SUPER+SHIFT+comma (`dismissAll`), SUPER+ALT+comma (`dismissOne`)
@@ -159,6 +159,10 @@ answered over the 4.5 shell socket and through `qs ipc` on 4.0.
 Keyboard mode: Up/Down, `j`/`k` or Tab move between cards, Enter or Space clicks,
 Delete dismisses, `1`–`9` press the numbered button, Escape (or ten idle seconds)
 gives the keyboard back. Notifications never take the keyboard on their own.
+`dismissOne` hides the whole newest card, including grouped duplicates, and
+`dismissAll` hides every popup; both preserve history. The close button and
+keyboard Delete follow `closeButtonRemovesHistory`. The empty-history message
+can always be dismissed and is never written to history.
 
 **State directory.** Foamy keeps its state in its own folder,
 `~/.local/state/foamy-notifications/`. On its first start this version moves its
