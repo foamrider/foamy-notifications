@@ -19,7 +19,7 @@ CENTER=os.environ.get('FOAMY_CENTER_SOURCE','')
 
 SOURCE=Path(__file__).resolve().parents[1]
 if '--inside' not in sys.argv:
-    result=subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=55)
+    result=subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=65)
     raise SystemExit(result.returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-runtime-'))
 app=base/'app';app.mkdir()
@@ -104,6 +104,8 @@ ShellRoot {
   function leave(): void { input.mouseMove(testWindow.contentItem,480,580) }
   function clickFirst(): void { input.mouseClick(popupColumn.itemAtIndex(0),100,50,Qt.LeftButton) }
   function rightClickFirst(): void { input.mouseClick(popupColumn.itemAtIndex(0),100,50,Qt.RightButton) }
+  function deleteFirst(): void { notifications.startKeyboard(""); notifications.keyboardPressed(Qt.Key_Delete, "") }
+  function enterFirst(): void { notifications.startKeyboard(""); notifications.keyboardPressed(Qt.Key_Return, "") }
   function closeFirst(): void { input.mouseClick(input.findChild(popupColumn.itemAtIndex(0),"dismissButton")) }
   function stackState(): string {
    var settled=true
@@ -156,6 +158,39 @@ def dispatches():
     return dispatch_path.read_text().splitlines() if dispatch_path.exists() else []
 try:
     wait_for(lambda:ipc('notifications','ping')=='ok','service startup')
+    # A dismiss shortcut hides one visible card, not one member of a duplicate group.
+    send('Keep older card')
+    for _ in range(3): send('Dismiss grouped card')
+    wait_for(lambda:state()['popups']==4 and len(state()['groups'])==2 and state()['groups'][0]['count']==3 and not state()['busy'],'grouped dismissal fixture')
+    ipc('notifications','dismissOne')
+    wait_for(lambda:state()['popups']==1 and len(state()['groups'])==1 and not state()['busy'],'whole newest group dismissed')
+    history=home/'.local/state/foamy-notifications/history'
+    assert len(list(history.glob('*.json')))==3,'dismissOne did not preserve all duplicate history'
+    ipc('notifications','dismissOne')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'older card remains independently dismissible')
+    assert ipc('notifications','dismissOne')=='none','empty dismissal should be harmless'
+    ipc('notifications','clear')
+    wait_for(lambda:not state()['busy'] and state()['queuedJobs']==0,'clear dismissal fixture')
+    # Placeholders have no persisted key: every close path must remain local.
+    cfg=json.loads((config/'shell.json').read_text())
+    cfg['plugins'][0].update(closeButtonRemovesHistory=True,lowTimeoutSec=1)
+    (config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:state()['settings']['closeButtonRemovesHistory'] and state()['settings']['lowTimeoutSec']==1,'placeholder close settings')
+    before=len(dispatches())
+    for method in ['closeFirst','deleteFirst','enterFirst','dismissOne','dismissAll','expire']:
+        ipc('notifications','showHistory')
+        wait_for(lambda:state()['popups']==1 and len(state()['groups'])==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'empty-history placeholder')
+        if method in ['closeFirst','deleteFirst','enterFirst']: ipc('countdown-test',method)
+        elif method!='expire': ipc('notifications',method)
+        wait_for(lambda:state()['popups']==0 and not state()['busy'],'placeholder '+method)
+        assert state()['lastError']=='',state()['lastError']
+        assert not list(history.glob('*.json')),'placeholder entered history'
+    assert len(dispatches())==before,'placeholder tried to focus an app'
+    cfg['plugins'][0].update(closeButtonRemovesHistory=False,lowTimeoutSec=5)
+    (config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:not state()['settings']['closeButtonRemovesHistory'],'restore close settings')
+    print('PASS: grouped dismissOne preserves history and unrelated cards; empty-history X, Delete, Enter, dismissOne, dismissAll and expiry never persist or focus')
+
     if CENTER:
         wait_for(lambda:state()['centerEnabled'],'center config loaded')
         ipc('foamy.notification-center','close')

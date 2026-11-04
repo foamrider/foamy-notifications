@@ -694,7 +694,8 @@ Item {
 
   function dismissGroup(group, fromCloseButton) {
     if (busyKeys[group.key]) return
-    if (!fromCloseButton || !preferences.closeButtonRemovesHistory) {
+    // Empty-history feedback is not a persisted notification.
+    if (group.originalId < 0 || !fromCloseButton || !preferences.closeButtonRemovesHistory) {
       removeKeys(group.keys, "dismiss")
       return
     }
@@ -813,6 +814,7 @@ Item {
 
   function activateGroup(group, identifier) {
     if (busyKeys[group.key]) return
+    if (group.originalId < 0) { dismissGroup(group, false); return }
     var row = Object.assign({}, group)
     var keys = group.keys.slice()
     var busy = Object.assign({}, busyKeys); busy[row.key] = true; busyKeys = busy
@@ -1035,9 +1037,9 @@ Item {
   }
 
   function deletePopupFileFor(row) {
-    if (!row) return
+    if (!row || row.originalId < 0) return
     cancelPendingWrites([NotificationLogic.imageStem(row)])
-    // History replays and the placeholder never had a file; the delete is a no-op there.
+    // History replays have no popup file; deleting a missing file is harmless.
     var key = NotificationLogic.imageStem(row)
     if (!enqueueHelperJob("delete", {key: key})) deferMove(key, "delete")
   }
@@ -1062,7 +1064,8 @@ Item {
   // image copies included. Callers set $hist, $limit and $imgs first.
   readonly property var historyBarrierOps: ["clear", "drop", "forget", "read", "migrate"]
   function archivePopupFileFor(row) {
-    if (!row) return
+    // The empty-history placeholder has no valid persistence key.
+    if (!row || row.originalId < 0) return
     var key = NotificationLogic.imageStem(row)
     // Its popup write has not run yet: write it straight into history instead,
     // so a flood never leaves a popup file behind and needs no second job.
@@ -1085,7 +1088,7 @@ Item {
       converted = true
     }
     if (converted) return
-    // A replay or the placeholder has no file to move; the helper tolerates that.
+    // A replay has no popup file to move; the helper tolerates that.
     if (!enqueueHelperJob("archive", {key: key})) deferMove(key, "archive")
   }
 
@@ -1449,10 +1452,13 @@ Item {
       return "ok"
     }
 
-    // Dismiss the most recent popup.
+    // Hide the newest visible card, including every duplicate, preserving history.
     function dismissOne(): string {
-      if (popupModel.count === 0) return "none"
-      service.dismissPopup(0)
+      // A preceding dismiss can leave the deferred display snapshot stale.
+      if (service.rebuildPending) service.rebuildGroups()
+      var group = service.newestGroup()
+      if (!group || service.busyKeys[group.key]) return "none"
+      service.dismissGroup(group, false)
       return "ok"
     }
 
