@@ -240,6 +240,21 @@ try:
     else:
         for entry in history.glob('*.json'):
             if json.loads(entry.read_text()).get('summary','').startswith('DND policy '):entry.unlink()
+    # A sender without a window (omasnap's "copied" toast) has nothing to focus: the click closes the card quietly.
+    before=len(dispatches())
+    send('Windowless sender',('-a','omasnap'))
+    wait_for(lambda:state()['popups']==1 and not state()['busy'],'windowless popup ready')
+    ipc('notifications','invokeLast')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'windowless click closes the card')
+    assert state()['lastError']=='',state()['lastError']
+    assert len(dispatches())==before,'windowless click focused an app'
+    if CENTER:
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'windowless click keeps center history')
+        ipc('foamy.notification-center.test','clear')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0 and not state()['busy'],'windowless fixture cleanup')
+    else:
+        for entry in history.glob('*.json'):
+            if json.loads(entry.read_text()).get('summary')=='Windowless sender':entry.unlink()
     prior_tombstones=set((home/'.local/state/omarchy-notification-center/dismissed').read_text().splitlines()) if CENTER else set()
     first=send('Duplicate');send('Duplicate')
     wait_for(lambda:len(state()['groups'])==1 and state()['groups'][0]['count']==2,'duplicate grouping')

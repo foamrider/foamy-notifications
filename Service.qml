@@ -829,10 +829,17 @@ Item {
     var invoked = invokeLiveAction(row, identifier)
     if (invoked) commitHandled(row, keys)
     else if (identifier === "default") {
-      enqueueHelperJob("focus", {app:row.app, desktopEntry:row.desktopEntry, body:row.body, mappings:preferences.browserMappings}, function(focused) {
+      enqueueHelperJob("focus", {app:row.app, desktopEntry:row.desktopEntry, body:row.body, mappings:preferences.browserMappings}, function(ok, out, reason) {
+        if (ok && String(out).trim() === "none") {
+          // A sender without a window (a screenshot tool, a script) has nothing to open.
+          // The click closes the card like X, so the center still keeps it.
+          service.finishAction(row.key, "")
+          service.removeKeys(keys, "dismiss")
+        } else if (ok) service.commitHandled(row, keys)
         // Failed focus must leave both popup persistence and center history retryable.
-        if (focused) service.commitHandled(row, keys)
-        else service.finishAction(row.key, "Could not identify the window. Configure browserMappings or dismiss this popup.")
+        else service.finishAction(row.key, reason === "browser"
+          ? "Could not identify the window. Configure browserMappings or dismiss this popup."
+          : "Could not focus the sending app. Open it yourself or dismiss this popup.")
       })
     } else finishAction(row.key, "This action is no longer available.")
   }
@@ -1002,7 +1009,7 @@ Item {
     }
     runningImageWrite = false
     if (job.done) {
-      try { job.done(ok, out) } catch (e) { console.warn("notifications: file job callback failed:", e) }
+      try { job.done(ok, out, String(reply.reason || "")) } catch (e) { console.warn("notifications: file job callback failed:", e) }
     }
     runNextPopupFileJob()
   }

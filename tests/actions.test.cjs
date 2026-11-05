@@ -55,6 +55,20 @@ test('failed focus retains history; retry forgets only after focus succeeds',()=
  state.activateGroup(row,'default');jobs.shift().done(true);assert.equal(jobs[0].command,'forget');assert.deepEqual(events,[])
  jobs.shift().done(true);assert.equal(state.handledKeys['1-1'],true);assert.deepEqual(events,['center','remove'])
 })
+test('a windowless sender closes on click without an error or a history removal',()=>{
+ const {state,jobs,events,row}=fixture();const removed=[]
+ state.removeKeys=(keys,reason)=>removed.push({keys,reason})
+ state.activateGroup(row,'default');jobs.shift().done(true,'none\n','')
+ assert.deepEqual(removed,[{keys:row.keys,reason:'dismiss'}]);assert.equal(jobs.length,0);assert.deepEqual(events,[])
+ assert.equal(state.actionErrors['1-1'],undefined);assert.equal(state.busyKeys['1-1'],undefined);assert.equal(state.handledKeys['1-1'],undefined)
+})
+test('only a browser focus miss suggests browserMappings',()=>{
+ for(const [reason,mapping] of [['browser',true],['ambiguous',false],['',false]]) {
+  const {state,jobs,events,row}=fixture()
+  state.activateGroup(row,'default');jobs.shift().done(false,'',reason)
+  assert.equal(/browserMappings/.test(state.actionErrors['1-1']),mapping,reason);assert.deepEqual(events,[])
+ }
+})
 test('missing or throwing non-default callbacks do not discard notifications',()=>{
  for (const actions of [[],[{identifier:'read',invoke(){throw Error('closed')}}]]) {
   const {state,jobs,events,row}=fixture();state.liveRefs[1]={actions}

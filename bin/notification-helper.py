@@ -399,6 +399,13 @@ def origin_of(body):
     parsed = urlparse(match.group(1) or match.group(2))
     return (parsed.hostname or '').lower()
 
+class FocusMiss(ValueError):
+    """No single window to focus. reason: 'none' (a non-browser sender has no window),
+    'ambiguous' (several windows match), or 'browser' (browserMappings can resolve it)."""
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
 def select_window(data, clients):
     app = str(data.get('app','')).casefold()
     desktop = str(data.get('desktopEntry','')).removesuffix('.desktop').casefold()
@@ -412,19 +419,28 @@ def select_window(data, clients):
     elif origin:
         prefixes = ('chrome-'+origin+'__','vivaldi-'+origin+'__','msedge-'+origin+'__','brave-'+origin+'__')
         matches = [c for c in clients if cls(c).startswith(prefixes)]
-        if not matches: raise ValueError('No window for this browser app; configure browserMappings')
+        if not matches: raise FocusMiss('browser', 'No window for this browser app; configure browserMappings')
     else:
         matches = [c for c in clients if (desktop and cls(c)==desktop) or (app and cls(c)==app)]
         if not matches and app:
             matches = [c for c in clients if app in cls(c) or (c.get('initialClass')=='org.omarchy.agent' and app in str(c.get('initialTitle','')).casefold())]
+        # Screenshot tools and scripts notify after their window (if any) is gone.
+        if not matches: raise FocusMiss('none', 'The sending app has no window')
     if len(matches)!=1:
-        raise ValueError('Window target is ambiguous or unavailable; configure browserMappings')
+        if origin: raise FocusMiss('browser', 'Window target is ambiguous or unavailable; configure browserMappings')
+        raise FocusMiss('ambiguous', 'Several windows match the sending app')
     address = str(matches[0].get('address',''))
     if not re.fullmatch(r'0x[0-9a-fA-F]+',address): raise ValueError('Invalid window address')
     return address
 
 def focus(data):
-    address = select_window(data,hypr('clients'))
+    try:
+        address = select_window(data,hypr('clients'))
+    except FocusMiss as miss:
+        # Nothing to bring forward is not a failure; the caller decides what a click then does.
+        if miss.reason != 'none': raise
+        print('none')
+        return
     # Address is validated and passed as an argument, never interpolated sender text.
     result = subprocess.run(['hyprctl','dispatch',f'hl.dsp.focus({{ window = "address:{address}" }})'],capture_output=True,timeout=3)
     if result.returncode:
@@ -470,6 +486,7 @@ def serve():
     """One long-lived worker: newline-delimited JSON jobs in, one JSON reply line each.
 
     {"id": n, "op": "write", "data": {...}} -> {"id": n, "ok": true, "out": "...", "error": ""}
+    A failed focus also carries "reason" (see FocusMiss).
     Replaces one python/bash process per persistence job (bursts no longer spawn)."""
     import contextlib, io
     private_dirs()
@@ -496,6 +513,7 @@ def serve():
             reply['out'] = buffer.getvalue()
         except Exception as error:
             reply['error'] = str(error) or type(error).__name__
+            if isinstance(error, FocusMiss): reply['reason'] = error.reason
         sys.stdout.write(json.dumps(reply, ensure_ascii=True) + '\n')
         sys.stdout.flush()
 
