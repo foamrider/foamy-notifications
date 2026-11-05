@@ -82,6 +82,18 @@ test('coalescing and cancellation preserve callback, read and cleanup barriers',
   assert.equal(s.popupFileQueue[1].op, 'delete')
 })
 
+test('a helper reply hands its failure reason to the job', () => {
+  const s = fixture()
+  const sent = [], done = []
+  s.helperProc = {running:true, write(line) { sent.push(JSON.parse(line)) }}; s.helperRestart = {running:false, start() {}}
+  s.runningJob = null; s.nextJobId = 0; s.acceptNormalizedImages = () => {}
+  load(s, 'runNextPopupFileJob'); load(s, 'helperReplied')
+  s.deferredMoves = {}; s.popupFileQueue = [{op:'focus', payload:'{}', done:(...args) => done.push(args)}]
+  s.runNextPopupFileJob()
+  s.helperReplied(JSON.stringify({id:sent[0].id, ok:false, out:'', error:'x', reason:'browser'}))
+  assert.deepEqual(done, [[false, '', 'browser']])
+})
+
 test('draining a write releases its pending slot and bytes; a read remains a barrier', () => {
   const s = fixture()
   const sent = []

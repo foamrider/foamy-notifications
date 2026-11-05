@@ -80,6 +80,8 @@ continue to work (see "Omarchy 4.5" below).
   Right-click hides the popup and keeps it in history. × does the same by default;
   enable **X removes from history** in the center's Foamy Notifications settings
   to remove the popup's whole duplicate group from history instead.
+- Left-clicking a notification with no action from an app that has no window
+  (such as a screenshot tool's "copied" notice) just closes it, like right-click.
 - Exact duplicates share a card. Overflow goes to history.
 - Hover the card to reveal the snooze button to the left of the timestamp.
   It also appears on keyboard focus. The button snoozes that sender for

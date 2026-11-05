@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -51,6 +53,36 @@ class HelperTest(unittest.TestCase):
     def test_non_browser_message_hostname_is_not_app_identity(self):
         clients=[{'class':'Chat','address':'0x10'},{'class':'vivaldi-teams.microsoft.com__-Profile_1','address':'0x11'}]
         self.assertEqual(h.select_window({'app':'Chat','body':'teams.microsoft.com\nMessage'},clients),'0x10')
+
+    def test_focus_miss_reasons_separate_windowless_senders_from_mapping_problems(self):
+        clients=[{'class':'vivaldi-stable','address':'0x10'},{'class':'Chat','address':'0x11'},{'class':'Chat','address':'0x12'}]
+        def reason(data):
+            with self.assertRaises(h.FocusMiss) as miss: h.select_window(data,clients)
+            return miss.exception.reason
+        self.assertEqual(reason({'app':'omasnap'}),'none')
+        self.assertEqual(reason({'app':'Chat'}),'ambiguous')
+        self.assertEqual(reason({'app':'Vivaldi','body':'teams.microsoft.com\nHi'}),'browser')
+        mapped={'app':'Vivaldi','body':'teams.microsoft.com','mappings':[{'origin':'teams.microsoft.com','windowClass':'gone'}]}
+        self.assertEqual(reason(mapped),'browser')
+
+    def test_focus_reports_a_windowless_sender_without_failing(self):
+        with patch.object(h,'hypr',return_value=[{'class':'Other','address':'0x1'}]), patch.object(h.subprocess,'run') as run:
+            out=io.StringIO()
+            with contextlib.redirect_stdout(out): h.focus({'app':'omasnap'})
+            self.assertEqual(out.getvalue().strip(),'none'); run.assert_not_called()
+            # A browser app without its window is still an error: a mapping can fix it.
+            with self.assertRaises(h.FocusMiss): h.focus({'app':'Vivaldi','body':'teams.microsoft.com'})
+
+    def test_serve_reports_the_focus_miss_reason(self):
+        jobs=[{'id':1,'op':'focus','data':{'app':'omasnap'}},{'id':2,'op':'focus','data':{'app':'Vivaldi','body':'teams.microsoft.com'}}]
+        stdin=io.TextIOWrapper(io.BytesIO(''.join(json.dumps(j)+'\n' for j in jobs).encode()))
+        out=io.StringIO()
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d}), patch.object(h,'hypr',return_value=[]), \
+             patch.object(h.sys,'stdin',stdin), patch.object(h.sys,'stdout',out):
+            h.serve()
+        first,second=[json.loads(l) for l in out.getvalue().splitlines()]
+        self.assertEqual((first['ok'],first['out'].strip(),first.get('reason')),(True,'none',None))
+        self.assertEqual((second['ok'],second['reason']),(False,'browser'))
 
     def test_atomic_private_persistence_and_handled_removal(self):
         with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'XDG_STATE_HOME':d,'XDG_CONFIG_HOME':d+'/config'}):
