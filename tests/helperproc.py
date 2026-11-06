@@ -2,7 +2,7 @@
 
 FOAMY_HELPER is the helper's argv prefix as a JSON list of absolute paths, e.g.
   FOAMY_HELPER='["/path/to/bin/aarch64/foamy-notifications-helper"]'
-The default is the plugin's current helper. Each Sandbox has its own HOME and
+The default is this machine's bundled binary, bin/<machine>/foamy-notifications-helper. Each Sandbox has its own HOME and
 XDG directories and a PATH that holds only a fake `hyprctl` (plus `magick` and
 `file` when a test asks for them), so nothing reaches the live Hyprland session
 or the user's notification state.
@@ -10,6 +10,7 @@ or the user's notification state.
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def prefix():
     if os.environ.get('FOAMY_HELPER'):
         return json.loads(os.environ['FOAMY_HELPER'])
-    return [sys.executable, '-I', str(ROOT / 'bin/notification-helper.py')]
+    return [str(ROOT / 'bin' / platform.machine() / 'foamy-notifications-helper')]
 
 
 # Answers `hyprctl -j <what>` from <what>.json beside it and logs every call.
@@ -45,6 +46,20 @@ elif args[:1] == ['dispatch'] and len(args) > 1:
 else:
     sys.exit(2)
 '''
+
+
+def emulated():
+    """Whether the helper is an ELF for another CPU (run through qemu-user,
+    which ignores RLIMIT_AS for the programs it emulates)."""
+    machines = {'x86_64': 62, 'aarch64': 183}
+    try:
+        with open(prefix()[0], 'rb') as binary:
+            header = binary.read(20)
+    except OSError:
+        return False
+    if header[:4] != b'\x7fELF':
+        return False
+    return int.from_bytes(header[18:20], 'little') != machines.get(platform.machine())
 
 
 def from_uri(uri):

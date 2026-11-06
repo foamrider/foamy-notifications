@@ -2,12 +2,14 @@
 
 Shared verbatim with foamy-notification-center (tests/shared-files.sha256).
 FOAMY_HELPER is the helper's argv prefix as a JSON list of absolute paths; the
-test appends `favicon`. The default is this plugin's current helper.
+test appends `favicon`. The default is this plugin's bundled binary,
+bin/<machine>/<manifest id with "." as "-">-helper (foamy-kit FoamyNative).
 """
 from contextlib import closing
 import json
 import os
 from pathlib import Path
+import platform
 import sqlite3
 import struct
 import subprocess
@@ -23,7 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def helper_prefix():
     if os.environ.get('FOAMY_HELPER'):
         return json.loads(os.environ['FOAMY_HELPER'])
-    return [sys.executable, '-I', str(ROOT / 'bin/browser-favicon.py')]
+    plugin = json.loads((ROOT / 'manifest.json').read_text())['id']
+    return [str(ROOT / 'bin' / platform.machine() / (plugin.replace('.', '-') + '-helper'))]
 
 
 def png(width=1, height=1):

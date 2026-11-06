@@ -17,6 +17,7 @@ import "Features.js" as Features
 import "Security.js" as Security
 import "Preferences.js" as Preferences
 import "BrowserIdentity.js" as BrowserIdentity
+import "kit/FoamyNative.js" as FoamyNative
 
 Item {
   id: service
@@ -112,7 +113,22 @@ Item {
   property var preferences: Preferences.defaults()
   property string configError: ""
   property string lastError: ""
-  readonly property string helper: Qt.resolvedUrl("bin/notification-helper.py").toString().replace(/^file:\/\//, "")
+  // The bundled native helper, bin/<arch>/foamy-notifications-helper (foamy-kit FoamyNative).
+  readonly property string pluginDir: FoamyNative.localPath(Qt.resolvedUrl("."))
+  readonly property string helper: "foamy-notifications-helper"
+  // No helper for this CPU (exit 126/127): popups still show, but nothing is
+  // persisted or focused, and the helper is not started again.
+  property bool helperUnavailable: false
+
+  function markHelperUnavailable() {
+    if (helperUnavailable) return
+    helperUnavailable = true
+    reportPersistenceError(FoamyNative.UNAVAILABLE_TEXT)
+    var queue = popupFileQueue
+    popupFileQueue = []
+    deferredMoves = ({})
+    for (var i = 0; i < queue.length; i++) if (queue[i].done) { try { queue[i].done(false, "", "") } catch (e) {} }
+  }
 
   function durationFor(urgency, expireTimeout) {
     return Preferences.duration(preferences, urgency, expireTimeout)
@@ -837,7 +853,7 @@ Item {
           service.removeKeys(keys, "dismiss")
         } else if (ok) service.commitHandled(row, keys)
         // Failed focus must leave both popup persistence and center history retryable.
-        else service.finishAction(row.key, reason === "browser"
+        else service.finishAction(row.key, service.helperUnavailable ? FoamyNative.UNAVAILABLE_TEXT : reason === "browser"
           ? "Could not identify the window. Configure browserMappings or dismiss this popup."
           : "Could not focus the sending app. Open it yourself or dismiss this popup.")
       })
@@ -930,6 +946,7 @@ Item {
   }
 
   function enqueuePopupJob(job) {
+    if (helperUnavailable) return rejectPopupFileJob(job, FoamyNative.UNAVAILABLE_TEXT)
     var payload = job.payload || "{}"
     // Bound before copying the queue. UTF-8 accounts for escaped and non-ASCII sender data.
     if (payload.length > popupPayloadLimit || NotificationLogic.utf8Bytes(payload) > popupPayloadLimit)
@@ -984,7 +1001,7 @@ Item {
       if (remove.length) batch.push({op:"delete", payload:JSON.stringify({keys:remove}), bytes:0})
       popupFileQueue = batch
     }
-    if (runningJob || popupFileQueue.length === 0) return
+    if (runningJob || popupFileQueue.length === 0 || helperUnavailable) return
     if (!helperProc.running) { if (!helperRestart.running) helperRestart.start(); return }
     var job = popupFileQueue[0]
     popupFileQueue = popupFileQueue.slice(1)
@@ -1016,7 +1033,7 @@ Item {
 
   Process {
     id: helperProc
-    command: ["python3", "-I", service.helper, "serve"]
+    command: FoamyNative.command(service.pluginDir, service.helper, ["serve"])
     running: false
     stdinEnabled: true
     stdout: SplitParser { onRead: function(line) { service.helperReplied(line) } }
@@ -1026,12 +1043,14 @@ Item {
       var job = service.runningJob
       service.runningJob = null
       service.runningImageWrite = false
-      service.reportPersistenceError("Notification helper stopped; restarting it")
+      var unavailable = FoamyNative.unavailable(exitCode)
+      if (unavailable) service.markHelperUnavailable()
+      else service.reportPersistenceError("Notification helper stopped; restarting it")
       if (job && job.done) { try { job.done(false, "") } catch (e) {} }
-      helperRestart.start()
+      if (!unavailable) helperRestart.start()
     }
   }
-  Timer { id: helperRestart; interval: 1000; onTriggered: if (!helperProc.running) helperProc.running = true }
+  Timer { id: helperRestart; interval: 1000; onTriggered: if (!helperProc.running && !service.helperUnavailable) helperProc.running = true }
 
   function persistPopupFile(snapshot) {
     var safeSnapshot = Features.redact(snapshot)
@@ -1537,7 +1556,7 @@ Item {
     Qt.callLater(function() { service.rebuildPending = false; service.rebuildGroups() })
   }
 
-  BrowserIcons { id: browserIcons; onUpdated: service.scheduleRebuild() }
+  BrowserIcons { id: browserIcons; helper: service.helper; onUpdated: service.scheduleRebuild() }
 
   function rebuildGroups() {
     var rows = []
@@ -1614,13 +1633,15 @@ Item {
     interval: 50
     onTriggered: {
       if (contextProc.running) { restart(); return }
+      // Without the helper there is no monitor context: deliver on the last known monitor.
+      if (service.helperUnavailable) { service.deliverPending(); return }
       contextProc.stdinEnabled = true
       contextProc.running = true
     }
   }
   Process {
     id: contextProc
-    command: ["python3", service.helper, "context"]
+    command: FoamyNative.command(service.pluginDir, service.helper, ["context"])
     stdinEnabled: true
     onStarted: { write(JSON.stringify({fullscreen:service.preferences.suppressFullscreen,pointer:service.preferences.monitor === "pointer"})); stdinEnabled = false }
     stdout: StdioCollector { id: contextOutput }
@@ -1632,16 +1653,20 @@ Item {
           service.fullscreenMonitors = data.fullscreen
           service.pointerMonitor = data.pointer
         } catch(e) { service.lastError = "Cannot read monitor state" }
-      } else { service.lastError = "Cannot query monitor state; notifications use the last known monitor"; console.warn(service.lastError) }
-      var pending = service.pendingNotifications; service.pendingNotifications = []
-      for (var i = 0; i < pending.length; i++) {
-        try {
-          if (pending[i].snapshot) service.handleDetachedSnapshot(pending[i].snapshot, false)
-          else service.handleNotification(pending[i].notification)
-        } catch(e) { console.warn("foamy.notifications: sender closed before delivery") }
-      }
-      service.scheduleRebuild()
+      } else if (FoamyNative.unavailable(exitCode)) service.markHelperUnavailable()
+      else { service.lastError = "Cannot query monitor state; notifications use the last known monitor"; console.warn(service.lastError) }
+      service.deliverPending()
     }
+  }
+  function deliverPending() {
+    var pending = service.pendingNotifications; service.pendingNotifications = []
+    for (var i = 0; i < pending.length; i++) {
+      try {
+        if (pending[i].snapshot) service.handleDetachedSnapshot(pending[i].snapshot, false)
+        else service.handleNotification(pending[i].notification)
+      } catch(e) { console.warn("foamy.notifications: sender closed before delivery") }
+    }
+    service.scheduleRebuild()
   }
   Connections {
     target: Hyprland
@@ -1898,7 +1923,7 @@ Item {
         retainedActions:Object.keys(service.retainedHistory).length, pending:pendingNotifications.length, contextBusy:contextProc.running, popups:popupModel.count, doNotDisturb:service.doNotDisturb, monitors:service.targetMonitors,
         fullscreenMonitors:service.fullscreenMonitors, settings:service.preferences,
         snoozes:service.snoozes, sharingActive:service.sharingActive, sharingOfferPending:service.sharingOfferPending,
-        centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,
+        centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,helperUnavailable:service.helperUnavailable,
         queuedJobs:service.popupFileQueue.length, queuedBytes:service.popupFileQueue.reduce(function(total,job){return total+job.bytes},0),
         tracked:Object.keys(service.liveRefs).length, busy:service.runningJob !== null || service.popupFileQueue.length>0,
         keyboardMode:service.keyboardMode, expanded:service.expanded, storeReady:service.storeReady})

@@ -9,7 +9,7 @@ import subprocess
 import time
 import unittest
 
-from helperproc import Sandbox, from_uri
+from helperproc import Sandbox, emulated, from_uri
 
 IMAGE_LIMIT = 5 * 1024 * 1024
 IMAGE_NAME = re.compile(r"^([0-9]+-[0-9]+)-(appIcon|image)-([a-f0-9]{64})\.png$")
@@ -170,7 +170,11 @@ class Images(unittest.TestCase):
         self.assertEqual(seen['files'], [])
         self.assertEqual(seen['stdin'], path.read_bytes()[:8].decode('latin-1'))
         self.assertTrue(Path(seen['policy'], 'policy.xml').is_file())
-        self.assertEqual(seen['limits'], [[0, 0], [512 * 1024 * 1024] * 2, [IMAGE_LIMIT] * 2, [5, 5]])
+        limits = [[0, 0], [512 * 1024 * 1024] * 2, [IMAGE_LIMIT] * 2, [5, 5]]
+        if emulated():
+            # qemu-user does not apply the address-space limit to the programs it runs.
+            limits[1] = seen['limits'][1]
+        self.assertEqual(seen['limits'], limits)
         png = self.image('icon.png', '-size', '8x8', 'xc:red')
         self.assertIsNone(self.normalize(png))
         seen = json.loads(report.read_text())
