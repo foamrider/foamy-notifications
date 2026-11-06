@@ -8,8 +8,11 @@ Compact notification popups for Omarchy 4.5 and 4.0, styled to match
 ## Install
 
 Targets Omarchy 4.5; basic delivery, history, actions and DND also work on 4.0.
-Requires Quickshell, Python 3, and the standard Omarchy tools
-(including `hyprctl` and `omarchy-shell`). Notification Center is optional.
+Requires Quickshell and the standard Omarchy tools (including `hyprctl` and
+`omarchy-shell`) on an x86_64 or aarch64 CPU: persistence, window focus and
+favicons run in the bundled helper (`bin/<arch>/foamy-notifications-helper`),
+so no Python is needed. On other CPUs popups still show, but nothing is saved
+or focused. Notification Center is optional.
 File-backed app icons and sender pictures also need `file` and ImageMagick 7
 (`magick`). Missing conversion tools keep the text, actions and icon fallback.
 

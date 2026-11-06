@@ -149,7 +149,7 @@ file per visible popup), `history/` (newest 100), `images/` (normalized PNGs),
 newest 1,000, read by Notification Center). Omarchy 4.5 owns
 `~/.local/state/omarchy/notifications`; on its first start this version moves
 Foamy's old files out of there once (see README, "Omarchy 4.5"). All writes go
-through one long-lived helper process (`bin/notification-helper.py serve`).
+through one long-lived helper process (`foamy-notifications-helper serve`).
 
 Notification Center is optional and never touches these files: it reads them
 (paths from `foamy.notifications storeInfo`) and asks Foamy over IPC to drop
@@ -191,6 +191,22 @@ omarchy-shell foamy.notifications state
 ```
 
 ## Validation
+
+The helper is Rust in `native/` (its contract is the comment at the top of
+`native/src/main.rs`), committed as static binaries in `bin/x86_64/` and
+`bin/aarch64/`. After changing it, rebuild and check with foamy-kit:
+
+```sh
+KIT=~/GitHub/Personal/foamy-kit
+$KIT/tools/build-native.sh . --test    # fmt, clippy, cargo tests
+$KIT/tools/build-native.sh .           # both arches, native/native.pin
+$KIT/tools/build-native.sh . --verify  # byte-identical clean rebuild
+bash tests/kit-check.sh
+# The black-box tests run any build (aarch64 through qemu-user binfmt):
+FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-notifications-helper\"]" python3 -m unittest discover -s tests -p '*_test.py'
+```
+
+The tests need Python 3; the plugin does not.
 
 ```sh
 omarchy plugin validate .
