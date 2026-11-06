@@ -116,8 +116,9 @@ continue to work (see "Omarchy 4.5" below).
   Enable **Do Not Disturb also silences critical alerts** in the center’s Foamy
   Notifications settings to send them directly to history during DND, including
   Omarchy crash alerts. The option is off by default; transient alerts are not stored.
-- Cards fade in and out. While the pointer is inside the stack, expired cards
-  leave their space in place so the hovered card does not move away.
+- Cards fade in and out. While the pointer is inside the stack, cards that
+  leave above it keep their space, so the hovered card does not move away;
+  closing a card (or one leaving below the pointer) moves the cards below up.
 
 Configure timeout, compact layout, images, monitor placement, fullscreen
 suppression, and browser app matching in `shell.json`. See

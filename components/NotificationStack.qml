@@ -6,6 +6,8 @@ ListView {
   property var groups: []
   // Once the final card leaves, do not keep an invisible input region under the pointer.
   readonly property bool holdPositions: groups.length > 0 && pointer.hovered
+  // The pointer's height in the stack, or -1 when it isn't over the stack.
+  readonly property real pointerY: holdPositions ? pointer.point.position.y : -1
   implicitHeight: Math.max(0, contentHeight)
   // A nonzero initial viewport lets ListView measure its first delegate.
   height: Math.max(1, implicitHeight)
@@ -19,6 +21,15 @@ ListView {
   }
   onGroupsChanged: Qt.callLater(reconcile)
   Component.onCompleted: reconcile()
+
+  // While the pointer is over the stack, a card that leaves above it keeps its
+  // space, so the card under the pointer and those below never slide away from
+  // it. A card that leaves under the pointer (closing the hovered card) or
+  // below it is let go, so the cards below move up.
+  function holdsRemoval(card) {
+    // card.y is in content coordinates; removals at the top move the origin.
+    return pointerY >= 0 && card.y - contentY + card.height <= pointerY
+  }
 
   function sameGroup(serialized, group) {
     var previous = JSON.parse(serialized)

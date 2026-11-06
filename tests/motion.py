@@ -100,6 +100,32 @@ ShellRoot {
     check(!popupColumn.holdPositions,"last card must not leave an invisible input region")
     window.watched=null
    }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
+   function test_close_moves_cards_below_up(){try{
+    // Positions on screen (ListView moves its origin when cards leave at the top).
+    function at(card){return card.mapToItem(popupColumn,0,0).y}
+    popupColumn.groups=[row("3-1","Top"),row("3-2","Middle"),row("3-3","Bottom")]
+    tryCompare(popupColumn,"count",3)
+    tryVerify(function(){return popupColumn.itemAtIndex(2)!==null})
+    var top=popupColumn.itemAtIndex(0),middle=popupColumn.itemAtIndex(1),bottom=popupColumn.itemAtIndex(2)
+    tryCompare(bottom,"opacity",1)
+    var middleY=at(middle),bottomY=at(bottom)
+    check(middleY>0&&bottomY>middleY,"three stacked cards")
+    mouseMove(middle,100,20);tryCompare(popupColumn,"holdPositions",true)
+    // A card above the pointer expires: the hovered card and the ones below stay put.
+    popupColumn.groups=[row("3-2","Middle"),row("3-3","Bottom")]
+    tryCompare(top,"retired",true);wait(500)
+    check(at(middle)===middleY,"hovered card stays under the pointer");check(at(bottom)===bottomY,"cards below stay put")
+    // Closing the hovered card moves the cards below it up, while the expired
+    // card above still holds its space.
+    popupColumn.groups=[row("3-3","Bottom")]
+    tryCompare(middle,"retired",true)
+    tryVerify(function(){return at(bottom)===middleY},3000,"the card below moves up into the closed card's place")
+    check(popupColumn.holdPositions,"the pointer is still over the stack")
+    // Leaving the stack closes the remaining gap.
+    mouseMove(window.contentItem,490,250)
+    tryVerify(function(){return at(bottom)===0},3000,"leaving the stack closes the gap")
+    popupColumn.groups=[];tryVerify(function(){return popupColumn.implicitHeight===0})
+   }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
    function test_removal_during_entrance(){
     popupColumn.groups=[row("2-2","Short lived")];tryCompare(popupColumn,"count",1)
     tryVerify(function(){return popupColumn.itemAtIndex(0)!==null})
@@ -125,4 +151,4 @@ except subprocess.TimeoutExpired:
  os.killpg(process.pid,signal.SIGTERM);output=process.communicate(timeout=3)[0]
 print(output);print('Motion captures:',app)
 hostenv.check(env, output)
-assert process.returncode==0 and 'MOTION_RESULT 4 passed 0 failed' in output
+assert process.returncode==0 and 'MOTION_RESULT 5 passed 0 failed' in output

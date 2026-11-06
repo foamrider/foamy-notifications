@@ -2011,7 +2011,7 @@ Item {
             property bool retired: false
             property real entranceOffset: 0
             transform: Translate { y: card.entranceOffset }
-            ListView.delayRemove: exitFade.running || popupColumn.holdPositions
+            ListView.delayRemove: exitFade.running || popupColumn.holdsRemoval(card)
             ListView.onRemove: {
               // Stop an unfinished entrance before fading; both must not own opacity.
               entrance.stop()
