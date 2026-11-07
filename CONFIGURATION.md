@@ -339,8 +339,8 @@ fullscreen behavior must also be checked in a desktop session.
 `offerSnoozeWhenSharing` (boolean, default `true`) controls the screen-sharing
 snooze prompt. It is also available in Notification Center's settings. Snoozes
 are bounded to 128 source entries and persist beside DND in `state.json`.
-The service keeps its per-file format on both Omarchy 4.0 and 4.5 in its own
-directory; it never writes stock 4.5's `live.json`, `history.json` or `quiet.json`.
+The service keeps its per-file format in its own
+directory; it never writes stock Omarchy's `live.json`, `history.json` or `quiet.json`.
 
 Verification-code detection, redaction, validated link buttons and the sender
 snooze control are built in. Copying needs the standard `wl-clipboard` tools;

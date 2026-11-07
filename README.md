@@ -1,14 +1,13 @@
 # Foamy Notifications
 
-Compact notification popups for Omarchy 4.5 and 4.0, styled to match
+Compact notification popups for Omarchy 4.5, styled to match
 [Foamy Notification Center](https://github.com/foamrider/foamy-notification-center).
 
 ![Foamy Notifications: a grouped chat message with actions, a screen recording with Omarchy action buttons, and a critical sign-in code alert with a copy button](preview.png)
 
 ## Install
 
-Targets Omarchy 4.5; basic delivery, history, actions and DND also work on 4.0.
-Requires Quickshell and the standard Omarchy tools (including `hyprctl` and
+Requires Omarchy 4.5, Quickshell and the standard Omarchy tools (including `hyprctl` and
 `omarchy-shell`) on an x86_64 or aarch64 CPU: persistence, window focus and
 favicons run in the bundled helper (`bin/<arch>/foamy-notifications-helper`),
 so no Python is needed. On other CPUs popups still show, but nothing is saved,
@@ -170,15 +169,14 @@ These cleanup calls are optional when using stock or older notifications.
 
 ## Omarchy 4.5
 
-The `notifications` IPC target matches stock 4.5-rc3, so the default bindings work:
+The `notifications` IPC target matches stock 4.5.0, so the default bindings work:
 **SUPER+comma** (`act`: dismiss the newest card, press its only button, or click
 it; with several choices it hands over the keyboard), **SUPER+CTRL+comma**
 (`keyboard`), SUPER+SHIFT+comma (`dismissAll`), SUPER+ALT+comma (`dismissOne`)
 and SUPER+SHIFT+ALT+comma (`showHistory`). Also available: `invokeAction <n>`,
 `invokeLast`, `count`, `expand`, `probe`, `isDnd`, `toggleDnd`, `setDnd`,
 `dismiss <summary>`, `clear` (empties history, keeps the popups), `snoozes`
-and `ping`; `dndState` stays for 4.0 callers. IPC is
-answered over the 4.5 shell socket and through `qs ipc` on 4.0.
+and `ping`. IPC is answered over the shell socket.
 
 Keyboard mode: Up/Down, `j`/`k` or Tab move between cards, Enter or Space clicks,
 Delete dismisses, `1`–`9` press the numbered button, Escape (or ten idle seconds)
@@ -191,7 +189,7 @@ can always be dismissed and is never written to history.
 **State directory.** Foamy keeps its state in its own folder,
 `~/.local/state/foamy-notifications/`. On its first start this version moves its
 popups, history, images, DND and snoozes out of `~/.local/state/omarchy/notifications`
-(the 4.0 layout), once. Stock files (`live.json`, `history.json`, `quiet.json`) are
+(the older layout), once. Stock files (`live.json`, `history.json`, `quiet.json`) are
 never touched.
 
 The center's More options menu offers global snooze and resume. CLI equivalents:
@@ -202,7 +200,7 @@ omarchy-shell notifications unsnooze ""
 ```
 
 `foamy.notifications state` reports snooze deadlines and screen-sharing state.
-Stock 4.5-rc2 and 4.0 have no timed snooze; the center hides that menu there.
+Stock Omarchy has no timed snooze; the center hides that menu there.
 DND bypass rules also apply to snoozes; normal Omarchy action feedback still appears.
 
 ### Notification Center contract
@@ -240,6 +238,6 @@ The preview uses synthetic messages (`preview/Preview.qml`, state `readme`).
 
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
 
-Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (shared foamy-kit i18n). Plugin language overrides are no longer used. Omarchy 4.0 displays the plugin in English. Missing translations fall back to English.
+Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (shared foamy-kit i18n). Plugin language overrides are no longer used. Missing translations fall back to English.
 
 Translation checks: `python3 tests/i18n-runtime.py` checks live language switching on the installed Omarchy 4.5 shell. The 4.0 English fallback runs only when `FOAMY_HOST_40` names an Omarchy 4.0 `shell/` directory; otherwise the test prints a SKIP line.
