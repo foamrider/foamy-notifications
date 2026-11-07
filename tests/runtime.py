@@ -479,6 +479,18 @@ try:
     for i in range(5):send('Overflow '+str(i))
     wait_for(lambda:state()['popups']==3 and len(state()['groups'])==3,'visible popup cap')
     ipc('notifications','dismissAll')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'overflow dismissed')
+    # A normal notification followed by three criticals (a reported "it vanished"):
+    # maxVisible (3) keeps the three newest, so the normal one leaves the screen at
+    # once, as overflow goes to history, where the center still lists it.
+    def in_history(summary):
+        return any(json.loads(path.read_text()).get('summary')==summary for path in (home/'.local/state/foamy-notifications/history').glob('*.json'))
+    send('Non-critical notification',('-u','normal'))
+    for i in (1,2,3):send('Critical notification '+str(i))
+    wait_for(lambda:state()['popups']==3 and len(state()['groups'])==3 and not state()['busy'],'three criticals fill the cap')
+    assert in_history('Non-critical notification'),'overflowed normal notification is not in history'
+    assert not any(in_history('Critical notification '+str(i)) for i in (1,2,3)),'a visible critical went to history'
+    ipc('notifications','dismissAll')
     action=subprocess.Popen(['notify-send','-a','Foamy Test','-u','critical','--wait','--action=default=Open','--action=read=Mark read','Action test','Sample body'],env=env,stdout=subprocess.PIPE,text=True)
     wait_for(lambda:len(state()['groups'])==1 and state()['groups'][0]['actions']==1,'native action labels')
     ipc('foamy.notifications','invokeAction',state()['groups'][0]['key'],'read')

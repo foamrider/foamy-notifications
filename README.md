@@ -86,7 +86,12 @@ continue to work (see "Omarchy 4.5" below).
   to remove the popup's whole duplicate group from history instead.
 - Left-clicking a notification with no action from an app that has no window
   (such as a screenshot tool's "copied" notice) just closes it, like right-click.
-- Exact duplicates share a card. Overflow goes to history.
+- Exact duplicates share a card. Overflow goes to history: at most `maxVisible`
+  cards show (3 by default, fewer if they do not fit), and a new arrival past
+  that moves the oldest card, critical or not, to history, where the center
+  still lists it. Critical alerts stay until dismissed by default, so three
+  of them keep the cap full and an earlier normal notification leaves the
+  screen at once.
 - Hover the card to reveal the snooze button to the left of the timestamp.
   It also appears on keyboard focus. The button snoozes that sender for
   15 minutes, 30 minutes, 1 hour, or 4 hours. Browser notifications use the
