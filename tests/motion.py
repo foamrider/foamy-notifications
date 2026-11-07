@@ -62,7 +62,16 @@ ShellRoot {
   property int entryFrames:0
   property int exitFrames:0
   property int movingFrames:0
+  // Frames on which a tracked card sits strictly between two stack positions.
+  property var tracked:null
+  property real trackFrom:0
+  property real trackTo:0
+  property int betweenFrames:0
   FrameAnimation {running:true;onTriggered:{
+   if (window.tracked) {
+    var y=window.tracked.mapToItem(popupColumn,0,0).y
+    if (y>Math.min(window.trackFrom,window.trackTo)+0.5 && y<Math.max(window.trackFrom,window.trackTo)-0.5) window.betweenFrames++
+   }
    var card=window.watched
    if (!card) return
    if (card.opacity>0 && card.opacity<1) {if(card.retired)window.exitFrames++;else window.entryFrames++}
@@ -71,9 +80,9 @@ ShellRoot {
   TestCase {
    name:"NotificationMotion";when:window.ready
    onCompletedChanged:if(completed)console.log("MOTION_RESULT",qtest_results.passCount,"passed",qtest_results.failCount,"failed")
-   // A failed test must not leave cards or the pointer to the next.
+   // A failed test must not leave cards, the pointer or reduced motion to the next.
    function cleanup(){
-    window.watched=null
+    Commons.Style.reduceMotion=false;window.tracked=null;window.watched=null
     mouseMove(window.contentItem,490,250);popupColumn.groups=[]
     tryVerify(function(){return popupColumn.implicitHeight===0},3000)
    }
@@ -158,6 +167,35 @@ ShellRoot {
     mouseMove(window.contentItem,490,250)
     tryVerify(function(){return popupColumn.implicitHeight===0})
    }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
+   function test_move_up_data(){return [{tag:"animations-on",reduce:false},{tag:"animations-off",reduce:true}]}
+   function test_move_up(data){try{
+    // Cards that move up after a removal slide there, unless Omarchy's
+    // animations are off (Style.reduceMotion), when they move at once.
+    function at(card){return card.mapToItem(popupColumn,0,0).y}
+    Commons.Style.reduceMotion=data.reduce
+    mouseMove(window.contentItem,490,250)
+    popupColumn.groups=[row("5-1","Top"),row("5-2","Middle"),row("5-3","Bottom")]
+    tryCompare(popupColumn,"count",3)
+    tryVerify(function(){return popupColumn.itemAtIndex(2)!==null})
+    var top=popupColumn.itemAtIndex(0),middle=popupColumn.itemAtIndex(1),bottom=popupColumn.itemAtIndex(2)
+    tryCompare(bottom,"opacity",1);tryCompare(bottom,"entranceOffset",0)
+    var middleY=at(middle),bottomY=at(bottom)
+    function moves(card,from,to,removal){
+     window.betweenFrames=0;window.trackFrom=from;window.trackTo=to;window.tracked=card
+     popupColumn.groups=removal
+     tryVerify(function(){return at(card)===to},3000,"the card reaches its new place")
+     var frames=window.betweenFrames;window.tracked=null
+     return frames
+    }
+    // A card in the middle leaves: the card below moves up (its own y changes).
+    var frames=moves(bottom,bottomY,middleY,[row("5-1","Top"),row("5-3","Bottom")])
+    if(data.reduce)check(frames===0,"with animations off the card below moves at once ("+frames+" frames)")
+    else check(frames>1,"the card below slides up ("+frames+" frames)")
+    // The top card leaves: the rest move up (ListView moves its origin instead).
+    frames=moves(bottom,middleY,0,[row("5-3","Bottom")])
+    if(data.reduce)check(frames===0,"with animations off the stack moves at once ("+frames+" frames)")
+    else check(frames>1,"the stack slides up after the top card leaves ("+frames+" frames)")
+   }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
    function test_removal_during_entrance(){
     popupColumn.groups=[row("2-2","Short lived")];tryCompare(popupColumn,"count",1)
     tryVerify(function(){return popupColumn.itemAtIndex(0)!==null})
@@ -183,4 +221,4 @@ except subprocess.TimeoutExpired:
  os.killpg(process.pid,signal.SIGTERM);output=process.communicate(timeout=3)[0]
 print(output);print('Motion captures:',app)
 hostenv.check(env, output)
-assert process.returncode==0 and 'MOTION_RESULT 6 passed 0 failed' in output
+assert process.returncode==0 and 'MOTION_RESULT 8 passed 0 failed' in output

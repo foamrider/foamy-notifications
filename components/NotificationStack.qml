@@ -19,11 +19,32 @@ ListView {
   model: entries
   HoverHandler { id: pointer }
   ListModel { id: entries }
+  // Cards below a removed card slide up into its place.
   removeDisplaced: Transition {
     NumberAnimation { properties: "y"; duration: FoamyMotion.slider; easing.type: Easing.OutCubic }
   }
+  // Removing the top card moves the view's origin instead of the cards, which
+  // removeDisplaced never sees: the whole stack jumps up. Slide it there too.
+  // With animations off the duration is 0 and the stack moves at once.
+  property real slide: 0
+  property real settledContentY: 0
+  Translate { id: slideShift; y: root.slide }
+  NumberAnimation { id: slideBack; target: root; property: "slide"; to: 0; duration: FoamyMotion.slider; easing.type: Easing.OutCubic }
+  onContentYChanged: {
+    var rise = contentY - settledContentY
+    settledContentY = contentY
+    // Only upward moves: a card arriving at the top pushes the stack down as before.
+    if (rise <= 0 || FoamyMotion.slider <= 0) return
+    slideBack.stop()
+    slide += rise
+    slideBack.start()
+  }
   onGroupsChanged: Qt.callLater(reconcile)
-  Component.onCompleted: reconcile()
+  Component.onCompleted: {
+    contentItem.transform = [slideShift]
+    settledContentY = contentY
+    reconcile()
+  }
 
   // While the pointer is over the stack, a card that leaves above it keeps its
   // space, so the card under the pointer and those below never slide away from
