@@ -77,8 +77,10 @@ lost for lack of room:
   starts over when it shows again.
 - **Placement.** A card from the queue joins the bottom of the stack. Cards
   on screen never move for it, and the hovered card stays under the pointer.
-  New arrivals that fit still appear on top. A small "+N waiting" note under
-  the last card counts the waiting cards; it disappears with the queue.
+  New arrivals that fit appear on top, unless the pointer is over the stack
+  (see [hold while hovered](#hold-while-hovered)). A small "+N waiting" note
+  under the last card counts the waiting cards, held ones included; it
+  disappears with the queue.
 - **Screen space.** When the cards do not fit between the bar and the bottom
   of the screen, the card shown last waits again, and the limit drops to what
   fits. Each card that leaves lets one more try; a change of screen height
@@ -111,8 +113,42 @@ lost for lack of room:
   entries are already in history.
 
 `omarchy-shell foamy.notifications state` lists the waiting cards' keys in
-queue order (`queue`) and the current `visibleLimit`; `probe` counts them
-(`waiting`).
+queue order (`queue`), the held ones (`held`), whether the pointer holds a
+stack (`pointerHolds`) and the current `visibleLimit`; `probe` counts the
+waiting cards (`waiting`).
+
+### Hold while hovered
+
+As in stock Omarchy 4.5, whose notification deck holds new cards while the
+pointer is over it, nothing enters the stack while the pointer is over it, so
+nothing moves under the pointer:
+
+- **New arrivals wait.** A new notification waits in the overflow queue, even
+  when there is room, and the "+N waiting" note counts it. Cards that were
+  waiting before the pointer arrived keep their turn and still join the
+  bottom of the stack as cards leave.
+- **Critical alerts wait too**, as in stock: on top, a critical would push
+  down the card being read. The hold is short, and the alert shows the moment
+  the pointer leaves.
+- **Release.** When the pointer leaves the stack, or 30 seconds after the
+  first card was held (stock's maximum, so a pointer resting on the stack
+  cannot silence the desktop), the held cards show as the new arrivals they
+  are: on top, newest first, with the usual entrance (at once with Omarchy's
+  animations off). Critical alerts follow the queue's priority: one takes the
+  slot of the normal card shown last. Held cards that do not fit wait like any
+  other. After a release at the maximum the pointer may still be on the
+  stack, and the released cards push the hovered card down, as in stock;
+  arrivals after that are held again.
+- **Not held:** updates to a card on screen (`replaces_id` or a duplicate),
+  which change it in place without moving it; `showHistory` replays and the
+  empty-history message, which show now or not at all. A replacement of a
+  held card stays held.
+- **Slots.** The hovered card, a card with an action in progress and the
+  keyboard-selected card keep their slots, as before. Unlike stock, keyboard
+  mode alone does not hold arrivals: the selection follows its card.
+- **Timers and restart.** A held card is a waiting card: its timer starts
+  when it shows, its popup file is marked `"queued": true`, and after a
+  restart it comes back once, waiting, with its full time on screen.
 
 ### Browser apps
 
@@ -281,7 +317,7 @@ python3 tests/motion.py --desktop
 python3 tests/layer.py
 python3 tests/runtime.py
 # The overflow queue: order, timers, replacements, CloseNotification, DND,
-# restart survival, screen space and the hover rule:
+# restart survival, screen space, the hover rule and the hold while hovered:
 python3 tests/overflow-runtime.py
 # Stalled-worker floods, raw 4 MiB buffers, replacements and context backlog:
 python3 tests/queue-runtime.py

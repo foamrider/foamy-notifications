@@ -95,6 +95,10 @@ continue to work (see "Omarchy 4.5" below).
   the slot of the normal card shown last, which waits again. A small
   "+N waiting" note under the stack counts the queue. Details, and how the
   queue survives a restart: [overflow queue](CONFIGURATION.md#overflow-queue).
+- As in stock Omarchy 4.5, new notifications, critical alerts too, wait while
+  the pointer is over the stack, so nothing moves under it. They show on top
+  when the pointer leaves, or after 30 seconds at most:
+  [hold while hovered](CONFIGURATION.md#hold-while-hovered).
 - Hover the card to reveal the snooze button to the left of the timestamp.
   It also appears on keyboard focus. The button snoozes that sender for
   15 minutes, 30 minutes, 1 hour, or 4 hours. Browser notifications use the
@@ -128,8 +132,9 @@ continue to work (see "Omarchy 4.5" below).
 - Cards fade in and out. While the pointer is inside the stack, cards that
   leave above it keep their space, so the hovered card does not move away;
   closing a card (or one leaving below the pointer) slides the cards below up.
-  A waiting card that shows joins below the others, so it never pushes the
-  hovered card either, and the hovered card keeps its slot.
+  A waiting card that shows joins below the others, and a new one waits until
+  the pointer leaves, so neither pushes the hovered card, and the hovered card
+  keeps its slot.
   With Omarchy's animations off, they move at once.
 
 Configure timeout, compact layout, images, monitor placement, fullscreen
