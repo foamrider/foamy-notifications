@@ -175,6 +175,19 @@ try:
     reset()
     print('PASS: the timer of a waiting card starts on show; expiry still archives')
 
+    # An update that stops a card expiring drops the deadline it got when it showed after waiting.
+    a = send('A', 'critical'); b = send('B', 'critical'); c = send('Promoted')
+    wait(lambda: queue() == [c] and settled(), 'promotion fixture')
+    ipc('notifications', 'dismissOne')
+    wait(lambda: c in shown() and files('popups')[c].get('deadline', 0) > 0, 'the promoted card is saved with a deadline')
+    send('Promoted, now critical', 'critical', extra=('-r', c))
+    wait(lambda: files('popups')[c]['summary'] == 'Promoted, now critical' and 'deadline' not in files('popups')[c] and settled(),
+         'an update to a non-expiring card drops its saved deadline', 2)
+    time.sleep(2.3)
+    assert c in shown(), 'the card updated to critical expired'
+    reset()
+    print('PASS: an update that disables expiry drops the saved deadline')
+
     # Replacement and duplicates update a waiting card in place.
     a = send('A', 'critical'); b = send('B', 'critical'); c = send('Waiting'); d = send('Behind')
     wait(lambda: queue() == [c, d] and settled(), 'replacement fixture')

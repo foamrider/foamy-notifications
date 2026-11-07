@@ -631,11 +631,15 @@ Item {
   }
 
   // An in-place update restarts the card's display time, and with it the
-  // deadline a restart judges a card by that showed after waiting. A waiting
-  // card's clock has not started; the rebuild clears its lifetime again.
+  // deadline a restart judges a card by that showed after waiting. An update
+  // that no longer expires (e.g. now critical) drops that deadline, or a
+  // restart after it would archive the card. A waiting card's clock has not
+  // started; the rebuild clears its lifetime again.
   function restartLifetime(key, duration) {
     lifetimes[key] = duration
-    if (shownDeadlines[key] && duration > 0) shownDeadlines[key] = Date.now() + duration
+    if (!shownDeadlines[key]) return
+    if (duration > 0) shownDeadlines[key] = Date.now() + duration
+    else delete shownDeadlines[key]
   }
 
   function retainHistoryAction(row, notification) {
