@@ -6,8 +6,11 @@ ListView {
   property var groups: []
   // Once the final card leaves, do not keep an invisible input region under the pointer.
   readonly property bool holdPositions: groups.length > 0 && pointer.hovered
-  // The pointer's height in the stack, or -1 when it isn't over the stack.
-  readonly property real pointerY: holdPositions ? pointer.point.position.y : -1
+  // The pointer's height in the window, or -1 when it isn't over the stack.
+  // The handler sits on the content item, whose coordinates shift when a card
+  // leaves at the top, and a resting pointer sends no new position; the
+  // window position of a resting pointer stays right.
+  readonly property real pointerY: holdPositions ? pointer.point.scenePosition.y : -1
   implicitHeight: Math.max(0, contentHeight)
   // A nonzero initial viewport lets ListView measure its first delegate.
   height: Math.max(1, implicitHeight)
@@ -27,8 +30,7 @@ ListView {
   // it. A card that leaves under the pointer (closing the hovered card) or
   // below it is let go, so the cards below move up.
   function holdsRemoval(card) {
-    // card.y is in content coordinates; removals at the top move the origin.
-    return pointerY >= 0 && card.y - contentY + card.height <= pointerY
+    return pointerY >= 0 && card.mapToItem(null, 0, card.height).y <= pointerY
   }
 
   function sameGroup(serialized, group) {

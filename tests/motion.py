@@ -48,7 +48,7 @@ ShellRoot {
   function offersFor(row) { return {codes:"", link:"", meeting:false} }
   function popupImageFor(row, role) { return "" }
   function featureAction(group, kind, value) {}
-  function dismissGroup(group, fromClose) { popupColumn.groups=[] }
+  function dismissGroup(group, fromClose) { popupColumn.groups=popupColumn.groups.filter(function(g) { return g.key!==group.key }) }
  }
  FloatingWindow {
   id: window
@@ -71,6 +71,12 @@ ShellRoot {
   TestCase {
    name:"NotificationMotion";when:window.ready
    onCompletedChanged:if(completed)console.log("MOTION_RESULT",qtest_results.passCount,"passed",qtest_results.failCount,"failed")
+   // A failed test must not leave cards or the pointer to the next.
+   function cleanup(){
+    window.watched=null
+    mouseMove(window.contentItem,490,250);popupColumn.groups=[]
+    tryVerify(function(){return popupColumn.implicitHeight===0},3000)
+   }
    function check(condition,message){if(!condition)console.log("FAILED",message);verify(condition,message)}
    function row(key,title){return {key:key,keys:[key],app:"Teams",appIcon:"",image:"",summary:title,body:"The updated files are ready. Have a look when you have a moment.",glyph:"",urgency:1,timestamp:0,actionsJson:"[]"}}
    function capture(name){popupColumn.grabToImage(function(result){result.saveToFile(Qt.resolvedUrl(name+".png").toString().replace("file://",""))})}
@@ -127,6 +133,31 @@ ShellRoot {
     tryVerify(function(){return at(bottom)===0},3000,"leaving the stack closes the gap")
     popupColumn.groups=[];tryVerify(function(){return popupColumn.implicitHeight===0})
    }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
+   function test_close_top_card_repeatedly(){try{
+    // The user's report: three criticals, the pointer on the top card's ×.
+    // Each close must move the next card up under the pointer, every time.
+    function at(card){return card.mapToItem(popupColumn,0,0).y}
+    function critical(key,title){var r=row(key,title);r.urgency=2;return r}
+    popupColumn.groups=[critical("4-1","Critical notification 3"),critical("4-2","Critical notification 2"),critical("4-3","Critical notification 1")]
+    tryCompare(popupColumn,"count",3)
+    tryVerify(function(){return popupColumn.itemAtIndex(2)!==null})
+    var first=popupColumn.itemAtIndex(0),second=popupColumn.itemAtIndex(1),third=popupColumn.itemAtIndex(2)
+    tryCompare(third,"opacity",1)
+    var close=findChild(first,"dismissButton");verify(close)
+    var point=close.mapToItem(window.contentItem,close.width/2,close.height/2)
+    mouseMove(window.contentItem,point.x,point.y);tryCompare(popupColumn,"holdPositions",true)
+    mouseClick(window.contentItem,point.x,point.y)
+    tryCompare(first,"retired",true)
+    tryVerify(function(){return at(second)===0},3000,"the second card moves up under the pointer")
+    mouseClick(window.contentItem,point.x,point.y)
+    tryCompare(second,"retired",true)
+    tryVerify(function(){return at(third)===0},3000,"the third card moves up under the pointer")
+    check(popupColumn.holdPositions,"the pointer is still over the stack")
+    mouseClick(window.contentItem,point.x,point.y)
+    tryCompare(third,"retired",true)
+    mouseMove(window.contentItem,490,250)
+    tryVerify(function(){return popupColumn.implicitHeight===0})
+   }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
    function test_removal_during_entrance(){
     popupColumn.groups=[row("2-2","Short lived")];tryCompare(popupColumn,"count",1)
     tryVerify(function(){return popupColumn.itemAtIndex(0)!==null})
@@ -152,4 +183,4 @@ except subprocess.TimeoutExpired:
  os.killpg(process.pid,signal.SIGTERM);output=process.communicate(timeout=3)[0]
 print(output);print('Motion captures:',app)
 hostenv.check(env, output)
-assert process.returncode==0 and 'MOTION_RESULT 5 passed 0 failed' in output
+assert process.returncode==0 and 'MOTION_RESULT 6 passed 0 failed' in output
