@@ -27,12 +27,13 @@ import QtTest
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "plugin" as Plugin
 import "plugin/components" as Cards
 ShellRoot {
  Plugin.Service { id:notifications }
  FloatingWindow {
-  id:window;visible:true;implicitWidth:600;implicitHeight:500;color:Color.background
+  id:window;visible:true;implicitWidth:600;implicitHeight:500;color:Commons.Color.background
   Cards.NotificationStack {
    id:popupColumn;x:20;y:20;width:520;spacing:8;groups:notifications.displayGroups
    delegate:DELEGATE
@@ -52,7 +53,7 @@ ShellRoot {
   }
   function capture(name:string,width:int,light:bool):void {
    popupColumn.width=width
-   Color.background=light ? "#eff1f5":"#24273a";Color.foreground=light ? "#4c4f69":"#cad3f5";Color.accent=light ? "#1e66f5":"#8aadf4"
+   Commons.Color.background=light ? "#eff1f5":"#24273a";Commons.Color.foreground=light ? "#4c4f69":"#cad3f5";Commons.Color.accent=light ? "#1e66f5":"#8aadf4"
    captureTimer.name=name;captureTimer.restart()
   }
  }

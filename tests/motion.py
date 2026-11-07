@@ -23,6 +23,7 @@ delegate=s[start:end].replace('service.','fixture.').replace('popupWindow.screen
 import QtTest
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "components"
 import "kit"
 ShellRoot {
@@ -77,7 +78,7 @@ ShellRoot {
    function test_motion(data){try{
     mouseMove(window.contentItem,490,250)
     popupColumn.width=data.width
-    Color.background=data.light?"#eff1f5":"#202030";Color.foreground=data.light?"#4c4f69":"#bdcafa"
+    Commons.Color.background=data.light?"#eff1f5":"#202030";Commons.Color.foreground=data.light?"#4c4f69":"#bdcafa"
     window.entryFrames=0;window.exitFrames=0;window.movingFrames=0
     popupColumn.groups=[row("1-1","Alex · Design review")]
     tryCompare(popupColumn,"count",1)
