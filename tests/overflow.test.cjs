@@ -10,12 +10,19 @@ const Preferences = require('../Preferences.js')
 const row = (id, summary, urgency = 1, timestamp = 1000 + id) => ({id, originalId: id, timestamp, summary, body: '', app: 'Test', urgency, actionsJson: '[]'})
 
 function stack(limit, options = {}) {
-  const state = {rows: [], shown: {}, waiting: {}, ranks: {}, since: {}, arrivals: {}, top: 0, bottom: 0, seq: 0, pinned: new Set(), history: []}
+  const state = {rows: [], shown: {}, waiting: {}, ranks: {}, since: {}, arrivals: {}, top: 0, bottom: 0, seq: 0, pinned: new Set(), history: [],
+    holding: false, held: {}, released: {}}
   state.rebuild = () => {
     const groups = Preferences.groups(state.rows, true, 'browser', {browser: () => false})
-    const plan = Logic.planStack(groups, {limit, shown: state.shown, waiting: state.waiting, ranks: state.ranks, since: state.since, arrivals: state.arrivals,
+    const canWait = group => !group.keys.every(key => (options.replays || new Set()).has(key))
+    // As Service.rebuildGroups: hold arrivals while hovered; released ones plan as new arrivals.
+    const held = Logic.heldArrivals(groups, {holding: state.holding, shown: state.shown, waiting: state.waiting, held: state.held, released: state.released, canWait})
+    const waiting = Object.assign({}, state.waiting)
+    for (const key in state.released) delete waiting[key]
+    state.released = {}; state.held = held
+    const plan = Logic.planStack(groups, {limit, shown: state.shown, waiting, ranks: state.ranks, since: state.since, arrivals: state.arrivals,
       top: state.top, bottom: state.bottom, seq: state.seq, queueLimit: options.queueLimit, pinned: group => state.pinned.has(group.key),
-      canWait: group => !group.keys.every(key => (options.replays || new Set()).has(key))})
+      canWait, held: group => group.keys.every(key => held[key])})
     state.top = plan.top; state.bottom = plan.bottom; state.seq = plan.seq
     const gone = plan.dropped.flatMap(group => group.keys).concat(plan.evicted)
     state.history.push(...gone)
@@ -29,6 +36,10 @@ function stack(limit, options = {}) {
   // Model order is newest first, as Service inserts arrivals at index 0.
   state.arrive = r => { state.rows.unshift(r); return state.rebuild() }
   state.leave = id => { state.rows = state.rows.filter(r => r.id !== id); return state.rebuild() }
+  // The pointer enters or leaves the stack (Service.holdArrivals, releaseHeld).
+  state.hover = () => { state.holding = true; return state.rebuild() }
+  state.release = () => { Object.assign(state.released, state.held); state.held = {}; return state.rebuild() }
+  state.unhover = () => { state.holding = false; return state.release() }
   state.visible = () => state.plan.visible.map(group => group.summary)
   state.queue = () => state.plan.waiting.map(group => group.summary)
   return state
@@ -185,4 +196,88 @@ test('popup files carry the queued flag through parsing', () => {
   assert.equal(plain.queued, undefined)
   // A queued card never ran its clock: only restorePopups' age check applies to it.
   assert.equal(Logic.popupExpired(plain, 1000, 1002 + 5000), true)
+})
+
+test('while hovered, new arrivals wait even with room, criticals too, and show on top when the pointer leaves', () => {
+  const s = stack(5)
+  s.arrive(row(1, 'Below')); s.arrive(row(2, 'Hovered'))
+  s.pinned.add('1002-2'); s.hover()
+  s.arrive(row(3, 'New')); s.arrive(row(4, 'Alert', 2))
+  assert.deepEqual(s.visible(), ['Hovered', 'Below'], 'nothing enters the stack under the pointer')
+  assert.deepEqual(s.queue(), ['Alert', 'New'])
+  assert.deepEqual(Object.keys(s.held).sort(), ['1003-3', '1004-4'])
+  // The pointer leaves: they show as the new arrivals they are, newest on top.
+  s.pinned.delete('1002-2'); s.unhover()
+  assert.deepEqual(s.visible(), ['Alert', 'New', 'Hovered', 'Below'])
+  assert.deepEqual(s.queue(), [])
+  assert.deepEqual(s.held, {})
+})
+
+test('held cards released into a full stack follow the priority rules; the rest join the queue', () => {
+  const s = stack(2)
+  s.arrive(row(1, 'A')); s.arrive(row(2, 'B'))
+  s.pinned.add('1002-2'); s.hover()
+  s.arrive(row(3, 'Normal')); s.arrive(row(4, 'Alert', 2))
+  assert.deepEqual(s.visible(), ['B', 'A'])
+  // The hold's maximum lets them go while the pointer stays: the critical takes
+  // the slot of the unpinned normal card, on top; the normal one waits.
+  s.release()
+  assert.deepEqual(s.visible(), ['Alert', 'B'])
+  assert.deepEqual(s.queue(), ['A', 'Normal'])
+  assert.deepEqual(s.held, {}, 'released cards are not held again')
+  // Arrivals after the release are held again.
+  s.arrive(row(5, 'Later'))
+  assert.deepEqual(Object.keys(s.held), ['1005-5'])
+  assert.deepEqual(s.queue(), ['A', 'Normal', 'Later'])
+  // A freed slot while hovered goes to the queue's head, at the bottom; the held card waits.
+  s.leave(4)
+  assert.deepEqual(s.visible(), ['B', 'A'])
+  assert.deepEqual(s.queue(), ['Normal', 'Later'])
+  s.leave(1)
+  assert.deepEqual(s.visible(), ['B', 'Normal'], 'a card that waited before joins the bottom')
+  assert.deepEqual(s.queue(), ['Later'])
+  // Released into a full stack, it waits like any other card and joins the bottom.
+  s.pinned.delete('1002-2'); s.unhover()
+  assert.deepEqual(s.queue(), ['Later'])
+  s.leave(2)
+  assert.deepEqual(s.visible(), ['Normal', 'Later'])
+})
+
+test('while hovered, updates to cards on screen and history replays are not held', () => {
+  const replays = new Set(['900-9'])
+  const s = stack(3, {replays})
+  s.arrive(row(1, 'Shown')); s.hover()
+  // A duplicate of a card on screen merges into it.
+  s.arrive(row(2, 'Shown'))
+  assert.deepEqual(s.visible(), ['Shown'])
+  assert.deepEqual(s.plan.visible[0].keys, ['1002-2', '1001-1'])
+  // A replacement under a new key keeps the replaced card's place (Service.inheritPlace).
+  s.rows = s.rows.filter(r => r.id !== 1 && r.id !== 2)
+  s.shown['2000-1'] = true; s.ranks['2000-1'] = s.ranks['1001-1']
+  s.arrive(row(1, 'Shown, edited', 1, 2000))
+  assert.deepEqual(s.visible(), ['Shown, edited'])
+  assert.deepEqual(s.held, {})
+  // A replay shows now or not at all.
+  s.arrive(row(9, 'Replay', 1, 900))
+  assert.deepEqual(s.visible(), ['Replay', 'Shown, edited'])
+  // A held card's replacement stays held (Service.inheritPlace carries it).
+  s.arrive(row(3, 'Held'))
+  assert.deepEqual(s.queue(), ['Held'])
+  s.rows = s.rows.filter(r => r.id !== 3)
+  s.waiting['3000-3'] = true; s.held['3000-3'] = true; s.arrivals['3000-3'] = 1003
+  s.arrive(row(3, 'Held, edited', 1, 3000))
+  assert.deepEqual(s.queue(), ['Held, edited'])
+  assert.deepEqual(s.visible(), ['Replay', 'Shown, edited'])
+  s.unhover()
+  assert.deepEqual(s.visible(), ['Held, edited', 'Replay', 'Shown, edited'])
+})
+
+test('cards restored waiting are not held: they keep their turn in the queue', () => {
+  const s = stack(1)
+  s.rows = [row(2, 'Restored queued'), row(1, 'Shown')]
+  s.shown = {'1001-1': true}; s.waiting = {'1002-2': true}
+  s.hover()
+  assert.deepEqual(s.held, {})
+  s.leave(1)
+  assert.deepEqual(s.visible(), ['Restored queued'])
 })

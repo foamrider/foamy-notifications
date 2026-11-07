@@ -550,12 +550,17 @@ function popupExpired(entry, duration, now) {
 //
 // The queue holds at most `queueLimit` notifications: past it the oldest
 // waiting non-critical one (else the oldest waiting one) is `evicted`.
+//
+// `held` groups (arrivals while the pointer is over the stack) wait whatever
+// their urgency and whatever room there is: they take no slot until the hold
+// ends. A group on screen, or one that cannot wait, is never held.
 function planStack(groups, options) {
   var o = options || {}
   var limit = Math.max(1, Math.floor(Number(o.limit)) || 1)
   var shown = o.shown || {}, waited = o.waiting || {}, ranks = o.ranks || {}, arrivals = o.arrivals || {}, since = o.since || {}
   var pinned = o.pinned || function() { return false }
   var canWait = o.canWait || function() { return true }
+  var held = o.held || function() { return false }
   function arrivalOf(key) {
     var value = arrivals[key] !== undefined ? Number(arrivals[key]) : Number(String(key).split("-")[0])
     return isFinite(value) ? value : 0
@@ -575,6 +580,7 @@ function planStack(groups, options) {
       entry.arrival = Math.min(entry.arrival, arrivalOf(keys[k]))
     }
     var critical = group.urgency === 2
+    entry.held = !entry.shown && entry.canWait && !!held(group)
     if (entry.shown) entry.tier = pinned(group) ? 0 : critical ? 1 : 3
     else entry.tier = !entry.canWait ? 0 : critical ? 2 : 4
     entries.push(entry)
@@ -591,11 +597,12 @@ function planStack(groups, options) {
   })
   var take = Math.max(limit, entries.filter(function(e) { return e.tier === 0 && e.shown }).length)
   var visible = [], waiting = [], dropped = []
-  entries.forEach(function(e, index) {
+  entries.filter(function(e) { return !e.held }).forEach(function(e, index) {
     if (index < take) visible.push(e)
     else if (e.canWait) waiting.push(e)
     else dropped.push(e.group)
   })
+  entries.forEach(function(e) { if (e.held) waiting.push(e) })
   // Queue order (a card just sent back waits in its arrival turn too).
   function waitOrder(a, b) {
     return (b.group.urgency === 2 ? 1 : 0) - (a.group.urgency === 2 ? 1 : 0) || a.arrival - b.arrival || b.index - a.index
@@ -645,6 +652,34 @@ function planStack(groups, options) {
     top: top,
     bottom: bottom
   }
+}
+
+// ---------------------------------------------------- hold while hovered
+//
+// Like stock 4.5's deck: while the pointer is over the stack, a new card does
+// not enter it, so nothing moves under the pointer. It waits in the overflow
+// queue (planStack `held`) until the pointer leaves or the hold's maximum
+// runs out, then shows as the arrival it is: on top, criticals first.
+//
+// Returns the keys to hold, as a map. A group is held when every key in it
+// is: held already, or new (neither shown, waiting nor `released`). A group
+// on screen, and one that cannot wait (a replay), is never held, and nothing
+// is while `holding` is false. A card that waited before the hold keeps its
+// turn in the queue and may still join the bottom of the stack.
+function heldArrivals(groups, options) {
+  var o = options || {}
+  var out = {}
+  if (!o.holding) return out
+  var shown = o.shown || {}, waited = o.waiting || {}, held = o.held || {}, released = o.released || {}
+  var canWait = o.canWait || function() { return true }
+  for (var i = 0; i < groups.length; i++) {
+    var group = groups[i]
+    var keys = group.keys && group.keys.length ? group.keys : [group.key]
+    if (!canWait(group) || keys.some(function(key) { return !!shown[key] })) continue
+    var hold = keys.every(function(key) { return !!held[key] || (!waited[key] && !released[key]) })
+    if (hold) keys.forEach(function(key) { out[key] = true })
+  }
+  return out
 }
 
 function popupPlacement(barPosition, barClearance, gapsOut) {
@@ -735,6 +770,7 @@ if (typeof module !== "undefined") {
     parsePopupFiles: parsePopupFiles,
     popupExpired: popupExpired,
     planStack: planStack,
+    heldArrivals: heldArrivals,
     popupPlacement: popupPlacement
   }
 }
