@@ -1,6 +1,7 @@
 """The overflow queue with real D-Bus traffic on a private session bus: order,
 timers that start on show, replacements, CloseNotification, center removal,
-DND, restart survival, screen-space overflow and the hover rule, on the real
+DND, restart survival, screen-space overflow, the hover rule and the hold of
+new arrivals while hovered (frame by frame, its maximum, animations off), on the real
 service, stack, card delegate and fitCards (an offscreen window stands in for
 the layer-shell surface)."""
 import json
@@ -58,11 +59,27 @@ HANDLERS
  }
  }
  QtObject { id: held; property var card: null }
+ // Every frame: did the held card move in the window, and is a card mid-entrance?
+ QtObject { id: frames; property bool watching: false; property real pinnedY: 0; property int moves: 0; property int entering: 0; property int count: 0 }
+ FrameAnimation { running: true; onTriggered: {
+  if (!frames.watching) return
+  frames.count++
+  if (held.card && Math.abs(held.card.mapToItem(null, 0, 0).y - frames.pinnedY) > 0.5) frames.moves++
+  for (var i = 0; i < popupColumn.count; i++) {
+   var card = popupColumn.itemAtIndex(i)
+   if (card && !card.retired && (card.opacity > 0 && card.opacity < 1 || card.entranceOffset > 0 && card.entranceOffset < Style.space(8))) { frames.entering++; break }
+  }
+ } }
  IpcHandler {
   target: "overflow-test"
   function setHeight(height: int): void { popupWindow.height = height }
   function hover(index: int): void { held.card = popupColumn.itemAtIndex(index); input.mouseMove(held.card, 100, 20) }
   function leave(): void { input.mouseMove(testWindow.contentItem, 490, 890) }
+  // Start counting frames from the held card's window position now.
+  function watch(): void { frames.pinnedY = held.card.mapToItem(null, 0, 0).y; frames.moves = 0; frames.entering = 0; frames.count = 0; frames.watching = true }
+  function frameCounts(): string { return JSON.stringify({moves: frames.moves, entering: frames.entering, frames: frames.count, pinnedY: frames.pinnedY}) }
+  function setHoldMax(ms: int): void { notifications.holdMaxMs = ms }
+  function setReduceMotion(on: bool): void { Style.reduceMotion = on }
   function stack(): string {
    var cards = []
    for (var i = 0; i < popupColumn.count; i++) {
@@ -252,6 +269,94 @@ try:
     ipc('overflow-test', 'leave')
     wait(lambda: not stack()['held'] and stack()['cards'][0]['y'] == 0, 'leaving closes the gap')
     print('PASS: the hovered card stays under the pointer while others expire and waiting cards join below it')
+    reset()
+
+    # Hold while hovered: new arrivals, a critical too, wait while the pointer
+    # is over the stack, even with room; nothing moves, frame by frame.
+    configure(maxVisible=5, normalTimeoutSec=30)
+    wait(lambda: state()['settings']['maxVisible'] == 5 and state()['settings']['normalTimeoutSec'] == 30, 'hold settings')
+    def summaries(): return [card['summary'] if card else None for card in stack()['cards']]
+    def fixture():
+        below = send('Below'); top = send('Hold this card')
+        wait(lambda: summaries() == ['Hold this card', 'Below'] and all(card['settled'] for card in stack()['cards']) and settled(), 'hold fixture')
+        ipc('overflow-test', 'hover', 0)
+        wait(lambda: stack()['held'] and stack()['hovered'] and state()['pointerHolds'], 'the pointer is over the top card')
+        ipc('overflow-test', 'watch')
+        return below, top
+    def counts(): return json.loads(ipc('overflow-test', 'frameCounts'))
+    below, top = fixture()
+    normal = send('New normal'); alert = send('New critical', 'critical')
+    wait(lambda: queue() == [alert, normal] and sorted(ids(state()['held'])) == sorted([normal, alert]) and stack()['noteText'] == '+2 waiting' and settled(), 'arrivals are held')
+    assert shown() == [top, below], 'a held arrival entered the stack'
+    assert files('popups')[normal].get('queued') is True and files('popups')[alert].get('queued') is True, 'held cards are not saved as waiting'
+    # A replacement of the hovered card updates it in place.
+    send('Hold this card, edited', extra=('-r', top))
+    wait(lambda: summaries() == ['Hold this card, edited', 'Below'], 'the hovered card is replaced in place')
+    time.sleep(.5)
+    view, frame = stack(), counts()
+    assert frame['frames'] > 10 and frame['moves'] == 0, 'the hovered card moved in the window: ' + repr(frame)
+    assert view['hovered'] and view['heldY'] == 0 and len(state()['held']) == 2, view
+    # The pointer leaves: they show as the new arrivals they are, newest on top, with the entrance motion.
+    released_at = time.time() * 1000
+    ipc('overflow-test', 'leave')
+    wait(lambda: summaries() == ['New critical', 'New normal', 'Hold this card, edited', 'Below'] and all(card['settled'] for card in stack()['cards']) and settled(), 'held arrivals show when the pointer leaves')
+    assert not state()['queue'] and not state()['held'] and stack()['note'] == 0, state()
+    assert counts()['entering'] > 0, 'the released cards did not animate in: ' + repr(counts())
+    # Their timer started when they showed.
+    wait(lambda: 'queued' not in files('popups')[normal] and files('popups')[normal].get('deadline', 0) >= released_at + 29000, 'a held card is saved with a deadline from when it showed', 2)
+    reset()
+    print('PASS: while hovered, a new normal and a new critical wait, the hovered card never moves; they show on top when the pointer leaves')
+
+    # The hold's maximum (stock: 30 s; shortened here) lets them go while the pointer stays.
+    ipc('overflow-test', 'setHoldMax', 1500)
+    below, top = fixture()
+    send('Held normal'); send('Held critical', 'critical')
+    wait(lambda: len(state()['held']) == 2, 'arrivals are held')
+    held_at = time.monotonic()
+    assert counts()['moves'] == 0
+    wait(lambda: summaries()[:2] == ['Held critical', 'Held normal'], 'the maximum releases the held cards', 4)
+    assert time.monotonic() - held_at >= 1.3, 'released before the maximum'
+    assert stack()['held'] and state()['pointerHolds'], 'the pointer left the stack'
+    # As in stock, the released cards go on top, so this time the hovered card moves (and the frame check sees it).
+    wait(lambda: counts()['moves'] > 0 and stack()['heldY'] > 0, 'the released cards push the hovered card down')
+    assert not state()['held'] and not state()['queue'], state()
+    # Arrivals after the release are held again.
+    later = send('After the release')
+    wait(lambda: ids(state()['held']) == [later] and later not in shown(), 'a later arrival is held again')
+    ipc('overflow-test', 'leave')
+    wait(lambda: shown()[0] == later, 'it shows when the pointer leaves')
+    ipc('overflow-test', 'setHoldMax', 30000)
+    reset()
+    print('PASS: the hold maximum releases held cards while the pointer stays, and later arrivals are held again')
+
+    # Animations off: held cards appear at once when released.
+    ipc('overflow-test', 'setReduceMotion', 'true')
+    below, top = fixture()
+    send('Instant normal'); send('Instant critical', 'critical')
+    wait(lambda: len(state()['held']) == 2 and settled(), 'arrivals are held')
+    time.sleep(.3)
+    assert counts()['moves'] == 0, counts()
+    ipc('overflow-test', 'leave')
+    wait(lambda: summaries()[:2] == ['Instant critical', 'Instant normal'] and all(card['settled'] for card in stack()['cards']), 'held cards show when the pointer leaves')
+    time.sleep(.2)
+    assert counts()['entering'] == 0, 'with animations off, released cards must appear at once: ' + repr(counts())
+    ipc('overflow-test', 'setReduceMotion', 'false')
+    reset()
+    print('PASS: with animations off, released cards appear at once')
+
+    # Restart: a held card is a waiting card; it comes back once, with its full time.
+    below, top = fixture()
+    survivor = send('Held over a restart')
+    wait(lambda: ids(state()['held']) == [survivor] and files('popups')[survivor].get('queued') is True and settled(), 'held before the restart')
+    os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
+    restarted_at = time.time() * 1000
+    process = start()
+    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and state()['popups'] == 3, 'restart with a held card')
+    wait(lambda: survivor in shown() and not state()['queue'] and settled(), 'the held card shows after the restart')
+    assert len(files('popups')) == 3 and not files('history'), 'restart duplicated or archived a card'
+    wait(lambda: files('popups')[survivor].get('deadline', 0) >= restarted_at + 29000, 'the held card got its full time after the restart', 2)
+    reset()
+    print('PASS: a held card survives a restart as a waiting card, once, without early expiry')
 finally:
     os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3); log.close()
     print('Runtime log:', base/'runtime.log')

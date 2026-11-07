@@ -721,7 +721,8 @@ Item {
       if (isRestoredRow(row)) continue
       var key = NotificationLogic.imageStem(row)
       if (shownKeys[key]) place = {shown: true, rank: displayRanks[key], since: shownSince[key]}
-      else if (!place && waitingKeys[key]) place = {shown: false, arrival: arrivals[key] !== undefined ? arrivals[key] : Number(row.timestamp)}
+      else if (!place && waitingKeys[key]) place = {shown: false, arrival: arrivals[key] !== undefined ? arrivals[key] : Number(row.timestamp),
+                                                    held: !!heldKeys[key], released: !!releasedKeys[key]}
       forgetPlacement(key)
       if (NotificationLogic.popupFileName(row) !== keepFileName) deletePopupFileFor(row)
       forgetNormalizedImages(row, NotificationLogic.popupFileName(row) === keepFileName)
@@ -731,7 +732,7 @@ Item {
   }
 
   // A replacement updates the card it replaces in place: it keeps that card's
-  // spot on screen, or its turn in the overflow queue.
+  // spot on screen, or its turn in the overflow queue (held while hovered too).
   function inheritPlace(snapshot, place) {
     if (!place) return
     var key = NotificationLogic.imageStem(snapshot)
@@ -743,6 +744,8 @@ Item {
     }
     waitingKeys[key] = true
     arrivals[key] = place.arrival
+    if (place.held) heldKeys[key] = true
+    if (place.released) releasedKeys[key] = true
     persistPopupFile(snapshot)
   }
 
@@ -755,6 +758,8 @@ Item {
     delete displayRanks[key]
     delete shownSince[key]
     delete replayKeys[key]
+    delete heldKeys[key]
+    delete releasedKeys[key]
   }
 
   function dismissPopup(index) {
@@ -1669,6 +1674,47 @@ Item {
   property bool fitRetry: false
   readonly property int visibleLimit: Math.max(1, Math.min(preferences.maxVisible, fitLimit))
 
+  // Hold while hovered, as stock 4.5 holds its deck (plugins/notifications/
+  // Service.qml, held and heldTooLong): while the pointer is over a stack, a
+  // new card, critical or not, waits in the queue instead of entering it, so
+  // nothing on screen moves under the pointer. When the pointer leaves, or
+  // holdMaxMs after the first card was held, the held cards show as the new
+  // arrivals they are: on top, newest first, criticals by planStack's rules.
+  // A held card's timer starts when it shows, like any waiting card's.
+  // NotificationLogic.heldArrivals decides which cards are held.
+  property var pointerStacks: []
+  readonly property bool pointerHolds: pointerStacks.length > 0
+  property var heldKeys: ({})
+  property int heldCount: 0
+  // Held cards let go, shown on the next rebuild as new arrivals (on top), not
+  // as cards from the queue (at the bottom).
+  property var releasedKeys: ({})
+  // Nothing waits forever: stock's 30 s. Tests shorten it.
+  property int holdMaxMs: 30000
+  Timer {
+    id: holdTooLong
+    interval: service.holdMaxMs
+    running: service.heldCount > 0
+    onTriggered: service.releaseHeld()
+  }
+
+  // A stack window reports whether the pointer is over it.
+  function holdArrivals(stack, over) {
+    var next = pointerStacks.filter(function(item) { return item !== stack })
+    if (over) next.push(stack)
+    if (next.length === pointerStacks.length && (!over || pointerStacks.indexOf(stack) >= 0)) return
+    pointerStacks = next
+    if (!pointerHolds) releaseHeld()
+  }
+
+  function releaseHeld() {
+    if (!heldCount) return
+    for (var key in heldKeys) releasedKeys[key] = true
+    heldKeys = ({})
+    heldCount = 0
+    scheduleRebuild()
+  }
+
   // Cards that must keep their slot: under the pointer, acting or keyboard-selected.
   function pinnedGroup(group, hovered) {
     if (busyKeys[group.key] || (keyboardMode && keyboardKey === group.key)) return true
@@ -1723,9 +1769,21 @@ Item {
     }
     var hovered = {}
     for (var hoverKey in hoveredKeys) if (hoveredKeys[hoverKey]) hovered[hoverKey.slice(hoverKey.indexOf("|") + 1)] = true
-    var plan = NotificationLogic.planStack(candidates, {limit: visibleLimit, shown: shownKeys, waiting: waitingKeys,
+    var held = NotificationLogic.heldArrivals(candidates, {holding: pointerHolds, shown: shownKeys, waiting: waitingKeys,
+      held: heldKeys, released: releasedKeys, canWait: canWait})
+    // Released cards plan as new arrivals, so they show on top.
+    var planWaiting = waitingKeys
+    if (Object.keys(releasedKeys).length) {
+      planWaiting = Object.assign({}, waitingKeys)
+      for (var releasedKey in releasedKeys) delete planWaiting[releasedKey]
+      releasedKeys = ({})
+    }
+    heldKeys = held
+    heldCount = Object.keys(held).length
+    var plan = NotificationLogic.planStack(candidates, {limit: visibleLimit, shown: shownKeys, waiting: planWaiting,
       ranks: displayRanks, since: shownSince, seq: sinceSeq, arrivals: arrivals, top: rankTop, bottom: rankBottom, queueLimit: queueLimit,
-      pinned: function(group) { return service.pinnedGroup(group, hovered) }, canWait: canWait})
+      pinned: function(group) { return service.pinnedGroup(group, hovered) }, canWait: canWait,
+      held: function(group) { return group.keys.every(function(key) { return !!held[key] }) }})
     rankTop = plan.top
     rankBottom = plan.bottom
     sinceSeq = plan.seq
@@ -2116,7 +2174,7 @@ Item {
     }
     function state(): string {
       return JSON.stringify({groups:service.displayGroups.map(function(g){return {key:g.key,count:g.keys.length,actions:JSON.parse(g.actionsJson || "[]").length}}),
-        queue:service.waitingGroups, visibleLimit:service.visibleLimit,
+        queue:service.waitingGroups, held:Object.keys(service.heldKeys), pointerHolds:service.pointerHolds, visibleLimit:service.visibleLimit,
         retainedActions:Object.keys(service.retainedHistory).length, pending:pendingNotifications.length, contextBusy:contextProc.running, popups:popupModel.count, doNotDisturb:service.doNotDisturb, monitors:service.targetMonitors,
         fullscreenMonitors:service.fullscreenMonitors, settings:service.preferences,
         snoozes:service.snoozes, sharingActive:service.sharingActive, sharingOfferPending:service.sharingOfferPending,
@@ -2205,7 +2263,9 @@ Item {
         waiting: service.waitingGroups.length
         onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)
         // A card the pointer kept in its slot may give it up now (planStack pins it).
-        onHoldPositionsChanged: { if (!holdPositions) service.scheduleRebuild(); Qt.callLater(popupWindow.fitCards) }
+        // While the pointer is over the stack, new cards are held (holdArrivals).
+        onHoldPositionsChanged: { service.holdArrivals(popupColumn, holdPositions); if (!holdPositions) service.scheduleRebuild(); Qt.callLater(popupWindow.fitCards) }
+        Component.onDestruction: service.holdArrivals(popupColumn, false)
         delegate:
           NotificationCard {
             id: card
