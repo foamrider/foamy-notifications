@@ -487,7 +487,15 @@ try:
     def sequence():
         normal=send('Non-critical notification',('-u','normal'))
         return normal,[send('Critical notification '+str(i)) for i in (1,2,3)]
-    cfg=json.loads((config/'shell.json').read_text())
+    # With the default limit (5) all four show.
+    cfg=json.loads((config/'shell.json').read_text());cfg['plugins'][0].pop('maxVisible',None)
+    (config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:state()['settings']['maxVisible']==5,'default visible limit is 5')
+    sequence()
+    wait_for(lambda:len(state()['groups'])==4 and not state()['queue'] and not state()['busy'],'the default limit shows all four')
+    assert not in_history('Non-critical notification'),'the normal notification went to history'
+    ipc('notifications','dismissAll')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'default sequence dismissed')
     # With a limit of 3 the normal one waits for the criticals and shows when one is dismissed.
     cfg['plugins'][0]['maxVisible']=3;(config/'shell.json').write_text(json.dumps(cfg))
     wait_for(lambda:state()['settings']['maxVisible']==3,'visible limit 3')

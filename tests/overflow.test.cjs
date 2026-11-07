@@ -34,6 +34,15 @@ function stack(limit, options = {}) {
   return state
 }
 
+test("the user's sequence shows all four cards with the default limit of 5", () => {
+  assert.equal(Preferences.defaults().maxVisible, 5)
+  const s = stack(Preferences.defaults().maxVisible)
+  s.arrive(row(1, 'Non-critical notification'))
+  for (const i of [1, 2, 3]) s.arrive(row(1 + i, 'Critical notification ' + i, 2))
+  assert.deepEqual(s.visible(), ['Critical notification 3', 'Critical notification 2', 'Critical notification 1', 'Non-critical notification'])
+  assert.deepEqual(s.queue(), [])
+})
+
 test('with a limit of 3 the normal card waits for the criticals and shows when one is dismissed', () => {
   const s = stack(3)
   s.arrive(row(1, 'Non-critical notification'))

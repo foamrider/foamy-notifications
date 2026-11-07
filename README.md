@@ -86,7 +86,7 @@ continue to work (see "Omarchy 4.5" below).
   to remove the popup's whole duplicate group from history instead.
 - Left-clicking a notification with no action from an app that has no window
   (such as a screenshot tool's "copied" notice) just closes it, like right-click.
-- Exact duplicates share a card. At most `maxVisible` cards show (3 by
+- Exact duplicates share a card. At most `maxVisible` cards show (5 by
   default, fewer if they do not fit the screen). The rest wait in a queue
   instead of going to history, and show as cards leave (dismissed, expired or
   handled), oldest first. A waiting card's timer starts when it shows, so it

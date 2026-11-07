@@ -13,7 +13,7 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
   "lowTimeoutSec": 5,
   "normalTimeoutSec": 8,
   "criticalTimeoutSec": 0,
-  "maxVisible": 3,
+  "maxVisible": 5,
   "groupDuplicates": true,
   "closeButtonRemovesHistory": false,
   "dndSilenceCritical": false,
@@ -38,7 +38,7 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
 | --- | --- |
 | `lowTimeoutSec`, `normalTimeoutSec` | 1–120 seconds. Longer sender-requested reading times are honored up to 120 seconds. |
 | `criticalTimeoutSec` | 0 keeps critical alerts until dismissed; 1–120 sets an expiry. |
-| `maxVisible` | 1–10 cards (groups) on screen; 3 by default. Screen space may reduce this further. Cards past either limit wait in the [overflow queue](#overflow-queue) instead of going to history. |
+| `maxVisible` | 1–10 cards (groups) on screen; 5 by default. Screen space may reduce this further. Cards past either limit wait in the [overflow queue](#overflow-queue) instead of going to history. |
 | `groupDuplicates` | Groups exact duplicates. Different actions or sending applications remain separate. |
 | `closeButtonRemovesHistory` | `false` (default) keeps notifications in history when × closes a popup. `true` removes the popup's whole duplicate group from history without invoking any action. Right-click, expiry, and keyboard/IPC dismissal still keep history. Failed removal leaves the popup available for retry. |
 | `dndSilenceCritical` | `false` (default) preserves trusted critical alerts through Do Not Disturb. `true` sends all new critical alerts, including Omarchy crash notifications, directly to history during DND. Transient alerts are not stored. Normal Omarchy action feedback and delivery outside DND are unchanged. |

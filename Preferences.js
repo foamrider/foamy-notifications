@@ -1,6 +1,6 @@
 function defaults() {
   return { lowTimeoutSec: 5, normalTimeoutSec: 8, criticalTimeoutSec: 0,
-    maxVisible: 3, groupDuplicates: true, closeButtonRemovesHistory: false, monitor: "focused", monitorName: "",
+    maxVisible: 5, groupDuplicates: true, closeButtonRemovesHistory: false, monitor: "focused", monitorName: "",
     dndSilenceCritical: false, offerSnoozeWhenSharing: true, suppressFullscreen: false, fullscreenCritical: true, width: 390,
     useBrowserFavicons: true, browserGrouping: "browser", browserMappings: [], restoreMaxAgeSec: 300, showImages: true, imageSize: 56, compact: true, showTimeoutIndicator: true }
 }
