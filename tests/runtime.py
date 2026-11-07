@@ -145,7 +145,10 @@ def wait_for(predicate,message):
     print('Failure state:',state(),flush=True)
     raise AssertionError(message+'\n'+(base/'runtime.log').read_text())
 def send(summary,extra=(),body='Sample body'):
-    return subprocess.run(['notify-send','-p','-a','Foamy Test','-u','critical',*extra,summary,body],env=env,capture_output=True,text=True,timeout=3).stdout.strip()
+    sent=subprocess.run(['notify-send','-p','-a','Foamy Test','-u','critical',*extra,summary,body],env=env,capture_output=True,text=True,timeout=3)
+    # A notify-send that cannot run (e.g. a foreign libnotify) must not read as a plugin timeout.
+    assert sent.returncode==0 and sent.stdout.strip(),'notify-send failed: '+sent.stderr
+    return sent.stdout.strip()
 def omarchy_send(app_name, summary, body, image, argv):
     """What `omarchy notification send -u critical --image … --exec …` sends, over the test's
     private bus, without running a host script (the same hints: image-path, omarchy-exec-argv)."""
