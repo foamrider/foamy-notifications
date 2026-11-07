@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import signal
 import subprocess
@@ -23,35 +24,44 @@ service = (SOURCE/'Service.qml').read_text()
 # Keep the real service/server/queue; presentation has separate desktop coverage.
 (app/'plugin/Service.qml').write_text((service[:service.index('  Variants {')] + '}\n').replace('tracked:Object.keys(service.liveRefs).length', 'nativeTracked:server.trackedNotifications.values.length, tracked:Object.keys(service.liveRefs).length'))
 (app/'shell.qml').write_text('import Quickshell\nimport "plugin" as Plugin\nShellRoot { Plugin.Service {} }\n')
-helper = app/'plugin/bin/notification-helper.py'
-helper.rename(helper.with_name('notification-helper-real.py'))
+# Wrap the real native worker: selected operations stall while a flag file exists.
+helper = app/'plugin/bin'/platform.machine()/'foamy-notifications-helper'
+helper.rename(helper.with_name('foamy-notifications-helper-real'))
 stall = base/'stall'; started = base/'started'
 context_stall = base/'context-stall'; context_started = base/'context-started'
 # Stall selected writes/context queries, not startup restoration. The timeout also protects failed tests.
-helper.write_text('''import importlib.util,os,sys,time
+helper.write_text('#!' + sys.executable + '''
+import json, os, subprocess, sys, time
 from pathlib import Path
-# Wrap the real long-lived worker: selected operations stall while a flag file exists.
-spec=importlib.util.spec_from_file_location('real', Path(__file__).with_name('notification-helper-real.py'))
-real=importlib.util.module_from_spec(spec); spec.loader.exec_module(real)
-def stalled(name, flag, started, seconds):
-    original=real.OPERATIONS[name]
-    def run(data):
-        if Path(flag).exists():
-            Path(started).touch()
-            deadline=time.monotonic()+seconds
-            while Path(flag).exists() and time.monotonic()<deadline: time.sleep(.02)
-            if Path(flag).exists(): raise ValueError('test worker stall timed out')
-        return original(data)
-    real.OPERATIONS[name]=run
-stalled('write', STALL, STARTED, 30)
-stalled('context', CONTEXT_STALL, CONTEXT_STARTED, 15)
-os.umask(0o077)
-try:
-    if sys.argv[1]=='serve': real.serve()
-    else: real.OPERATIONS[sys.argv[1]](real.packet())
-except Exception as error:
-    print('foamy.notifications: '+str(error), file=sys.stderr); sys.exit(1)
+real = str(Path(__file__).with_name('foamy-notifications-helper-real'))
+def stall(flag, started, seconds):
+    if not Path(flag).exists():
+        return True
+    Path(started).touch()
+    deadline = time.monotonic() + seconds
+    while Path(flag).exists() and time.monotonic() < deadline:
+        time.sleep(.02)
+    return not Path(flag).exists()
+if sys.argv[1:] == ['serve']:
+    worker = subprocess.Popen([real, 'serve'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    for line in sys.stdin.buffer:
+        try:
+            job = json.loads(line)
+        except ValueError:
+            job = {}
+        if isinstance(job, dict) and job.get('op') == 'write' and not stall(STALL, STARTED, 30):
+            reply = {'id': job.get('id'), 'ok': False, 'out': '', 'error': 'test worker stall timed out'}
+            sys.stdout.write(json.dumps(reply) + '\\n'); sys.stdout.flush()
+            continue
+        worker.stdin.write(line); worker.stdin.flush()
+        sys.stdout.buffer.write(worker.stdout.readline()); sys.stdout.flush()
+    worker.stdin.close()
+    sys.exit(worker.wait())
+if sys.argv[1:] == ['context'] and not stall(CONTEXT_STALL, CONTEXT_STARTED, 15):
+    print('foamy.notifications: test worker stall timed out', file=sys.stderr); sys.exit(1)
+os.execv(real, [real] + sys.argv[1:])
 '''.replace('CONTEXT_STALL', repr(str(context_stall))).replace('CONTEXT_STARTED', repr(str(context_started))).replace('STALL', repr(str(stall))).replace('STARTED', repr(str(started))))
+helper.chmod(0o755)
 home = base/'home'; home.mkdir()
 config = home/'.config/omarchy'; config.mkdir(parents=True)
 (config/'shell.json').write_text(json.dumps({'bar':{'layout':{'right':[{'id':'foamy.notification-center'}]}},'plugins':[{'id':'foamy.notifications','maxVisible':3}]}))
@@ -137,8 +147,14 @@ try:
     popup_first=state()
     for i in range(160,320): send('Popup flood '+str(i))
     popup_second=state()
-    assert popup_first['queuedJobs'] == popup_second['queuedJobs'] <= 128, (popup_first,popup_second)
-    assert popup_second['queuedBytes'] <= 1048576 and popup_second['popups'] <= 3, popup_second
+    for i in range(320,480): send('Popup flood '+str(i))
+    popup_third=state()
+    # Overflow waits in the queue (at most 100 notifications behind the 3 shown);
+    # past that the oldest waiting ones go to history, whose archives share the job bound.
+    assert popup_first['queuedJobs'] <= popup_second['queuedJobs'] == popup_third['queuedJobs'] <= 128, (popup_first,popup_second,popup_third)
+    assert popup_third['queuedBytes'] <= 1048576 and popup_third['popups'] <= 103 and len(popup_third['queue']) <= 100, popup_third
+    assert popup_third['tracked'] <= 103, popup_third
+    popup_second=popup_third
     stall.unlink()
     wait(lambda:not state()['busy'], 'bounded popup writes and archives drain')
     ipc('notifications','dismissAll')

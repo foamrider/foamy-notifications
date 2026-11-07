@@ -1,0 +1,15 @@
+[package]
+name = "foamy-notifications-helper"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+foamy-helper = { path = "../kit/rust/foamy-helper", features = ["favicon"] }
+# preserve_order: rows keep their field order, as Python's dicts did;
+# float_roundtrip: floats parse exactly, as Python's float() does.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+# Already in the tree through foamy-helper's favicon feature: getpwuid_r,
+# access(2) and the O_NONBLOCK/O_NOFOLLOW open flags.
+libc = "0.2.153"

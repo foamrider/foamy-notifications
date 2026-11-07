@@ -1,10 +1,11 @@
 """Check the real Wayland popup surface on a private bus with temporary history."""
 import os,json,shutil,tempfile,subprocess,sys,time,signal
 from pathlib import Path
+import hostenv
 if '--inside' not in sys.argv:
- raise SystemExit(subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=20).returncode)
+ raise SystemExit(subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=45).returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-native-motion-'));app=base/'app';app.mkdir();home=base/'home';home.mkdir()
-for n in ['Commons','Ui']:(app/n).symlink_to(os.environ.get('OMARCHY_TEST_ROOT','/usr/share/omarchy')+'/shell/'+n,target_is_directory=True)
+for n in ['Commons','Ui']:(app/n).symlink_to(hostenv.root()/'shell'/n,target_is_directory=True)
 shutil.copytree(Path(__file__).resolve().parents[1],app/'plugin',ignore=shutil.ignore_patterns('.git','__pycache__'))
 p=app/'plugin/Service.qml';s=p.read_text();s=s.replace('  id: service','''  id: service
   property var surfaces: ({})
@@ -13,10 +14,17 @@ p=app/'plugin/Service.qml';s=p.read_text();s=s.replace('  id: service','''  id: 
     function state(): string {
       return JSON.stringify({trace:service.trace,visible:Object.keys(service.surfaces).some(function(key){return service.surfaces[key].visible})})
     }
+    // Per output: the room under the bar and the height the stack needs.
+    function fit(): string {
+      var out={}
+      for(var key in service.surfaces){var w=service.surfaces[key];if(w.selected)out[key]={room:w.height-w.stack.y-Style.space(8),need:w.stack.settledHeight(),cards:w.stack.count}}
+      return JSON.stringify(out)
+    }
   }
 ''',1)
 s=s.replace('      id: popupWindow','''      id: popupWindow
       Component.onCompleted: service.surfaces[screen.name]=popupWindow
+      readonly property var stack: popupColumn
       property bool capturedEntry: false
       property bool capturedExit: false
       FrameAnimation {running: popupWindow.visible; onTriggered: {
@@ -52,5 +60,27 @@ try:
  assert any(0<r['opacity']<1 and r['retired'] and r['visible'] for r in state['trace']), 'window hid before exit completed'
  assert not state['visible'],'empty notification layer remains mapped'
  print('PASS real layer-shell: gentle entrance, visible final-card fade, automatic surface close')
+ # Cards that do not fit the real screen wait in the overflow queue, not in history.
+ (config/'shell.json').write_text(json.dumps({'plugins':[{'id':'foamy.notifications','maxVisible':10,'criticalTimeoutSec':0}]}))
+ def service():return json.loads(ipc('foamy.notifications','state'))
+ end=time.monotonic()+5
+ while service()['settings']['maxVisible']!=10:assert time.monotonic()<end,'config';time.sleep(.1)
+ for i in range(20):subprocess.run(['notify-send','-a','Foamy screen-space check','-u','critical','Tall card '+str(i),'First line\nSecond line\nThird line'],env=env,check=True,timeout=2)
+ end=time.monotonic()+8;last=None;steady=0
+ while steady<10:
+  now=(service()['visibleLimit'],len(service()['groups']),len(service()['queue']),json.loads(ipc('motion-review','fit')))
+  steady=steady+1 if now==last and not service()['busy'] else 0;last=now
+  assert time.monotonic()<end,'screen-space queue did not settle: '+repr(now);time.sleep(.1)
+ limit,shown,waiting,fit=last
+ history=home/'.local/state/foamy-notifications/history'
+ assert shown+waiting==20 and waiting>0,last
+ assert not any(json.loads(f.read_text())['summary'].startswith('Tall card') for f in history.glob('*.json')),'screen-space overflow went to history'
+ assert all(v['need']<=v['room'] for v in fit.values()),fit
+ if shown<10:assert limit==shown,last
+ ipc('notifications','dismissOne')
+ end=time.monotonic()+5
+ while not (len(service()['groups'])==shown and len(service()['queue'])==waiting-1):assert time.monotonic()<end,'a freed slot shows the next card';time.sleep(.1)
+ ipc('notifications','dismissAll')
+ print('PASS real layer-shell screen space: '+str(shown)+' of 20 cards fit '+json.dumps(fit)+', the rest wait (limit '+str(limit)+')')
 finally:
  os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=3);log.close();print('Native evidence:',base)

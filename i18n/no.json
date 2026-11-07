@@ -23,5 +23,7 @@
   "Could not snooze this sender. Resume an existing snooze and try again.": "Kunne ikke dempe denne avsenderen. Gjenoppta en eksisterende demping og prøv igjen.",
   "Clipboard is busy. Try again.": "Utklippstavlen er opptatt. Prøv igjen.",
   "Could not open the link. Try again.": "Kunne ikke åpne lenken. Prøv igjen.",
-  "Could not copy the code. Check wl-copy and try again.": "Kunne ikke kopiere koden. Kontroller wl-copy og prøv igjen."
+  "Could not copy the code. Check wl-copy and try again.": "Kunne ikke kopiere koden. Kontroller wl-copy og prøv igjen.",
+  "This plugin's helper isn't available for this CPU.": "Hjelpeprogrammet til denne utvidelsen er ikke tilgjengelig for denne prosessoren.",
+  "+%1 waiting": "+%1 venter"
 }

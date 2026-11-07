@@ -1,17 +1,18 @@
 import QtQuick
 import qs.Commons
-
+import "../kit"
 import "../components"
 import "../NotificationLogic.js" as Logic
 
-// The dev (before) toasts for render.py --trio: same mock states, dev card API.
+// The dev (before) toasts for render.py --trio: Preview.qml's mock states on
+// dev's card API (deeds, count, selected), including the README `readme` state.
 // Foamy popups are layer-shell windows, not a bar popup: `popup` is the card
 // stack, placed at the top-right under the bar as the service places it.
 Item {
   id: preview
   required property QtObject bar
   required property Item anchorItem
-  property var previewStates: ["default", "actions", "keyboard"]
+  property var previewStates: ["default", "actions", "keyboard", "readme"]
   property string previewState: "default"
   property int settleMs: 700
   readonly property Item popup: stack
@@ -24,9 +25,13 @@ Item {
     { key: "2-2", app: "Screen recording", appIcon: "", glyph: "\u{f0a1c}", summary: "Recording saved", body: "screenrecording-2026-10-30.mp4",
       urgency: 1, actionsJson: "[]", execActions: recording, offers: {codes: "", link: ""} },
     { key: "3-3", app: "Bank", appIcon: "", summary: "Sign-in code", body: "Your code is 482913. It expires in 5 minutes.",
-      urgency: 2, actionsJson: "[]", execActions: "", offers: {codes: "482913", link: ""} }
+      urgency: 2, actionsJson: "[]", execActions: "", offers: {codes: "482913", link: ""} },
+    // README screenshot: a grouped chat message (three duplicates).
+    { key: "4-4", app: "Chat", appIcon: "", glyph: "\u{f0361}", summary: "Alex · Design review", body: "The updated files are ready. Have a look when you have a moment.",
+      urgency: 1, count: 3, actionsJson: JSON.stringify([{identifier: "reply", text: "Reply"}, {identifier: "read", text: "Mark as read"}]), execActions: "", offers: {codes: "", link: ""} }
   ]
-  readonly property var shown: previewState === "default" ? [cards[0], cards[2]] : previewState === "actions" ? [cards[1], cards[0]] : [cards[1], cards[0], cards[2]]
+  readonly property var shown: previewState === "default" ? [cards[0], cards[2]] : previewState === "actions" ? [cards[1], cards[0]]
+    : previewState === "readme" ? [cards[3], cards[1], cards[2]] : [cards[1], cards[0], cards[2]]
 
   Column {
     id: stack
@@ -47,13 +52,14 @@ Item {
         summary: modelData.summary
         body: modelData.body
         urgency: modelData.urgency
+        count: modelData.count || 1
         timestamp: preview.now
         timeoutMs: 8000
         remainingMs: 5200
         compact: true
         snoozeAvailable: true
-        actions: JSON.parse(modelData.actionsJson)
-        offers: modelData.offers
+        selected: preview.previewState === "keyboard" && index === 0
+        deeds: Logic.deeds(modelData, modelData.offers)
       }
     }
   }

@@ -1,8 +1,8 @@
 function defaults() {
   return { lowTimeoutSec: 5, normalTimeoutSec: 8, criticalTimeoutSec: 0,
-    maxVisible: 3, groupDuplicates: true, closeButtonRemovesHistory: false, monitor: "focused", monitorName: "",
+    maxVisible: 5, groupDuplicates: true, closeButtonRemovesHistory: false, monitor: "focused", monitorName: "",
     dndSilenceCritical: false, offerSnoozeWhenSharing: true, suppressFullscreen: false, fullscreenCritical: true, width: 390,
-    useBrowserFavicons: true, browserGrouping: "browser", browserMappings: [], restoreMaxAgeSec: 300, showImages: true, imageSize: 56, compact: true, showTimeoutIndicator: true }
+    useBrowserFavicons: true, browserGrouping: "browser", browserMappings: [], restoreMaxAgeSec: 300, maxWaitSec: 300, showImages: true, imageSize: 56, compact: true, showTimeoutIndicator: true }
 }
 function parse(raw) {
   var settings = defaults()
@@ -10,7 +10,7 @@ function parse(raw) {
     var config = JSON.parse(raw)
     var entries = Array.isArray(config.plugins) ? config.plugins : []
     var entry = entries.filter(function(e) { return e && e.id === "foamy.notifications" })[0] || {}
-    var numbers = { lowTimeoutSec: [1,120], normalTimeoutSec: [1,120], criticalTimeoutSec: [0,120], maxVisible: [1,10], width: [280,600], restoreMaxAgeSec: [0,3600], imageSize: [40,72] }
+    var numbers = { lowTimeoutSec: [1,120], normalTimeoutSec: [1,120], criticalTimeoutSec: [0,120], maxVisible: [1,10], width: [280,600], restoreMaxAgeSec: [0,3600], maxWaitSec: [1,3600], imageSize: [40,72] }
     for (var key in numbers) {
       if (entry[key] === undefined) continue
       var range = numbers[key]

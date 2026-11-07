@@ -11,7 +11,8 @@ function load(state, name) {
   vm.runInContext(source.slice(start, source.indexOf('\n  }', start) + 4), state)
 }
 function fixture() {
-  const state = vm.createContext({NotificationLogic:Logic,Features:require("./qml-js.cjs")("Features.js"), popupFileQueue:[], helper:'/helper', lastError:'',
+  const state = vm.createContext({NotificationLogic:Logic,Features:require("./qml-js.cjs")("Features.js"), popupFileQueue:[], helper:'/helper', lastError:'', helperUnavailable:false,
+    FoamyNative:require('../kit/node-loader.cjs').load('FoamyNative'),
     console:{warn(){}}, runNextPopupFileJob(){}})
   state.service = state
   for (const name of ['popupQueueLimit', 'popupWriteLimit', 'popupQueueByteLimit', 'popupWriteByteLimit', 'popupPayloadLimit'])
@@ -127,7 +128,7 @@ test('rejected DND writes release their live object without catch-up recursion o
 
 test('popup producers roll back rejected image generations and history producers carry cancellation identity', () => {
   const s = fixture()
-  s.imagesDir='/tmp/images/'; s.nextImageWriteVersion=0; s.imageWriteVersions={}
+  s.imagesDir='/tmp/images/'; s.nextImageWriteVersion=0; s.imageWriteVersions={}; s.waitingKeys={}; s.shownDeadlines={}
   load(s, 'persistPopupFile'); load(s, 'writeHistoryFile')
   const row={originalId:1,timestamp:1000,app:'Chat',appIcon:'chat',body:'\0'.repeat(25000)}
   assert.equal(s.persistPopupFile(row), false)
@@ -285,4 +286,14 @@ test('a dismissal converts only popup writes queued after the last history barri
   s.put('{"entry":{}}', key); s.enqueueHelperJob('clear', {}); s.put('{"entry":{}}', key)
   s.archivePopupFileFor(row)
   assert.deepEqual(s.popupFileQueue.map(j => [j.op, !!j.historyWrite]), [['write', false], ['clear', false], ['write', true]])
+})
+
+test('an unavailable helper rejects jobs at once and completes each callback once', () => {
+  const s = fixture()
+  s.helperUnavailable = true
+  const calls = []
+  assert.equal(s.enqueueHelperJob('focus', {app:'x'}, (ok, out) => calls.push([ok, out])), false)
+  assert.deepEqual(calls, [[false, '']])
+  assert.equal(s.popupFileQueue.length, 0)
+  assert.equal(s.lastError, s.FoamyNative.UNAVAILABLE_TEXT)
 })

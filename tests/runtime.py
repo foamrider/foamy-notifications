@@ -19,7 +19,7 @@ CENTER=os.environ.get('FOAMY_CENTER_SOURCE','')
 
 SOURCE=Path(__file__).resolve().parents[1]
 if '--inside' not in sys.argv:
-    result=subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=65)
+    result=subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=90)
     raise SystemExit(result.returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-runtime-'))
 app=base/'app';app.mkdir()
@@ -145,7 +145,10 @@ def wait_for(predicate,message):
     print('Failure state:',state(),flush=True)
     raise AssertionError(message+'\n'+(base/'runtime.log').read_text())
 def send(summary,extra=(),body='Sample body'):
-    return subprocess.run(['notify-send','-p','-a','Foamy Test','-u','critical',*extra,summary,body],env=env,capture_output=True,text=True,timeout=3).stdout.strip()
+    sent=subprocess.run(['notify-send','-p','-a','Foamy Test','-u','critical',*extra,summary,body],env=env,capture_output=True,text=True,timeout=3)
+    # A notify-send that cannot run (e.g. a foreign libnotify) must not read as a plugin timeout.
+    assert sent.returncode==0 and sent.stdout.strip(),'notify-send failed: '+sent.stderr
+    return sent.stdout.strip()
 def omarchy_send(app_name, summary, body, image, argv):
     """What `omarchy notification send -u critical --image … --exec …` sends, over the test's
     private bus, without running a host script (the same hints: image-path, omarchy-exec-argv)."""
@@ -473,9 +476,42 @@ try:
     wait_for(lambda:not state()['busy'],'DND drains')
     assert state()['popups']==0,'DND showed popup'
     ipc('notifications','setDnd','off')
+    # Overflow waits in the queue rather than going to history.
     for i in range(5):send('Overflow '+str(i))
-    wait_for(lambda:state()['popups']==3 and len(state()['groups'])==3,'visible popup cap')
+    wait_for(lambda:state()['popups']==5 and len(state()['groups'])==3 and len(state()['queue'])==2,'visible popup cap queues the rest')
     ipc('notifications','dismissAll')
+    wait_for(lambda:state()['popups']==0 and not state()['queue'] and not state()['busy'],'dismissAll also clears the queue')
+    # A normal notification followed by three criticals (a reported "it vanished").
+    def in_history(summary):
+        return any(json.loads(path.read_text()).get('summary')==summary for path in (home/'.local/state/foamy-notifications/history').glob('*.json'))
+    def sequence():
+        normal=send('Non-critical notification',('-u','normal'))
+        return normal,[send('Critical notification '+str(i)) for i in (1,2,3)]
+    # With the default limit (5) all four show.
+    cfg=json.loads((config/'shell.json').read_text());cfg['plugins'][0].pop('maxVisible',None)
+    (config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:state()['settings']['maxVisible']==5,'default visible limit is 5')
+    sequence()
+    wait_for(lambda:len(state()['groups'])==4 and not state()['queue'] and not state()['busy'],'the default limit shows all four')
+    assert not in_history('Non-critical notification'),'the normal notification went to history'
+    ipc('notifications','dismissAll')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'default sequence dismissed')
+    # With a limit of 3 one slot stays for the normal one: two criticals show with
+    # it, and the oldest critical waits and shows when one is dismissed.
+    cfg['plugins'][0]['maxVisible']=3;(config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:state()['settings']['maxVisible']==3,'visible limit 3')
+    normal,criticals=sequence()
+    def ids(keys):return [key.split('-')[1] for key in keys]
+    wait_for(lambda:ids(g['key'] for g in state()['groups'])==[criticals[2],criticals[1],normal] and ids(state()['queue'])==[criticals[0]] and not state()['busy'],'the normal one and two criticals show, the oldest critical waits')
+    archived=lambda:ids(path.stem for path in (home/'.local/state/foamy-notifications/history').glob('*.json'))
+    assert normal not in archived() and criticals[0] not in archived(),'a shown or waiting notification went to history'
+    assert not set(criticals)&set(archived()),'a critical went to history'
+    ipc('notifications','dismissOne')
+    # The newest critical leaves; the waiting card joins the bottom of the stack.
+    wait_for(lambda:ids(g['key'] for g in state()['groups'])==[criticals[1],normal,criticals[0]] and not state()['queue'],'the waiting card shows when a critical is dismissed')
+    wait_for(lambda:criticals[2] in archived(),'the dismissed critical is in history')
+    ipc('notifications','dismissAll')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'overflow sequence dismissed')
     action=subprocess.Popen(['notify-send','-a','Foamy Test','-u','critical','--wait','--action=default=Open','--action=read=Mark read','Action test','Sample body'],env=env,stdout=subprocess.PIPE,text=True)
     wait_for(lambda:len(state()['groups'])==1 and state()['groups'][0]['actions']==1,'native action labels')
     ipc('foamy.notifications','invokeAction',state()['groups'][0]['key'],'read')
@@ -501,14 +537,16 @@ try:
         ipc('foamy.notification-center.test','clear')
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'clear unrelated history before editor scenarios')
         # Use a long-lived fake editor so the center must release its launch process.
+        # It is omasnap, the editor 4.5 names and the center's opener prefers, so the
+        # stub (first on PATH) shadows an installed one on every launch path.
         editor_marker=base/'screenshot-editor.txt'
-        editor=bin_dir/'tensaku-edit'
+        editor=bin_dir/'omasnap'
         editor.write_text('#!/bin/sh\nprintf "%s" "$1" > '+str(editor_marker)+'\nsleep 1\n')
         editor.chmod(0o755)
         spaced_image=base/'screenshot with spaces.png';shutil.copy(image,spaced_image)
         for mode in ['visible','history','reload','missing','launch-failure']:
             editor_marker.unlink(missing_ok=True)
-            omarchy_send('omarchy-action','Screenshot editor '+mode,'Click to edit',spaced_image,['tensaku-edit',str(spaced_image)])
+            omarchy_send('omarchy-action','Screenshot editor '+mode,'Click to edit',spaced_image,['omasnap',str(spaced_image)])
             wait_for(lambda:state()['popups']==1 and not state()['busy'],'screenshot ready '+mode)
             key=state()['groups'][0]['key']
             wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'screenshot archived '+mode)

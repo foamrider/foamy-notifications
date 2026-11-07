@@ -1,15 +1,18 @@
 # Foamy Notifications
 
-Compact notification popups for Omarchy 4.5 and 4.0, styled to match
+Compact notification popups for Omarchy 4.5, styled to match
 [Foamy Notification Center](https://github.com/foamrider/foamy-notification-center).
 
-![Foamy Notifications with sample messages, actions, and a critical alert](preview.png)
+![Foamy Notifications: a grouped chat message with actions, a screen recording with Omarchy action buttons, and a critical sign-in code alert with a copy button](preview.png)
 
 ## Install
 
-Targets Omarchy 4.5; basic delivery, history, actions and DND also work on 4.0.
-Requires Quickshell, Python 3, and the standard Omarchy tools
-(including `hyprctl` and `omarchy-shell`). Notification Center is optional.
+Requires Omarchy 4.5, Quickshell and the standard Omarchy tools (including `hyprctl` and
+`omarchy-shell`) on an x86_64 or aarch64 CPU: persistence, window focus and
+favicons run in the bundled helper (`bin/<arch>/foamy-notifications-helper`),
+so no Python is needed. On other CPUs popups still show, but nothing is saved,
+focused or converted from image files, and popups stay on the last known
+monitor. Notification Center is optional.
 File-backed app icons and sender pictures also need `file` and ImageMagick 7
 (`magick`). Missing conversion tools keep the text, actions and icon fallback.
 
@@ -82,7 +85,28 @@ continue to work (see "Omarchy 4.5" below).
   to remove the popup's whole duplicate group from history instead.
 - Left-clicking a notification with no action from an app that has no window
   (such as a screenshot tool's "copied" notice) just closes it, like right-click.
-- Exact duplicates share a card. Overflow goes to history.
+- Exact duplicates share a card. At most `maxVisible` cards show (5 by
+  default, fewer if they do not fit the screen). The rest wait in a queue
+  instead of going to history, and show as cards leave (dismissed, expired or
+  handled), oldest first. A waiting card's timer starts when it shows, so it
+  gets its full time on screen, and it joins the bottom of the stack, so the
+  cards already there do not move. Critical alerts go first, but when the
+  limit is 2 or more one slot stays for normal notifications, so a stack of
+  critical alerts that never expire cannot keep everything else waiting. A
+  newer critical alert rotates the oldest one back into the queue, and
+  waiting critical alerts show newest first, so they cannot keep a new alert
+  off the screen either. For example, at a limit of 3, one normal
+  notification followed by three critical alerts shows the normal one and
+  the two newest criticals, and the first critical waits. A normal
+  notification that waits more than 5 minutes (`maxWaitSec`) goes to
+  history, where the center still lists it, so a flood of notifications
+  cannot keep a later one waiting for longer than that. A small
+  "+N waiting" note under the stack counts the queue. Details, and how the
+  queue survives a restart: [overflow queue](CONFIGURATION.md#overflow-queue).
+- As in stock Omarchy 4.5, new notifications, critical alerts too, wait while
+  the pointer is over the stack, so nothing moves under it. They show on top
+  when the pointer leaves, or after 30 seconds at most:
+  [hold while hovered](CONFIGURATION.md#hold-while-hovered).
 - Hover the card to reveal the snooze button to the left of the timestamp.
   It also appears on keyboard focus. The button snoozes that sender for
   15 minutes, 30 minutes, 1 hour, or 4 hours. Browser notifications use the
@@ -113,8 +137,13 @@ continue to work (see "Omarchy 4.5" below).
   Enable **Do Not Disturb also silences critical alerts** in the center’s Foamy
   Notifications settings to send them directly to history during DND, including
   Omarchy crash alerts. The option is off by default; transient alerts are not stored.
-- Cards fade in and out. While the pointer is inside the stack, expired cards
-  leave their space in place so the hovered card does not move away.
+- Cards fade in and out. While the pointer is inside the stack, cards that
+  leave above it keep their space, so the hovered card does not move away;
+  closing a card (or one leaving below the pointer) slides the cards below up.
+  A waiting card that shows joins below the others, and a new one waits until
+  the pointer leaves, so neither pushes the hovered card, and the hovered card
+  keeps its slot.
+  With Omarchy's animations off, they move at once.
 
 Configure timeout, compact layout, images, monitor placement, fullscreen
 suppression, and browser app matching in `shell.json`. See
@@ -149,27 +178,27 @@ These cleanup calls are optional when using stock or older notifications.
 
 ## Omarchy 4.5
 
-The `notifications` IPC target matches stock 4.5-rc3, so the default bindings work:
+The `notifications` IPC target matches stock 4.5.0, so the default bindings work:
 **SUPER+comma** (`act`: dismiss the newest card, press its only button, or click
 it; with several choices it hands over the keyboard), **SUPER+CTRL+comma**
 (`keyboard`), SUPER+SHIFT+comma (`dismissAll`), SUPER+ALT+comma (`dismissOne`)
 and SUPER+SHIFT+ALT+comma (`showHistory`). Also available: `invokeAction <n>`,
 `invokeLast`, `count`, `expand`, `probe`, `isDnd`, `toggleDnd`, `setDnd`,
-`dismiss <summary>` and `ping`; `dndState` stays for 4.0 callers. IPC is
-answered over the 4.5 shell socket and through `qs ipc` on 4.0.
+`dismiss <summary>`, `clear` (empties history, keeps the popups), `snoozes`
+and `ping`. IPC is answered over the shell socket.
 
 Keyboard mode: Up/Down, `j`/`k` or Tab move between cards, Enter or Space clicks,
 Delete dismisses, `1`–`9` press the numbered button, Escape (or ten idle seconds)
 gives the keyboard back. Notifications never take the keyboard on their own.
 `dismissOne` hides the whole newest card, including grouped duplicates, and
-`dismissAll` hides every popup; both preserve history. The close button and
+`dismissAll` hides every popup, waiting ones too; both preserve history. The close button and
 keyboard Delete follow `closeButtonRemovesHistory`. The empty-history message
 can always be dismissed and is never written to history.
 
 **State directory.** Foamy keeps its state in its own folder,
 `~/.local/state/foamy-notifications/`. On its first start this version moves its
 popups, history, images, DND and snoozes out of `~/.local/state/omarchy/notifications`
-(the 4.0 layout), once. Stock files (`live.json`, `history.json`, `quiet.json`) are
+(the older layout), once. Stock files (`live.json`, `history.json`, `quiet.json`) are
 never touched.
 
 The center's More options menu offers global snooze and resume. CLI equivalents:
@@ -180,7 +209,7 @@ omarchy-shell notifications unsnooze ""
 ```
 
 `foamy.notifications state` reports snooze deadlines and screen-sharing state.
-Stock 4.5-rc2 and 4.0 have no timed snooze; the center hides that menu there.
+Stock Omarchy has no timed snooze; the center hides that menu there.
 DND bypass rules also apply to snoozes; normal Omarchy action feedback still appears.
 
 ### Notification Center contract
@@ -214,10 +243,10 @@ and data outside the plugin directory remain in place.
 `kit/` holds shared components copied from [foamy-kit](https://github.com/foamrider/foamy-kit); edit them there, not here.
 
 [MIT](LICENSE), with [Omarchy attribution](LICENSE-OMARCHY).
-The preview uses synthetic messages and an original sample avatar.
+The preview uses synthetic messages (`preview/Preview.qml`, state `readme`).
 
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
 
-Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (shared foamy-kit i18n). Plugin language overrides are no longer used. Omarchy 4.0 displays the plugin in English. Missing translations fall back to English.
+Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (shared foamy-kit i18n). Plugin language overrides are no longer used. Missing translations fall back to English.
 
-Translation checks: `python3 tests/i18n-runtime.py` uses the installed shell. Set `OMARCHY_PATH` to a 4.5 source tree to check live language switching against that version.
+Translation checks: `python3 tests/i18n-runtime.py` checks live language switching on the installed Omarchy 4.5 shell. The 4.0 English fallback runs only when `FOAMY_HOST_40` names an Omarchy 4.0 `shell/` directory; otherwise the test prints a SKIP line.
