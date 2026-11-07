@@ -307,7 +307,8 @@ release existing popup/history callbacks. Their bounded text snapshots remain,
 but sender actions and further in-place updates are unavailable. Clicks use app
 focus instead. A local `image-path` is converted if it survives native closure.
 File-only and text-only notifications retain callbacks. Body markup follows stock 4.5: only `b i u s em strong br` render; other tags
-stay literal text, and links are offered as footer buttons, never as clickable text. No network image retrieval is added.
+stay literal text, and links are offered as footer buttons, never as clickable text. App names, titles, action
+labels and their tooltips are plain text. No network image retrieval is added.
 
 Critical alerts remain persistent by default, but restored popups are subject to
 the configured maximum age. No message content appears in the diagnostic IPC:

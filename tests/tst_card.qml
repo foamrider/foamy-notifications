@@ -167,6 +167,18 @@ Item {
       card.image="https://example.invalid/avatar.png"
       compare(card.contentImageSource,"")
     }
+    function test_sender_action_label_tooltip_is_plain_text() {
+      // A relayed (e.g. KDE Connect) action label is untrusted: as AutoText the
+      // tooltip would draw the tag as rich text and fetch the image.
+      var label='Open <img src="http://127.0.0.1:9/beacon.png" width="300" height="300"> and read the rest of this label'
+      card.width=280;card.actions=[{identifier:"open",text:label}];waitForRendering(card)
+      var button=findChild(card,"notificationAction"),tip=findChild(button,"notificationFooterToolTip")
+      verify(tip);compare(findChild(button,"notificationFooterLabel").children[1].textFormat,Text.PlainText)
+      mouseMove(button,button.width/2,button.height/2);tryCompare(tip,"visible",true)
+      compare(tip.text,label);compare(tip.contentItem.text,label);compare(tip.contentItem.textFormat,Text.PlainText)
+      verify(tip.width<=card.width)
+      mouseMove(card,-10,-10);tryCompare(tip,"visible",false)
+    }
     function test_full_width_title_wraps_without_hover_reflow() {
       // Long enough to wrap in the foamy body font (narrower than the bar's mono font).
       card.width=280;card.summary="Process crashed: xdg-desktop-portal-hyprland (signal 11, core dumped)"

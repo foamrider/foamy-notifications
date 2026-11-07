@@ -5,6 +5,7 @@ import QtQuick.Controls as Controls
 import Quickshell
 import qs.Commons
 import qs.Commons as Commons
+import qs.Ui
 import "../NotificationLogic.js" as Logic
 import "../Markup.js" as Markup
 import "../kit"
@@ -441,8 +442,16 @@ Rectangle {
         }
       }
     }
-    Controls.ToolTip.visible: hovered && footerLabel.implicitWidth > width - Style.space(16)
-    Controls.ToolTip.text: text
+    // Sender labels are untrusted: Qt's stock ToolTip draws AutoText, where a
+    // label holding a tag (`<img src="http://…">`) would render as rich text
+    // and fetch. PanelToolTip draws PlainText.
+    PanelToolTip {
+      objectName: "notificationFooterToolTip"
+      visible: footerButton.hovered && footerLabel.implicitWidth > footerButton.width - Style.space(16)
+      text: footerButton.text
+      fontFamily: root.fontFamily
+      implicitWidth: Math.min(implicitContentWidth + leftPadding + rightPadding, root.width)
+    }
     onClicked: {
       if (entry.kind === "action") {
         root.actionsExpanded = false

@@ -9,7 +9,7 @@ import hostenv
 
 source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-motion-'));app=base/'app';app.mkdir()
-(app/'Commons').symlink_to(hostenv.root()/'shell/Commons',target_is_directory=True)
+for name in ('Commons','Ui'):(app/name).symlink_to(hostenv.root()/'shell'/name,target_is_directory=True)
 # The plugin's kit/ (FoamyI18n, FoamyStyle, …) and the files the card imports.
 (app / 'kit').symlink_to(source / 'kit', target_is_directory=True)
 (app / 'i18n').symlink_to(source / 'i18n', target_is_directory=True)
