@@ -97,7 +97,10 @@ continue to work (see "Omarchy 4.5" below).
   waiting critical alerts show newest first, so they cannot keep a new alert
   off the screen either. For example, at a limit of 3, one normal
   notification followed by three critical alerts shows the normal one and
-  the two newest criticals, and the first critical waits. A small
+  the two newest criticals, and the first critical waits. A normal
+  notification that waits more than 5 minutes (`maxWaitSec`) goes to
+  history, where the center still lists it, so a flood of notifications
+  cannot keep a later one waiting for longer than that. A small
   "+N waiting" note under the stack counts the queue. Details, and how the
   queue survives a restart: [overflow queue](CONFIGURATION.md#overflow-queue).
 - As in stock Omarchy 4.5, new notifications, critical alerts too, wait while

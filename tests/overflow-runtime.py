@@ -204,9 +204,47 @@ try:
     reset()
     print('PASS: non-expiring criticals leave one slot for a normal notification')
 
+    # Nor can a flood of normal cards keep a later one waiting for the reserved
+    # slot: a normal card that waits past maxWaitSec (3 s here) goes to history,
+    # on its own timer, with nothing else happening.
+    configure(maxWaitSec=3)
+    wait(lambda: state()['settings']['maxWaitSec'] == 3, 'maxWaitSec 3')
+    first = send('Flood 1', 'critical'); second = send('Flood 2', 'critical'); long = send('Long normal')
+    wait(lambda: shown() == [long, second] and queue() == [first] and settled(), 'criticals and a long normal card fill the stack')
+    flood = [send('Flood normal ' + str(i)) for i in range(4)]
+    queued_at = time.monotonic()
+    wait(lambda: queue() == [first] + flood and settled(), 'the normal flood waits')
+    assert all(files('popups')[key].get('waitingSince', 0) > 0 for key in flood), 'the waiting clock is not saved'
+    wait(lambda: queue() == [first] and set(flood) <= set(files('history')), 'normal cards that waited too long go to history', 6)
+    waited = time.monotonic() - queued_at
+    assert 2.5 <= waited <= 5, 'aged after %.2f s' % waited
+    assert first in queue() and shown() == [long, second], 'aging touched a critical or a card on screen'
+    # A later normal card reaches the screen when the normal slot frees, well within its maximum wait.
+    later = send('Later normal')
+    wait(lambda: queue() == [first, later] and settled(), 'the later normal card waits')
+    sent_at = time.monotonic()
+    ipc('notifications', 'dismissOne')
+    wait(lambda: shown() == [second, later] and queue() == [first] and settled(), 'the later normal card takes the normal slot')
+    assert time.monotonic() - sent_at < 3, 'the later normal card did not show within its maximum wait'
+    reset()
+    # The waiting clock survives a restart: a card that waited 2 s before it ages 1 s after.
+    first = send('Flood 1', 'critical'); long = send('Long normal'); waiting = send('Waits over a restart')
+    wait(lambda: shown() == [long, first] and queue() == [waiting] and settled(), 'restart aging fixture')
+    clock = files('popups')[waiting]['waitingSince']
+    time.sleep(2)
+    os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
+    restarted_at = time.monotonic()
+    process = start()
+    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and waiting in files('history'), 'the waiting card ages after the restart')
+    assert time.monotonic() - restarted_at < 2.9, 'the restart reset the waiting clock'
+    assert json.loads(next((state_dir/'history').glob('*-' + waiting + '.json')).read_text()).get('waitingSince') in (None, clock)
+    wait(lambda: set(shown()) == {long, first} and not queue() and settled(), 'the cards on screen are restored')
+    reset()
+    print('PASS: normal cards that wait past maxWaitSec go to history on their own timer, also across a restart; a later card still shows')
+
     # The rest runs with one slot, where criticals take it, and 2 s normal timeouts.
-    configure(maxVisible=1, normalTimeoutSec=2)
-    wait(lambda: state()['settings']['maxVisible'] == 1 and state()['settings']['normalTimeoutSec'] == 2, 'maxVisible 1')
+    configure(maxVisible=1, normalTimeoutSec=2, maxWaitSec=300)
+    wait(lambda: state()['settings']['maxVisible'] == 1 and state()['settings']['normalTimeoutSec'] == 2 and state()['settings']['maxWaitSec'] == 300, 'maxVisible 1')
 
     # A waiting card's timer starts when it shows: C waited past its 2 s timeout.
     a = send('A', 'critical'); c = send('C'); d = send('D')
@@ -276,6 +314,8 @@ try:
     x = send('X', 'critical'); w = send('W', 'critical'); y = send('Y'); z = send('Z')
     wait(lambda: shown() == [w] and queue() == [x, y, z] and settled(), 'restart fixture')
     keys = {group['key'] for group in state()['groups']} | set(state()['queue'])
+    clocks = {key: files('popups')[key].get('waitingSince') for key in (x, y, z)}
+    assert all(clocks.values()), 'a waiting card was saved without its waiting clock'
     time.sleep(2.2)
     os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
     process = start()
@@ -283,6 +323,7 @@ try:
     wait(lambda: shown() == [w] and queue() == [x, y, z], 'the queue is restored waiting, in order')
     assert {group['key'] for group in state()['groups']} | set(state()['queue']) == keys, 'restart changed identities'
     assert len(files('popups')) == 4 and not files('history'), 'restart duplicated or archived a card'
+    assert {key: files('popups')[key].get('waitingSince') for key in (x, y, z)} == clocks, 'the restart reset a waiting clock'
     ipc('notifications', 'dismissOne'); ipc('notifications', 'dismissOne')
     wait(lambda: shown() == [y] and queue() == [z] and state()['popups'] == 2 and settled(), 'restored waiting cards show once')
     assert set(files('popups')) == {y, z} and set(files('history')) == {w, x}

@@ -726,7 +726,7 @@ Item {
       var key = NotificationLogic.imageStem(row)
       if (shownKeys[key]) place = {shown: true, rank: displayRanks[key], since: shownSince[key]}
       else if (!place && waitingKeys[key]) place = {shown: false, arrival: arrivals[key] !== undefined ? arrivals[key] : Number(row.timestamp),
-                                                    held: !!heldKeys[key], released: !!releasedKeys[key]}
+                                                    waitingSince: waitingSince[key], held: !!heldKeys[key], released: !!releasedKeys[key]}
       forgetPlacement(key)
       if (NotificationLogic.popupFileName(row) !== keepFileName) deletePopupFileFor(row)
       forgetNormalizedImages(row, NotificationLogic.popupFileName(row) === keepFileName)
@@ -748,6 +748,7 @@ Item {
     }
     waitingKeys[key] = true
     arrivals[key] = place.arrival
+    if (place.waitingSince !== undefined) waitingSince[key] = place.waitingSince
     if (place.held) heldKeys[key] = true
     if (place.released) releasedKeys[key] = true
     persistPopupFile(snapshot)
@@ -759,6 +760,7 @@ Item {
     delete waitingKeys[key]
     delete shownDeadlines[key]
     delete arrivals[key]
+    delete waitingSince[key]
     delete displayRanks[key]
     delete shownSince[key]
     delete replayKeys[key]
@@ -1119,10 +1121,14 @@ Item {
     var placed = Object.assign({}, snapshot)
     delete placed.queued
     delete placed.deadline
+    delete placed.waitingSince
     // Restart survival of the overflow queue: a waiting card is restored waiting,
+    // with the time it started waiting (its maximum wait does not start over),
     // and one that showed after waiting is judged by its own display clock.
-    if (waitingKeys[key]) placed.queued = true
-    else if (shownDeadlines[key] > 0) placed.deadline = shownDeadlines[key]
+    if (waitingKeys[key]) {
+      placed.queued = true
+      if (waitingSince[key] > 0) placed.waitingSince = waitingSince[key]
+    } else if (shownDeadlines[key] > 0) placed.deadline = shownDeadlines[key]
     var safeSnapshot = Features.redact(placed)
     var persistable = NotificationLogic.persistablePopup(safeSnapshot, imagesDir)
     var version = ++nextImageWriteVersion
@@ -1345,9 +1351,12 @@ Item {
       }
       // deadline and queued are persistence metadata, not model roles — fresh
       // rows never carry them, and ListModel roles must stay consistent.
+      var waitStart = Number(entry.waitingSince) || Number(entry.timestamp) || now
       delete entry.deadline
       delete entry.queued
-      if (queued) waiting[key] = true
+      delete entry.waitingSince
+      // Files from before waitingSince was saved: it waited since it arrived.
+      if (queued) waiting[key] = waitStart
       // Survivors restart with a full lifetime on purpose: shell restarts
       // are rare, and a full look after the restart flicker beats resuming
       // a toast with a second left on its clock. The reset is persisted as
@@ -1387,8 +1396,10 @@ Item {
         service.restoredPopups[NotificationLogic.popupFileName(restored)] = true
         // Cards that were on screen stay; waiting ones wait again (planStack).
         var restoredKey = NotificationLogic.imageStem(restored)
-        if (waiting[restoredKey]) service.waitingKeys[restoredKey] = true
-        else service.shownKeys[restoredKey] = true
+        if (waiting[restoredKey]) {
+          service.waitingKeys[restoredKey] = true
+          service.waitingSince[restoredKey] = waiting[restoredKey]
+        } else service.shownKeys[restoredKey] = true
         popupModel.append(restored)
       }
     })
@@ -1650,9 +1661,11 @@ Item {
   // shows, waits or goes first is NotificationLogic.planStack's priority:
   // criticals first, the newest first (a newer one rotates the oldest back
   // into the queue), then the other cards in arrival order, with one slot
-  // kept for those when visibleLimit is 2 or more. A waiting card's
-  // timer starts when it shows, and it joins the bottom of the stack, so the
-  // cards on screen (and the one under the pointer) do not move for it.
+  // kept for those when visibleLimit is 2 or more. A non-critical card that
+  // waits preferences.maxWaitSec goes to history (waitingSince, waitAging).
+  // A waiting card's timer starts when it shows, and it joins the bottom of
+  // the stack, so the cards on screen (and the one under the pointer) do not
+  // move for it.
   readonly property int queueLimit: 100
   // Popup files restored at startup: every queued card plus the visible ones.
   readonly property int restoreLimit: 200
@@ -1664,6 +1677,13 @@ Item {
   property var shownDeadlines: ({})
   // Arrival times that differ from a key's timestamp (a replacement keeps its turn).
   property var arrivals: ({})
+  // When each waiting card started waiting (planStack waitingSince): a
+  // non-critical card that waits preferences.maxWaitSec goes to history, so no
+  // flood can keep a later card waiting for longer. Saved in its popup file.
+  property var waitingSince: ({})
+  // Rebuilds when the next waiting card reaches its maximum wait; stopped
+  // while no non-critical card waits.
+  Timer { id: waitAging; repeat: false; onTriggered: service.scheduleRebuild() }
   // Stack order of the cards on screen (planStack ranks); higher is higher up.
   property var displayRanks: ({})
   property double rankTop: 0
@@ -1786,17 +1806,26 @@ Item {
     }
     heldKeys = held
     heldCount = Object.keys(held).length
+    var planNow = Date.now()
     var plan = NotificationLogic.planStack(candidates, {limit: visibleLimit, shown: shownKeys, waiting: planWaiting,
       ranks: displayRanks, since: shownSince, seq: sinceSeq, arrivals: arrivals, top: rankTop, bottom: rankBottom, queueLimit: queueLimit,
+      now: planNow, maxWait: preferences.maxWaitSec * 1000, waitingSince: waitingSince,
       pinned: function(group) { return service.pinnedGroup(group, hovered) }, canWait: canWait,
       held: function(group) { return group.keys.every(function(key) { return !!held[key] }) }})
     rankTop = plan.top
     rankBottom = plan.bottom
     sinceSeq = plan.seq
+    waitingSince = plan.waitingSince
+    if (plan.nextAging > 0) {
+      waitAging.interval = Math.max(50, Math.ceil(plan.nextAging - planNow) + 10)
+      waitAging.restart()
+    } else waitAging.stop()
     // Replays that did not fit leave; past the queue bound the oldest
-    // non-critical waiting card goes to history.
+    // non-critical waiting card goes to history, and so does one that waited
+    // too long (it expired without showing).
     plan.dropped.forEach(function(group) { service.removeKeys(group.keys, "dismiss") })
     if (plan.evicted.length) removeKeys(plan.evicted, "dismiss")
+    if (plan.aged.length) removeKeys(plan.aged, "expire")
 
     var now = Date.now(), nextShown = {}, nextWaiting = {}, changed = []
     for (var v = 0; v < plan.visible.length; v++) {

@@ -51,6 +51,7 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
 | `fullscreenCritical` | Allows critical alerts through fullscreen suppression. DND remains a separate control. |
 | `width` | 280–600 shell spacing units; constrained to the screen. |
 | `restoreMaxAgeSec` | 0–3600. Older popups go to history after a shell restart. |
+| `maxWaitSec` | 1–3600; 300 by default. Not in the center's settings. A normal notification that waits longer than this in the [overflow queue](#overflow-queue) goes to history. Critical alerts are not affected. |
 | `compact` | `true` (default) uses a slim header and tighter content spacing; `false` adds room around the header and message. Text and sender-image sizes stay unchanged. |
 | `showTimeoutIndicator` | `true` (default) shows a subtle 2 px straight line inset from the rounded bottom corners for timed popups. It shrinks smoothly with the shared frame-based expiry clock, pauses on hover, expanded actions or an action in progress, and is hidden for persistent notifications. `false` hides it without changing timeout behavior. |
 | `showImages` | Shows the sender image beside the message. Defaults to `true`. |
@@ -95,6 +96,17 @@ lost for lack of room:
 - **Timers.** A waiting card's timer does not run. It starts when the card
   shows, so the card gets its full time on screen. A card that waits again
   starts over when it shows again.
+- **Maximum wait.** A normal (non-critical) notification that waits more
+  than 5 minutes (`maxWaitSec`, 300 by default) goes to history without
+  showing, as if it expired; the Notification Center still lists it. The
+  wait counts from when the card started waiting: when it arrived, or when
+  it was sent back to the queue. Held cards count as waiting too (the
+  hold's 30 seconds end first). A timer runs only while normal cards wait,
+  and sends them to history on time even when nothing else happens. So a
+  flood of notifications, from one app or many, cannot keep a later
+  notification off the screen: it shows, or reaches history, within about
+  5 minutes plus one card's time on screen. Critical alerts never age out:
+  a new critical rotates in at once.
 - **Placement.** A card from the queue joins the bottom of the stack. Cards
   on screen never move for it, and the hovered card stays under the pointer.
   New arrivals that fit appear on top, unless the pointer is over the stack
@@ -122,8 +134,10 @@ lost for lack of room:
   `dismissAll` dismisses the waiting cards too; all of them go to history.
 - **Restart.** Waiting cards keep their popup file, marked `"queued": true`,
   so a shell restart or reload restores them waiting, in order, once each.
-  Their expiry is not checked at restore (their timer has not started), but
-  `restoreMaxAgeSec` applies, as to any popup. A card that showed after
+  The file also keeps when the card started waiting (`waitingSince`), so a
+  restart does not reset its maximum wait. Their expiry is not checked at
+  restore (their timer has not started), but `restoreMaxAgeSec` applies, as
+  to any popup. A card that showed after
   waiting is saved with its own `deadline`, so a restart judges it by the
   time it has been on screen. At most 200 popup files are restored.
 - **Bound.** At most 100 notifications wait. Past that, the oldest waiting
@@ -169,8 +183,9 @@ nothing moves under the pointer:
   keyboard-selected card keep their slots, as before. Unlike stock, keyboard
   mode alone does not hold arrivals: the selection follows its card.
 - **Timers and restart.** A held card is a waiting card: its timer starts
-  when it shows, its popup file is marked `"queued": true`, and after a
-  restart it comes back once, waiting, with its full time on screen.
+  when it shows, its popup file is marked `"queued": true`, its time held
+  counts toward the queue's maximum wait, and after a restart it comes back
+  once, waiting, with its full time on screen.
 
 ### Browser apps
 

@@ -413,8 +413,13 @@ function popupEntry(value, normalUrgency) {
   var deadline = Number((value || {}).deadline || 0)
   if (isFinite(deadline) && deadline > 0) entry.deadline = deadline
   // Set while the card waits in the overflow queue (planStack): it has not
-  // shown yet, so its display clock has not started.
-  if ((value || {}).queued === true) entry.queued = true
+  // shown yet, so its display clock has not started. waitingSince is when it
+  // started waiting, so a restart does not reset its maximum wait.
+  if ((value || {}).queued === true) {
+    entry.queued = true
+    var waitingSince = Number((value || {}).waitingSince || 0)
+    if (isFinite(waitingSince) && waitingSince > 0) entry.waitingSince = waitingSince
+  }
   return entry
 }
 
@@ -566,6 +571,18 @@ function popupExpired(entry, duration, now) {
 // The queue holds at most `queueLimit` notifications: past it the oldest
 // waiting non-critical one (else the oldest waiting one) is `evicted`.
 //
+// A non-critical notification waits at most `maxWait` ms: past it, it is
+// `aged` (to history), so no flood of normal cards can keep a later one off
+// the screen for longer than that. Its clock is `waitingSince` (ms, by key),
+// the time it started waiting: when it arrived, or when it was sent back to
+// the queue; a key without one starts waiting `now` (a replacement inherits
+// the replaced card's clock, see Service.inheritPlace). Each key ages on its
+// own, so a duplicate merged into a waiting group does not refresh the
+// others. Held cards wait like any other. Criticals are never aged: they
+// rotate, so a new one shows at once.
+// The plan returns `waitingSince` for every waiting key (the caller keeps and
+// persists it) and `nextAging`, when the next card would age (0 for none).
+//
 // `held` groups (arrivals while the pointer is over the stack) wait whatever
 // their urgency and whatever room there is: they take no slot until the hold
 // ends. A group on screen, or one that cannot wait, is never held.
@@ -636,6 +653,27 @@ function planStack(groups, options) {
   }
   waiting.sort(waitOrder)
 
+  var now = o.now === undefined ? Date.now() : Number(o.now)
+  var maxWait = o.maxWait === undefined ? Infinity : Math.max(0, Number(o.maxWait))
+  var started = o.waitingSince || {}
+  function startOf(key) {
+    var value = Number(started[key])
+    return started[key] !== undefined && isFinite(value) ? value : now
+  }
+  var aged = []
+  waiting.forEach(function(e) {
+    if (e.group.urgency === 2) return
+    e.group.keys.forEach(function(key) { if (now - startOf(key) >= maxWait) aged.push(key) })
+  })
+  function withoutKeys(gone) {
+    return waiting.filter(function(e) {
+      e.group.keys = e.group.keys.filter(function(key) { return gone.indexOf(key) < 0 })
+      if (e.group.keys.length && e.group.keys.indexOf(e.group.key) < 0) e.group.key = e.group.keys[0]
+      return e.group.keys.length > 0
+    })
+  }
+  if (aged.length) waiting = withoutKeys(aged)
+
   var evicted = []
   var queueLimit = o.queueLimit === undefined ? Infinity : Math.max(0, Number(o.queueLimit))
   var rows = []
@@ -645,12 +683,15 @@ function planStack(groups, options) {
   if (rows.length > queueLimit) {
     rows.sort(function(a, b) { return (a.critical ? 1 : 0) - (b.critical ? 1 : 0) || a.arrival - b.arrival })
     evicted = rows.slice(0, rows.length - queueLimit).map(function(row) { return row.key })
-    waiting = waiting.filter(function(e) {
-      e.group.keys = e.group.keys.filter(function(key) { return evicted.indexOf(key) < 0 })
-      if (e.group.keys.length && e.group.keys.indexOf(e.group.key) < 0) e.group.key = e.group.keys[0]
-      return e.group.keys.length > 0
-    })
+    waiting = withoutKeys(evicted)
   }
+  var waitingSince = {}, nextAging = Infinity
+  waiting.forEach(function(e) {
+    e.group.keys.forEach(function(key) {
+      waitingSince[key] = startOf(key)
+      if (e.group.urgency !== 2) nextAging = Math.min(nextAging, waitingSince[key] + maxWait)
+    })
+  })
 
   var top = Number(o.top) || 0, bottom = Number(o.bottom) || 0, seq = Number(o.seq) || 0
   var fresh = [], promoted = []
@@ -677,6 +718,9 @@ function planStack(groups, options) {
     waiting: waiting.map(function(e) { return e.group }),
     dropped: dropped,
     evicted: evicted,
+    aged: aged,
+    waitingSince: waitingSince,
+    nextAging: isFinite(nextAging) ? nextAging : 0,
     top: top,
     bottom: bottom
   }

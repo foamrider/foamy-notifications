@@ -11,7 +11,7 @@ const row = (id, summary, urgency = 1, timestamp = 1000 + id) => ({id, originalI
 
 function stack(limit, options = {}) {
   const state = {rows: [], shown: {}, waiting: {}, ranks: {}, since: {}, arrivals: {}, top: 0, bottom: 0, seq: 0, pinned: new Set(), history: [],
-    holding: false, held: {}, released: {}}
+    holding: false, held: {}, released: {}, now: 1000000, waitingSince: {}}
   state.rebuild = () => {
     const groups = Preferences.groups(state.rows, true, 'browser', {browser: () => false})
     const canWait = group => !group.keys.every(key => (options.replays || new Set()).has(key))
@@ -22,9 +22,9 @@ function stack(limit, options = {}) {
     state.released = {}; state.held = held
     const plan = Logic.planStack(groups, {limit, shown: state.shown, waiting, ranks: state.ranks, since: state.since, arrivals: state.arrivals,
       top: state.top, bottom: state.bottom, seq: state.seq, queueLimit: options.queueLimit, pinned: group => state.pinned.has(group.key),
-      canWait, held: group => group.keys.every(key => held[key])})
-    state.top = plan.top; state.bottom = plan.bottom; state.seq = plan.seq
-    const gone = plan.dropped.flatMap(group => group.keys).concat(plan.evicted)
+      canWait, held: group => group.keys.every(key => held[key]), now: state.now, maxWait: options.maxWait, waitingSince: state.waitingSince})
+    state.top = plan.top; state.bottom = plan.bottom; state.seq = plan.seq; state.waitingSince = plan.waitingSince
+    const gone = plan.dropped.flatMap(group => group.keys).concat(plan.evicted, plan.aged)
     state.history.push(...gone)
     state.rows = state.rows.filter(r => gone.indexOf(Logic.imageStem(r)) < 0)
     state.shown = {}; state.waiting = {}
@@ -40,6 +40,8 @@ function stack(limit, options = {}) {
   state.hover = () => { state.holding = true; return state.rebuild() }
   state.release = () => { Object.assign(state.released, state.held); state.held = {}; return state.rebuild() }
   state.unhover = () => { state.holding = false; return state.release() }
+  // Time passes (ms); Service rebuilds when the next waiting card ages (plan.nextAging).
+  state.advance = ms => { state.now += ms; return state.rebuild() }
   state.visible = () => state.plan.visible.map(group => group.summary)
   state.queue = () => state.plan.waiting.map(group => group.summary)
   return state
@@ -298,8 +300,11 @@ test('restored cards keep their place: shown ones stay, queued ones wait', () =>
 })
 
 test('popup files carry the queued flag through parsing', () => {
-  const [entry] = Logic.parsePopupFiles(JSON.stringify({...row(1, 'Waiting'), queued: true}) + '\n', 1)
+  const [entry] = Logic.parsePopupFiles(JSON.stringify({...row(1, 'Waiting'), queued: true, waitingSince: 1234}) + '\n', 1)
   assert.equal(entry.queued, true)
+  assert.equal(entry.waitingSince, 1234, 'a restart keeps the waiting clock')
+  const [stale] = Logic.parsePopupFiles(JSON.stringify({...row(3, 'Shown'), waitingSince: 1234}) + '\n', 1)
+  assert.equal(stale.waitingSince, undefined, 'only waiting cards carry a waiting clock')
   const [plain] = Logic.parsePopupFiles(JSON.stringify(row(2, 'Shown')) + '\n', 1)
   assert.equal(plain.queued, undefined)
   // A queued card never ran its clock: only restorePopups' age check applies to it.
@@ -388,4 +393,80 @@ test('cards restored waiting are not held: they keep their turn in the queue', (
   assert.deepEqual(s.held, {})
   s.leave(1)
   assert.deepEqual(s.visible(), ['Restored queued'])
+})
+
+test('a normal card that waits longer than the maximum goes to history; a fresh one stays', () => {
+  const s = stack(1, {maxWait: 300000})
+  s.arrive(row(1, 'Alert', 2))
+  s.arrive(row(2, 'Old'))
+  assert.equal(s.plan.waitingSince['1002-2'], 1000000)
+  assert.equal(s.plan.nextAging, 1300000, 'Service rebuilds when the oldest waiting card ages')
+  s.advance(200000)
+  s.arrive(row(3, 'Fresh'))
+  assert.deepEqual(s.queue(), ['Old', 'Fresh'])
+  s.advance(99999)
+  assert.deepEqual(s.queue(), ['Old', 'Fresh'], 'not before its time')
+  s.advance(1)
+  assert.deepEqual(s.history, ['1002-2'], 'the aged card goes to history')
+  assert.deepEqual(s.queue(), ['Fresh'])
+  assert.equal(s.plan.nextAging, 1500000)
+  assert.deepEqual(s.visible(), ['Alert'])
+  s.leave(1)
+  assert.deepEqual(s.visible(), ['Fresh'])
+  assert.equal(s.plan.nextAging, 0, 'no timer while no card waits')
+})
+
+test('critical cards are never aged out of the queue', () => {
+  const s = stack(1, {maxWait: 300000})
+  s.arrive(row(1, 'First alert', 2)); s.arrive(row(2, 'Second alert', 2))
+  assert.deepEqual(s.queue(), ['First alert'])
+  assert.equal(s.plan.nextAging, 0)
+  s.advance(3600000)
+  assert.deepEqual(s.queue(), ['First alert'])
+  assert.deepEqual(s.history, [])
+})
+
+test('a card sent back to the queue measures its wait from then, not from its arrival', () => {
+  const s = stack(2, {maxWait: 300000})
+  s.arrive(row(1, 'Stays')); s.arrive(row(2, 'Sent back'))
+  s.advance(250000)
+  // The critical takes the slot of the normal card shown last, which waits again.
+  s.arrive(row(3, 'Alert', 2))
+  assert.deepEqual(s.visible(), ['Alert', 'Stays'])
+  assert.deepEqual(s.queue(), ['Sent back'])
+  assert.equal(s.plan.waitingSince['1002-2'], 1250000)
+  s.advance(100000)
+  assert.deepEqual(s.queue(), ['Sent back'], 'it arrived 350 s ago but has waited 100 s')
+  s.advance(200000)
+  assert.deepEqual(s.queue(), [])
+  assert.deepEqual(s.history, ['1002-2'])
+})
+
+test('held cards age like any waiting card, and a released one keeps its clock', () => {
+  const s = stack(3, {maxWait: 300000})
+  s.arrive(row(1, 'Below')); s.hover()
+  s.arrive(row(2, 'Held'))
+  s.advance(30000)
+  s.unhover()
+  assert.deepEqual(s.visible(), ['Held', 'Below'])
+  s.hover(); s.arrive(row(3, 'Held long'))
+  assert.equal(s.plan.waitingSince['1003-3'], 1030000)
+  s.release(); s.hover()
+  assert.equal(s.plan.waitingSince['1003-3'], undefined, 'a released card that shows stops waiting')
+})
+
+test('a flood of normal cards cannot keep a later one waiting past the maximum plus one display', () => {
+  const s = stack(5, {maxWait: 300000, queueLimit: 100})
+  for (const i of [1, 2, 3, 4, 5]) s.arrive(row(i, 'Flood alert ' + i, 2))
+  for (let i = 6; i < 106; i++) s.arrive(row(i, 'Flood ' + i))
+  assert.deepEqual(s.visible(), ['Flood 6', 'Flood alert 5', 'Flood alert 4', 'Flood alert 3', 'Flood alert 2'])
+  s.advance(1000)
+  s.arrive(row(200, 'Victim', 1, 5000))
+  assert.equal(s.queue().indexOf('Victim'), s.queue().length - 1, 'it waits behind the flood')
+  s.advance(299500)
+  assert.deepEqual(s.queue(), ['Flood alert 1', 'Victim'], 'the flood aged out; the victim is next')
+  assert.equal(s.history.length, 99)
+  // The flood card on screen leaves (its display time): the victim takes the normal slot.
+  s.leave(6)
+  assert.deepEqual(s.visible(), ['Flood alert 5', 'Flood alert 4', 'Flood alert 3', 'Flood alert 2', 'Victim'])
 })
