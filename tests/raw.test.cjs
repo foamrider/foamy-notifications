@@ -13,7 +13,7 @@ function fixture(rows=[]) {
     Qt:{callLater:fn=>later.push(fn)},snapshotOf:n=>Logic.snapshotOf(n,1000),
     suppressForFullscreen:()=>false,refreshContext(){},scheduleRebuild(){},durationFor:()=>5000,
     popupModel:{get:i=>rows[i],get count(){return rows.length},setProperty(i,key,value){rows[i][key]=value},insert(i,row){rows.splice(i,0,row)}},
-    cancelPendingWrites:keys=>cancelled.push(...keys),removePopupsByOriginalId(){},
+    cancelPendingWrites:keys=>cancelled.push(...keys),removePopupsByOriginalId(){return null},inheritPlace(){},restartLifetime(key,duration){s.lifetimes[key]=duration},
     persistPopupFile:row=>{writes.push({kind:'popup',row});return true},writeHistoryFile:row=>writes.push({kind:'history',row}),
     reportPersistenceError:message=>writes.push({kind:'error',message}),rejectNotification:n=>{n.tracked=false},
     handleNotification:n=>writes.push({kind:'native',n})})

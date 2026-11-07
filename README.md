@@ -86,12 +86,15 @@ continue to work (see "Omarchy 4.5" below).
   to remove the popup's whole duplicate group from history instead.
 - Left-clicking a notification with no action from an app that has no window
   (such as a screenshot tool's "copied" notice) just closes it, like right-click.
-- Exact duplicates share a card. Overflow goes to history: at most `maxVisible`
-  cards show (3 by default, fewer if they do not fit), and a new arrival past
-  that moves the oldest card, critical or not, to history, where the center
-  still lists it. Critical alerts stay until dismissed by default, so three
-  of them keep the cap full and an earlier normal notification leaves the
-  screen at once.
+- Exact duplicates share a card. At most `maxVisible` cards show (3 by
+  default, fewer if they do not fit the screen). The rest wait in a queue
+  instead of going to history, and show as cards leave (dismissed, expired or
+  handled), oldest first. A waiting card's timer starts when it shows, so it
+  gets its full time on screen, and it joins the bottom of the stack, so the
+  cards already there do not move. Critical alerts go first: a new one takes
+  the slot of the normal card shown last, which waits again. A small
+  "+N waiting" note under the stack counts the queue. Details, and how the
+  queue survives a restart: [overflow queue](CONFIGURATION.md#overflow-queue).
 - Hover the card to reveal the snooze button to the left of the timestamp.
   It also appears on keyboard focus. The button snoozes that sender for
   15 minutes, 30 minutes, 1 hour, or 4 hours. Browser notifications use the
@@ -125,6 +128,8 @@ continue to work (see "Omarchy 4.5" below).
 - Cards fade in and out. While the pointer is inside the stack, cards that
   leave above it keep their space, so the hovered card does not move away;
   closing a card (or one leaving below the pointer) slides the cards below up.
+  A waiting card that shows joins below the others, so it never pushes the
+  hovered card either, and the hovered card keeps its slot.
   With Omarchy's animations off, they move at once.
 
 Configure timeout, compact layout, images, monitor placement, fullscreen
@@ -174,7 +179,7 @@ Keyboard mode: Up/Down, `j`/`k` or Tab move between cards, Enter or Space clicks
 Delete dismisses, `1`–`9` press the numbered button, Escape (or ten idle seconds)
 gives the keyboard back. Notifications never take the keyboard on their own.
 `dismissOne` hides the whole newest card, including grouped duplicates, and
-`dismissAll` hides every popup; both preserve history. The close button and
+`dismissAll` hides every popup, waiting ones too; both preserve history. The close button and
 keyboard Delete follow `closeButtonRemovesHistory`. The empty-history message
 can always be dismissed and is never written to history.
 

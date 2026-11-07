@@ -24,5 +24,6 @@
   "Clipboard is busy. Try again.": "Utklippstavlen er opptatt. Prøv igjen.",
   "Could not open the link. Try again.": "Kunne ikke åpne lenken. Prøv igjen.",
   "Could not copy the code. Check wl-copy and try again.": "Kunne ikke kopiere koden. Kontroller wl-copy og prøv igjen.",
-  "This plugin's helper isn't available for this CPU.": "Hjelpeprogrammet til denne utvidelsen er ikke tilgjengelig for denne prosessoren."
+  "This plugin's helper isn't available for this CPU.": "Hjelpeprogrammet til denne utvidelsen er ikke tilgjengelig for denne prosessoren.",
+  "+%1 waiting": "+%1 venter"
 }

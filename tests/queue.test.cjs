@@ -128,7 +128,7 @@ test('rejected DND writes release their live object without catch-up recursion o
 
 test('popup producers roll back rejected image generations and history producers carry cancellation identity', () => {
   const s = fixture()
-  s.imagesDir='/tmp/images/'; s.nextImageWriteVersion=0; s.imageWriteVersions={}
+  s.imagesDir='/tmp/images/'; s.nextImageWriteVersion=0; s.imageWriteVersions={}; s.waitingKeys={}; s.shownDeadlines={}
   load(s, 'persistPopupFile'); load(s, 'writeHistoryFile')
   const row={originalId:1,timestamp:1000,app:'Chat',appIcon:'chat',body:'\0'.repeat(25000)}
   assert.equal(s.persistPopupFile(row), false)

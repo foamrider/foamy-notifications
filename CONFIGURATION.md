@@ -38,7 +38,7 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
 | --- | --- |
 | `lowTimeoutSec`, `normalTimeoutSec` | 1–120 seconds. Longer sender-requested reading times are honored up to 120 seconds. |
 | `criticalTimeoutSec` | 0 keeps critical alerts until dismissed; 1–120 sets an expiry. |
-| `maxVisible` | 1–10 groups. Screen space may reduce this further. Older groups go to history, whatever their urgency: the newest cards stay on screen. |
+| `maxVisible` | 1–10 cards (groups) on screen; 3 by default. Screen space may reduce this further. Cards past either limit wait in the [overflow queue](#overflow-queue) instead of going to history. |
 | `groupDuplicates` | Groups exact duplicates. Different actions or sending applications remain separate. |
 | `closeButtonRemovesHistory` | `false` (default) keeps notifications in history when × closes a popup. `true` removes the popup's whole duplicate group from history without invoking any action. Right-click, expiry, and keyboard/IPC dismissal still keep history. Failed removal leaves the popup available for retry. |
 | `dndSilenceCritical` | `false` (default) preserves trusted critical alerts through Do Not Disturb. `true` sends all new critical alerts, including Omarchy crash notifications, directly to history during DND. Transient alerts are not stored. Normal Omarchy action feedback and delivery outside DND are unchanged. |
@@ -59,6 +59,60 @@ under **Settings → Foamy Notifications**; all settings remain in this entry.
 On `all` monitors, fullscreen outputs hide normal popups while other outputs can
 still show them. Group expiry has one shared clock, so it does not run faster on
 multiple monitors. Hovering any copy pauses the group.
+
+### Overflow queue
+
+When `maxVisible` cards are on screen, or no further card fits the screen
+height, a new card waits in a queue instead of going to history. Nothing is
+lost for lack of room:
+
+- **Order.** Critical alerts go first. A new critical alert takes the slot of
+  the non-critical card shown last; that card waits again, at the head of the
+  queue. Waiting cards show in arrival order, criticals before the rest, one
+  per freed slot: when a card is dismissed, expires, or is handled by a click
+  or an action. A hovered card, a card with an action in progress and the
+  keyboard-selected card always keep their slot.
+- **Timers.** A waiting card's timer does not run. It starts when the card
+  shows, so the card gets its full time on screen. A card that waits again
+  starts over when it shows again.
+- **Placement.** A card from the queue joins the bottom of the stack. Cards
+  on screen never move for it, and the hovered card stays under the pointer.
+  New arrivals that fit still appear on top. A small "+N waiting" note under
+  the last card counts the waiting cards; it disappears with the queue.
+- **Screen space.** When the cards do not fit between the bar and the bottom
+  of the screen, the card shown last waits again, and the limit drops to what
+  fits. Each card that leaves lets one more try; a change of screen height
+  (or of the settings) resets the limit to `maxVisible`. While the pointer is in
+  the stack nothing is sent back; the check runs when it leaves.
+- **Updates.** Replacements (`replaces_id`) and duplicates update a waiting
+  card in place: it keeps its turn. A sender that closes a waiting
+  notification (D-Bus `CloseNotification`) withdraws it: it never shows and
+  goes to history. A card on screen stays when its sender closes it, without
+  its actions, as before. Notification Center removals (`releaseHistory`,
+  `releaseHistoryBefore`) and its clicks (`invokeDefault`) reach waiting
+  cards too.
+- **DND, snoozes and fullscreen.** A waiting card has not been seen, so it is
+  treated like a new arrival: turning on DND sends it to history, unless it
+  bypasses DND (trusted critical alerts, see `dndSilenceCritical`). Cards on
+  screen stay, as before. A snooze hides its sender's cards, waiting or
+  shown, and fullscreen suppression archives both alike, as before.
+  `dismissAll` dismisses the waiting cards too; all of them go to history.
+- **Restart.** Waiting cards keep their popup file, marked `"queued": true`,
+  so a shell restart or reload restores them waiting, in order, once each.
+  Their expiry is not checked at restore (their timer has not started), but
+  `restoreMaxAgeSec` applies, as to any popup. A card that showed after
+  waiting is saved with its own `deadline`, so a restart judges it by the
+  time it has been on screen. At most 200 popup files are restored.
+- **Bound.** At most 100 notifications wait. Past that, the oldest waiting
+  non-critical notification goes to history (if every waiting notification
+  is critical, the oldest of those). Waiting notifications keep their sender
+  callbacks, within the 256 live sources the service tracks.
+- **Replays.** `showHistory` shows what fits and never queues: replayed
+  entries are already in history.
+
+`omarchy-shell foamy.notifications state` lists the waiting cards' keys in
+queue order (`queue`) and the current `visibleLimit`; `probe` counts them
+(`waiting`).
 
 ### Browser apps
 
@@ -144,7 +198,7 @@ icons and app-focus clicks are unaffected, as are notifications with file images
 
 Foamy keeps its own state in `$XDG_STATE_HOME/foamy-notifications/`
 (normally `~/.local/state/foamy-notifications/`, mode 0700): `popups/` (one
-file per visible popup), `history/` (newest 100), `images/` (normalized PNGs),
+file per visible or waiting popup), `history/` (newest 100), `images/` (normalized PNGs),
 `state.json` (DND and snoozes) and `handled` (keys of handled notifications,
 newest 1,000, read by Notification Center). Omarchy 4.5 owns
 `~/.local/state/omarchy/notifications`; on its first start this version moves
@@ -222,9 +276,13 @@ python3 tests/images-ui.py
 python3 tests/motion.py
 # In a Wayland desktop, verify animation frames on a real surface:
 python3 tests/motion.py --desktop
-# Requires Wayland; checks first-popup mapping and final-popup unmapping:
+# Requires Wayland; checks first-popup mapping and final-popup unmapping, and
+# that cards which do not fit the real screen wait in the queue:
 python3 tests/layer.py
 python3 tests/runtime.py
+# The overflow queue: order, timers, replacements, CloseNotification, DND,
+# restart survival, screen space and the hover rule:
+python3 tests/overflow-runtime.py
 # Stalled-worker floods, raw 4 MiB buffers, replacements and context backlog:
 python3 tests/queue-runtime.py
 # Center preference saves through the host API (shell.updateEntryInline):

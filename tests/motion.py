@@ -67,7 +67,12 @@ ShellRoot {
   property real trackFrom:0
   property real trackTo:0
   property int betweenFrames:0
+  // Frames on which a card that must stay put (under the pointer) is elsewhere.
+  property var pinned:null
+  property real pinnedY:0
+  property int pinnedMoves:0
   FrameAnimation {running:true;onTriggered:{
+   if (window.pinned && Math.abs(window.pinned.mapToItem(popupColumn,0,0).y-window.pinnedY)>0.5) window.pinnedMoves++
    if (window.tracked) {
     var y=window.tracked.mapToItem(popupColumn,0,0).y
     if (y>Math.min(window.trackFrom,window.trackTo)+0.5 && y<Math.max(window.trackFrom,window.trackTo)-0.5) window.betweenFrames++
@@ -82,7 +87,7 @@ ShellRoot {
    onCompletedChanged:if(completed)console.log("MOTION_RESULT",qtest_results.passCount,"passed",qtest_results.failCount,"failed")
    // A failed test must not leave cards, the pointer or reduced motion to the next.
    function cleanup(){
-    Commons.Style.reduceMotion=false;window.tracked=null;window.watched=null
+    Commons.Style.reduceMotion=false;window.tracked=null;window.watched=null;window.pinned=null;popupColumn.waiting=0
     mouseMove(window.contentItem,490,250);popupColumn.groups=[]
     tryVerify(function(){return popupColumn.implicitHeight===0},3000)
    }
@@ -196,6 +201,44 @@ ShellRoot {
     if(data.reduce)check(frames===0,"with animations off the stack moves at once ("+frames+" frames)")
     else check(frames>1,"the stack slides up after the top card leaves ("+frames+" frames)")
    }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
+   function test_waiting_card_joins_below_hovered(){try{
+    // A card from the overflow queue joins the bottom of the stack: while the
+    // pointer rests on a card, nothing above it moves it, not a card leaving
+    // above (its space is kept), below, or a waiting card appearing.
+    function at(card){return card.mapToItem(popupColumn,0,0).y}
+    popupColumn.waiting=2
+    popupColumn.groups=[row("6-1","Top"),row("6-2","Hovered"),row("6-3","Bottom")]
+    tryCompare(popupColumn,"count",3)
+    tryVerify(function(){return popupColumn.itemAtIndex(2)!==null})
+    var hovered=popupColumn.itemAtIndex(1),bottom=popupColumn.itemAtIndex(2)
+    tryCompare(bottom,"opacity",1);tryCompare(bottom,"entranceOffset",0)
+    var note=popupColumn.footerItem
+    check(note&&note.height>0,"the waiting note shows under the stack")
+    check(note.mapToItem(popupColumn,0,0).y>=at(bottom)+bottom.height,"the note sits below the last card")
+    var noteLabel=findChild(note,"waitingNote");check(noteLabel&&noteLabel.children[0].text==="+2 waiting","the note counts the waiting cards")
+    var hoveredY=at(hovered),bottomY=at(bottom)
+    capture("waiting-note");wait(150)
+    mouseMove(hovered,100,20);tryCompare(popupColumn,"holdPositions",true)
+    window.pinnedY=hoveredY;window.pinnedMoves=0;window.pinned=hovered
+    // The top card expires and the first waiting card shows, under the bottom card.
+    popupColumn.waiting=1
+    popupColumn.groups=[row("6-2","Hovered"),row("6-3","Bottom"),row("6-4","Waited")]
+    tryVerify(function(){var c=popupColumn.itemAtIndex(2);return popupColumn.count===3&&c&&c.summary==="Waited"&&c.opacity===1&&c.entranceOffset===0})
+    var waited=popupColumn.itemAtIndex(2)
+    check(at(waited)>at(bottom),"the waiting card joins below the stack")
+    check(at(bottom)===bottomY,"the card below the pointer stays put")
+    // The card below the pointer expires and the last waiting card shows: the
+    // cards below the pointer move up, the hovered card does not.
+    popupColumn.waiting=0
+    popupColumn.groups=[row("6-2","Hovered"),row("6-4","Waited"),row("6-5","Last")]
+    tryVerify(function(){var c=popupColumn.itemAtIndex(2);return popupColumn.count===3&&c&&c.summary==="Last"&&c.opacity===1&&c.entranceOffset===0&&at(waited)===bottomY},3000,"the cards below slide up and the last waiting card joins")
+    tryVerify(function(){return note.height===0},3000,"the note leaves with the queue")
+    check(window.pinnedMoves===0,"the hovered card moved on "+window.pinnedMoves+" frames")
+    check(at(hovered)===hoveredY&&hovered.hovered,"the hovered card is still under the pointer")
+    window.pinned=null
+    mouseMove(window.contentItem,490,250)
+    tryVerify(function(){return at(hovered)===0},3000,"leaving the stack closes the gap above")
+   }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
    function test_removal_during_entrance(){
     popupColumn.groups=[row("2-2","Short lived")];tryCompare(popupColumn,"count",1)
     tryVerify(function(){return popupColumn.itemAtIndex(0)!==null})
@@ -221,4 +264,4 @@ except subprocess.TimeoutExpired:
  os.killpg(process.pid,signal.SIGTERM);output=process.communicate(timeout=3)[0]
 print(output);print('Motion captures:',app)
 hostenv.check(env, output)
-assert process.returncode==0 and 'MOTION_RESULT 8 passed 0 failed' in output
+assert process.returncode==0 and 'MOTION_RESULT 9 passed 0 failed' in output

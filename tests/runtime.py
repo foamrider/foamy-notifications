@@ -19,7 +19,7 @@ CENTER=os.environ.get('FOAMY_CENTER_SOURCE','')
 
 SOURCE=Path(__file__).resolve().parents[1]
 if '--inside' not in sys.argv:
-    result=subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=65)
+    result=subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=90)
     raise SystemExit(result.returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-runtime-'))
 app=base/'app';app.mkdir()
@@ -476,21 +476,33 @@ try:
     wait_for(lambda:not state()['busy'],'DND drains')
     assert state()['popups']==0,'DND showed popup'
     ipc('notifications','setDnd','off')
+    # Overflow waits in the queue rather than going to history.
     for i in range(5):send('Overflow '+str(i))
-    wait_for(lambda:state()['popups']==3 and len(state()['groups'])==3,'visible popup cap')
+    wait_for(lambda:state()['popups']==5 and len(state()['groups'])==3 and len(state()['queue'])==2,'visible popup cap queues the rest')
     ipc('notifications','dismissAll')
-    wait_for(lambda:state()['popups']==0 and not state()['busy'],'overflow dismissed')
-    # A normal notification followed by three criticals (a reported "it vanished"):
-    # maxVisible (3) keeps the three newest, so the normal one leaves the screen at
-    # once, as overflow goes to history, where the center still lists it.
+    wait_for(lambda:state()['popups']==0 and not state()['queue'] and not state()['busy'],'dismissAll also clears the queue')
+    # A normal notification followed by three criticals (a reported "it vanished").
     def in_history(summary):
         return any(json.loads(path.read_text()).get('summary')==summary for path in (home/'.local/state/foamy-notifications/history').glob('*.json'))
-    send('Non-critical notification',('-u','normal'))
-    for i in (1,2,3):send('Critical notification '+str(i))
-    wait_for(lambda:state()['popups']==3 and len(state()['groups'])==3 and not state()['busy'],'three criticals fill the cap')
-    assert in_history('Non-critical notification'),'overflowed normal notification is not in history'
-    assert not any(in_history('Critical notification '+str(i)) for i in (1,2,3)),'a visible critical went to history'
+    def sequence():
+        normal=send('Non-critical notification',('-u','normal'))
+        return normal,[send('Critical notification '+str(i)) for i in (1,2,3)]
+    cfg=json.loads((config/'shell.json').read_text())
+    # With a limit of 3 the normal one waits for the criticals and shows when one is dismissed.
+    cfg['plugins'][0]['maxVisible']=3;(config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:state()['settings']['maxVisible']==3,'visible limit 3')
+    normal,criticals=sequence()
+    def ids(keys):return [key.split('-')[1] for key in keys]
+    wait_for(lambda:ids(g['key'] for g in state()['groups'])==criticals[::-1] and ids(state()['queue'])==[normal] and not state()['busy'],'three criticals show, the normal one waits')
+    archived=lambda:ids(path.stem for path in (home/'.local/state/foamy-notifications/history').glob('*.json'))
+    assert normal not in archived(),'the waiting normal notification went to history'
+    assert not set(criticals)&set(archived()),'a visible critical went to history'
+    ipc('notifications','dismissOne')
+    # The newest critical leaves; the waiting card joins the bottom of the stack.
+    wait_for(lambda:ids(g['key'] for g in state()['groups'])==[criticals[1],criticals[0],normal] and not state()['queue'],'the waiting card shows when a critical is dismissed')
+    wait_for(lambda:criticals[2] in archived(),'the dismissed critical is in history')
     ipc('notifications','dismissAll')
+    wait_for(lambda:state()['popups']==0 and not state()['busy'],'overflow sequence dismissed')
     action=subprocess.Popen(['notify-send','-a','Foamy Test','-u','critical','--wait','--action=default=Open','--action=read=Mark read','Action test','Sample body'],env=env,stdout=subprocess.PIPE,text=True)
     wait_for(lambda:len(state()['groups'])==1 and state()['groups'][0]['actions']==1,'native action labels')
     ipc('foamy.notifications','invokeAction',state()['groups'][0]['key'],'read')

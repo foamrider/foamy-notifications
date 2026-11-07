@@ -396,7 +396,8 @@ function parseSettings(raw) {
 // Each on-screen popup is mirrored to its own file under
 // $XDG_STATE_HOME/foamy-notifications/popups/ so toasts survive shell restarts
 // (e.g. the restart `omarchy-update` performs). The file exists exactly as
-// long as the popup is on screen: it is written when the toast appears and
+// long as the popup is on screen or waiting in the overflow queue (marked
+// `queued`, see planStack): it is written when the toast arrives and
 // moved into the history/ subdirectory when the toast expires, is dismissed,
 // or dismissed. Handled actions remove the file. History keeps the newest 100.
 
@@ -406,10 +407,14 @@ function popupEntry(value, normalUrgency) {
   if (!isFinite(expire) || expire < 0) expire = 0
   entry.expireTimeout = expire
   // Absolute expiry deadline, set only when a restore resets a surviving
-  // popup's display lifetime. Kept out of the entry entirely when unset so
-  // restored rows match the roles of freshly received ones.
+  // popup's display lifetime or a card shows after waiting in the overflow
+  // queue. Kept out of the entry entirely when unset so restored rows match
+  // the roles of freshly received ones.
   var deadline = Number((value || {}).deadline || 0)
   if (isFinite(deadline) && deadline > 0) entry.deadline = deadline
+  // Set while the card waits in the overflow queue (planStack): it has not
+  // shown yet, so its display clock has not started.
+  if ((value || {}).queued === true) entry.queued = true
   return entry
 }
 
@@ -514,6 +519,134 @@ function popupExpired(entry, duration, now) {
   return (Number(now) - Number((entry || {}).timestamp || 0)) >= lifetime
 }
 
+// ---------------------------------------------------- overflow queue
+//
+// At most `limit` cards show; the others wait for a free slot instead of going
+// to history. Every rebuild asks planStack which groups (model order, newest
+// first) show, in what order, and which wait. Priority, highest first:
+//
+//   0. shown cards that must stay (`pinned`: hovered, busy, keyboard-selected),
+//      all of them even past the limit, then displays that cannot wait
+//      (`canWait` false: a history replay, the empty-history message);
+//   1. shown critical cards, the longest shown first;
+//   2. waiting critical cards, oldest arrival first;
+//   3. other shown cards, the longest shown first;
+//   4. other waiting cards, oldest arrival first.
+//
+// The first `limit` show. So a critical arrival takes the slot of the
+// non-critical card shown last, which waits again (at the head of the queue:
+// it arrived before the cards waiting), and when the limit drops (the screen
+// is full) the card shown last waits again: the one that did not fit. A
+// display that cannot wait and does not fit is dropped. `since` orders shown
+// cards (higher is shown later; restored cards have none and count as the
+// earliest, oldest first). Arrival is a key's timestamp unless `arrivals`
+// says otherwise. Waiting cards are returned in queue order: criticals, then
+// arrival order.
+//
+// Display order (`ranks`, higher is higher on the stack): shown cards keep
+// their place, cards that waited join the bottom, so nothing on screen moves
+// for them, and new arrivals go on top, newest first. `top`/`bottom` are the
+// rank counters to continue from, `seq` the `since` counter.
+//
+// The queue holds at most `queueLimit` notifications: past it the oldest
+// waiting non-critical one (else the oldest waiting one) is `evicted`.
+function planStack(groups, options) {
+  var o = options || {}
+  var limit = Math.max(1, Math.floor(Number(o.limit)) || 1)
+  var shown = o.shown || {}, waited = o.waiting || {}, ranks = o.ranks || {}, arrivals = o.arrivals || {}, since = o.since || {}
+  var pinned = o.pinned || function() { return false }
+  var canWait = o.canWait || function() { return true }
+  function arrivalOf(key) {
+    var value = arrivals[key] !== undefined ? Number(arrivals[key]) : Number(String(key).split("-")[0])
+    return isFinite(value) ? value : 0
+  }
+  var entries = []
+  for (var i = 0; i < groups.length; i++) {
+    var group = groups[i]
+    var keys = group.keys && group.keys.length ? group.keys : [group.key]
+    var entry = {group: group, index: i, shown: false, waited: false, rank: null, since: null, arrival: Infinity, canWait: !!canWait(group)}
+    for (var k = 0; k < keys.length; k++) {
+      if (shown[keys[k]]) entry.shown = true
+      if (waited[keys[k]]) entry.waited = true
+      var rank = Number(ranks[keys[k]])
+      if (ranks[keys[k]] !== undefined && isFinite(rank) && (entry.rank === null || rank > entry.rank)) entry.rank = rank
+      var shownSince = Number(since[keys[k]])
+      if (since[keys[k]] !== undefined && isFinite(shownSince) && (entry.since === null || shownSince < entry.since)) entry.since = shownSince
+      entry.arrival = Math.min(entry.arrival, arrivalOf(keys[k]))
+    }
+    var critical = group.urgency === 2
+    if (entry.shown) entry.tier = pinned(group) ? 0 : critical ? 1 : 3
+    else entry.tier = !entry.canWait ? 0 : critical ? 2 : 4
+    entries.push(entry)
+  }
+  entries.sort(function(a, b) {
+    if (a.tier !== b.tier) return a.tier - b.tier
+    if (a.shown !== b.shown) return a.shown ? -1 : 1
+    if (a.shown) {
+      var first = a.since === null ? -Infinity : a.since, second = b.since === null ? -Infinity : b.since
+      return first !== second ? first - second : b.index - a.index
+    }
+    if (!a.canWait) return a.index - b.index
+    return a.arrival - b.arrival || b.index - a.index
+  })
+  var take = Math.max(limit, entries.filter(function(e) { return e.tier === 0 && e.shown }).length)
+  var visible = [], waiting = [], dropped = []
+  entries.forEach(function(e, index) {
+    if (index < take) visible.push(e)
+    else if (e.canWait) waiting.push(e)
+    else dropped.push(e.group)
+  })
+  // Queue order (a card just sent back waits in its arrival turn too).
+  function waitOrder(a, b) {
+    return (b.group.urgency === 2 ? 1 : 0) - (a.group.urgency === 2 ? 1 : 0) || a.arrival - b.arrival || b.index - a.index
+  }
+  waiting.sort(waitOrder)
+
+  var evicted = []
+  var queueLimit = o.queueLimit === undefined ? Infinity : Math.max(0, Number(o.queueLimit))
+  var rows = []
+  waiting.forEach(function(e) {
+    e.group.keys.forEach(function(key) { rows.push({key: key, critical: e.group.urgency === 2, arrival: arrivalOf(key)}) })
+  })
+  if (rows.length > queueLimit) {
+    rows.sort(function(a, b) { return (a.critical ? 1 : 0) - (b.critical ? 1 : 0) || a.arrival - b.arrival })
+    evicted = rows.slice(0, rows.length - queueLimit).map(function(row) { return row.key })
+    waiting = waiting.filter(function(e) {
+      e.group.keys = e.group.keys.filter(function(key) { return evicted.indexOf(key) < 0 })
+      if (e.group.keys.length && e.group.keys.indexOf(e.group.key) < 0) e.group.key = e.group.keys[0]
+      return e.group.keys.length > 0
+    })
+  }
+
+  var top = Number(o.top) || 0, bottom = Number(o.bottom) || 0, seq = Number(o.seq) || 0
+  var fresh = [], promoted = []
+  visible.forEach(function(e) {
+    if (e.shown && e.rank !== null) return
+    if (!e.shown && e.waited) promoted.push(e)
+    else fresh.push(e)
+  })
+  // Oldest first, so the newest arrival ends on top.
+  fresh.sort(function(a, b) { return b.index - a.index })
+  fresh.forEach(function(e) { e.rank = ++top })
+  // In queue order: the first to wait joins right under the stack.
+  promoted.sort(function(a, b) { return waitOrder(a, b) })
+  promoted.forEach(function(e) { e.rank = --bottom })
+  fresh.concat(promoted).forEach(function(e) { if (!e.shown || e.since === null) e.since = ++seq })
+  visible.forEach(function(e) { if (e.since === null) e.since = ++seq })
+  visible.sort(function(a, b) { return b.rank - a.rank })
+  return {
+    visible: visible.map(function(e) { return e.group }),
+    ranks: visible.map(function(e) { return e.rank }),
+    since: visible.map(function(e) { return e.since }),
+    seq: seq,
+    waiting: waiting.map(function(e) { return e.group }),
+    dropped: dropped,
+    evicted: evicted,
+    top: top,
+    bottom: bottom
+  }
+}
+
 function popupPlacement(barPosition, barClearance, gapsOut) {
   var position = String(barPosition || "top")
   var clearance = Number(barClearance)
@@ -601,6 +734,7 @@ if (typeof module !== "undefined") {
     serializePopup: serializePopup,
     parsePopupFiles: parsePopupFiles,
     popupExpired: popupExpired,
+    planStack: planStack,
     popupPlacement: popupPlacement
   }
 }

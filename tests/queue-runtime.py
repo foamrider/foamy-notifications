@@ -147,8 +147,14 @@ try:
     popup_first=state()
     for i in range(160,320): send('Popup flood '+str(i))
     popup_second=state()
-    assert popup_first['queuedJobs'] == popup_second['queuedJobs'] <= 128, (popup_first,popup_second)
-    assert popup_second['queuedBytes'] <= 1048576 and popup_second['popups'] <= 3, popup_second
+    for i in range(320,480): send('Popup flood '+str(i))
+    popup_third=state()
+    # Overflow waits in the queue (at most 100 notifications behind the 3 shown);
+    # past that the oldest waiting ones go to history, whose archives share the job bound.
+    assert popup_first['queuedJobs'] <= popup_second['queuedJobs'] == popup_third['queuedJobs'] <= 128, (popup_first,popup_second,popup_third)
+    assert popup_third['queuedBytes'] <= 1048576 and popup_third['popups'] <= 103 and len(popup_third['queue']) <= 100, popup_third
+    assert popup_third['tracked'] <= 103, popup_third
+    popup_second=popup_third
     stall.unlink()
     wait(lambda:not state()['busy'], 'bounded popup writes and archives drain')
     ipc('notifications','dismissAll')

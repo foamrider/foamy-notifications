@@ -24,5 +24,6 @@
   "Clipboard is busy. Try again.": "Clipboard is busy. Try again.",
   "Could not open the link. Try again.": "Could not open the link. Try again.",
   "Could not copy the code. Check wl-copy and try again.": "Could not copy the code. Check wl-copy and try again.",
-  "This plugin's helper isn't available for this CPU.": "This plugin's helper isn't available for this CPU."
+  "This plugin's helper isn't available for this CPU.": "This plugin's helper isn't available for this CPU.",
+  "+%1 waiting": "+%1 waiting"
 }
