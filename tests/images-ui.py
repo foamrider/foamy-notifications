@@ -8,13 +8,14 @@ import subprocess
 import sys
 import tempfile
 import time
+import hostenv
 
 SOURCE = Path(__file__).resolve().parents[1]
 if '--inside' not in sys.argv:
     raise SystemExit(subprocess.run(['dbus-run-session','--',sys.executable,__file__,'--inside'],timeout=55).returncode)
 base = Path(tempfile.mkdtemp(prefix='foamy-popup-images-'))
 app = base/'app';app.mkdir()
-(app/'Commons').symlink_to('/usr/share/omarchy/shell/Commons',target_is_directory=True)
+(app/'Commons').symlink_to(hostenv.root()/'shell/Commons',target_is_directory=True)
 shutil.copytree(SOURCE,app/'plugin',ignore=shutil.ignore_patterns('.git','__pycache__'))
 service = (SOURCE/'Service.qml').read_text()
 start = service.index('          NotificationCard {',service.index('  Variants {'))

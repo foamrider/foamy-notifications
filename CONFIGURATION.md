@@ -261,6 +261,9 @@ python3 tests/clipboard_test.py
 
 The feature runtime test starts a private D-Bus session and private PipeWire
 server, uses a fake clipboard, and keeps all state in temporary directories.
-Set `OMARCHY_TEST_ROOT` to an extracted Omarchy source tree to exercise its
-Commons/Ui components with `runtime.py`, `features-runtime.py`, `render.py`,
-and `ui.py`, without installing that release. This does not test a complete OS upgrade.
+The tests load the installed Omarchy 4.5 shell (`/usr/share/omarchy`; only its
+QML and data, never its scripts). Set `OMARCHY_TEST_ROOT` to another Omarchy
+tree, or `FOAMY_HOST_45` to its `shell/` directory, to exercise its Commons/Ui
+components with `runtime.py`, `features-runtime.py`, `render.py`, and `ui.py`,
+without installing that release. Omarchy 4.0 checks are opt-in through
+`FOAMY_HOST_40`. This does not test a complete OS upgrade.

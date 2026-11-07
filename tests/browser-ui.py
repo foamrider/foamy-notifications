@@ -10,6 +10,7 @@ import sys
 import tempfile
 
 from favicon_test import png
+import hostenv
 
 source = Path(__file__).resolve().parents[1]
 center = source.name == 'foamy-notification-center'
@@ -17,7 +18,7 @@ base = Path(tempfile.mkdtemp(prefix='foamy-browser-ui-'))
 app = base / 'app'
 app.mkdir()
 for name in ['Commons', 'Ui']:
-    (app / name).symlink_to('/usr/share/omarchy/shell/' + name, target_is_directory=True)
+    (app / name).symlink_to(hostenv.root() / 'shell' / name, target_is_directory=True)
 (app / 'plugin').symlink_to(source, target_is_directory=True)
 helper = json.loads((source / 'manifest.json').read_text())['id'].replace('.', '-') + '-helper'
 # A copy whose helper binary does not exist (exit 127, as on an unsupported CPU).

@@ -5,11 +5,12 @@ from pathlib import Path
 import sys
 import subprocess
 import tempfile
+import hostenv
 
 source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-render-'))
 app=base/'app';app.mkdir()
-(app/'Commons').symlink_to(os.environ.get('OMARCHY_TEST_ROOT', '/usr/share/omarchy')+'/shell/Commons',target_is_directory=True)
+(app/'Commons').symlink_to(hostenv.root()/'shell/Commons',target_is_directory=True)
 (app/'plugin').symlink_to(source,target_is_directory=True)
 (app/'avatar.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#435d5b"/><text x="32" y="42" text-anchor="middle" fill="#d9ede5" font-size="28" font-family="sans-serif">AJ</text></svg>')
 (app/'screenshot.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#172535"/><rect x="55" y="40" width="530" height="280" rx="12" fill="#dfe6ed"/><path d="M55 65H585" stroke="#647997" stroke-width="40"/><rect x="75" y="100" width="75" height="190" fill="#aebed0"/><path d="M185 125H540M185 165H540M185 205H540M185 245H420" stroke="#819ab1" stroke-width="14"/></svg>')
