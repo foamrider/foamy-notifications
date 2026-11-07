@@ -1648,9 +1648,10 @@ Item {
   // popup files (marked `queued`), and wait for a slot: a card that leaves the
   // screen (dismissed, expired, handled) makes room for the next. Which card
   // shows, waits or goes first is NotificationLogic.planStack's priority:
-  // criticals first, then arrival order. A waiting card's timer starts when it
-  // shows, and it joins the bottom of the stack, so the cards on screen (and
-  // the one under the pointer) do not move for it.
+  // criticals first, the newest first (a newer one rotates the oldest back
+  // into the queue), then the other cards in arrival order. A waiting card's
+  // timer starts when it shows, and it joins the bottom of the stack, so the
+  // cards on screen (and the one under the pointer) do not move for it.
   readonly property int queueLimit: 100
   // Popup files restored at startup: every queued card plus the visible ones.
   readonly property int restoreLimit: 200

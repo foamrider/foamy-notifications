@@ -165,17 +165,57 @@ test('history replays show what fits, newest first, and never wait', () => {
 
 test('the queue bound sends the oldest waiting non-critical notification to history, then the oldest critical', () => {
   const s = stack(1, {queueLimit: 3})
-  s.arrive(row(1, 'Shown', 2))
+  s.arrive(row(1, 'First alert', 2))
+  // The newer critical rotates the first one back into the queue.
   s.arrive(row(2, 'Old alert', 2)); s.arrive(row(3, 'Old')); s.arrive(row(4, 'Newer')); s.arrive(row(5, 'Newest'))
   assert.deepEqual(s.history, ['1003-3'])
-  assert.deepEqual(s.queue(), ['Old alert', 'Newer', 'Newest'])
+  assert.deepEqual(s.visible(), ['Old alert'])
+  assert.deepEqual(s.queue(), ['First alert', 'Newer', 'Newest'])
   s.arrive(row(6, 'Alert 2', 2)); s.arrive(row(7, 'Alert 3', 2))
   assert.deepEqual(s.history, ['1003-3', '1004-4', '1005-5'])
-  assert.deepEqual(s.queue(), ['Old alert', 'Alert 2', 'Alert 3'])
+  assert.deepEqual(s.queue(), ['Alert 2', 'Old alert', 'First alert'])
   s.arrive(row(8, 'Alert 4', 2))
-  assert.deepEqual(s.history, ['1003-3', '1004-4', '1005-5', '1002-2'])
-  assert.deepEqual(s.queue(), ['Alert 2', 'Alert 3', 'Alert 4'])
-  assert.deepEqual(s.visible(), ['Shown'])
+  assert.deepEqual(s.history, ['1003-3', '1004-4', '1005-5', '1001-1'])
+  assert.deepEqual(s.queue(), ['Alert 3', 'Alert 2', 'Old alert'])
+  assert.deepEqual(s.visible(), ['Alert 4'])
+})
+
+test('criticals that never expire cannot starve a new one: it rotates the oldest shown critical back into the queue', () => {
+  const s = stack(5)
+  for (const i of [1, 2, 3, 4, 5]) s.arrive(row(i, 'Flood ' + i, 2))
+  assert.deepEqual(s.visible(), ['Flood 5', 'Flood 4', 'Flood 3', 'Flood 2', 'Flood 1'])
+  s.arrive(row(6, 'Genuine', 2))
+  assert.deepEqual(s.visible(), ['Genuine', 'Flood 5', 'Flood 4', 'Flood 3', 'Flood 2'], 'the new critical shows on top')
+  assert.deepEqual(s.queue(), ['Flood 1'], 'the oldest shown critical waits')
+  assert.deepEqual(s.history, [], 'the displaced critical waits instead of going to history')
+  // Normal cards still wait behind every critical.
+  s.arrive(row(7, 'Normal'))
+  assert.deepEqual(s.queue(), ['Flood 1', 'Normal'])
+  // A freed slot shows it again, at the bottom: nothing on screen moves for it.
+  s.leave(6)
+  assert.deepEqual(s.visible(), ['Flood 5', 'Flood 4', 'Flood 3', 'Flood 2', 'Flood 1'])
+  assert.deepEqual(s.queue(), ['Normal'])
+  // A pinned critical (hovered, busy, keyboard-selected) keeps its slot: the oldest unpinned one waits.
+  s.pinned.add('1001-1')
+  s.arrive(row(8, 'Another', 2))
+  assert.deepEqual(s.visible(), ['Another', 'Flood 5', 'Flood 4', 'Flood 3', 'Flood 1'])
+  assert.deepEqual(s.queue(), ['Flood 2', 'Normal'])
+})
+
+test('waiting criticals show newest first, and join the bottom above the cards that waited behind them', () => {
+  const s = stack(1)
+  s.arrive(row(1, 'Normal'))
+  s.arrive(row(2, 'X', 2)); s.arrive(row(3, 'Y', 2)); s.arrive(row(4, 'Z', 2))
+  assert.deepEqual(s.visible(), ['Z'])
+  assert.deepEqual(s.queue(), ['Y', 'X', 'Normal'], 'the queue lists what shows next first')
+  s.leave(4)
+  assert.deepEqual(s.visible(), ['Y'])
+  assert.deepEqual(s.queue(), ['X', 'Normal'])
+  // Room for all: the cards from the queue join the bottom in queue order.
+  const wide = Logic.planStack(Preferences.groups(s.rows, true, 'browser', {browser: () => false}),
+    {limit: 3, shown: s.shown, waiting: s.waiting, ranks: s.ranks, since: s.since, top: s.top, bottom: s.bottom, seq: s.seq})
+  assert.deepEqual(wide.visible.map(group => group.summary), ['Y', 'X', 'Normal'])
+  assert.deepEqual(wide.waiting, [])
 })
 
 test('restored cards keep their place: shown ones stay, queued ones wait', () => {

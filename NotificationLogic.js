@@ -528,20 +528,25 @@ function popupExpired(entry, duration, now) {
 //   0. shown cards that must stay (`pinned`: hovered, busy, keyboard-selected),
 //      all of them even past the limit, then displays that cannot wait
 //      (`canWait` false: a history replay, the empty-history message);
-//   1. shown critical cards, the longest shown first;
-//   2. waiting critical cards, oldest arrival first;
-//   3. other shown cards, the longest shown first;
-//   4. other waiting cards, oldest arrival first.
+//   1. critical cards, shown or waiting, the newest arrival first;
+//   2. other shown cards, the longest shown first;
+//   3. other waiting cards, oldest arrival first.
 //
 // The first `limit` show. So a critical arrival takes the slot of the
-// non-critical card shown last, which waits again (at the head of the queue:
-// it arrived before the cards waiting), and when the limit drops (the screen
-// is full) the card shown last waits again: the one that did not fit. A
-// display that cannot wait and does not fit is dropped. `since` orders shown
-// cards (higher is shown later; restored cards have none and count as the
-// earliest, oldest first). Arrival is a key's timestamp unless `arrivals`
-// says otherwise. Waiting cards are returned in queue order: criticals, then
-// arrival order.
+// non-critical card shown last, which waits again (at the head of the other
+// cards: it arrived before those waiting). With only criticals on screen, a
+// new one takes the slot of the oldest unpinned critical, which waits again,
+// not to history, and shows again when a slot frees: criticals rotate, so
+// ones that never expire (criticalTimeoutSec 0) cannot hold every slot and
+// keep later alerts waiting. When the limit drops (the screen is full) the
+// non-critical card shown last waits again (the one that did not fit), else
+// the oldest critical. A display that cannot wait and does not fit is
+// dropped. `since` orders shown cards (higher is shown later; restored cards
+// have none and count as the earliest, oldest first). Arrival is a key's
+// timestamp unless `arrivals` says otherwise; a group's is its oldest key's,
+// so a duplicate keeps the group's turn. Waiting cards are returned in queue
+// order, the order they would show in: criticals newest first, then the other
+// cards in arrival order.
 //
 // Display order (`ranks`, higher is higher on the stack): shown cards keep
 // their place, cards that waited join the bottom, so nothing on screen moves
@@ -581,12 +586,14 @@ function planStack(groups, options) {
     }
     var critical = group.urgency === 2
     entry.held = !entry.shown && entry.canWait && !!held(group)
-    if (entry.shown) entry.tier = pinned(group) ? 0 : critical ? 1 : 3
-    else entry.tier = !entry.canWait ? 0 : critical ? 2 : 4
+    if (entry.shown) entry.tier = pinned(group) ? 0 : critical ? 1 : 2
+    else entry.tier = !entry.canWait ? 0 : critical ? 1 : 3
     entries.push(entry)
   }
   entries.sort(function(a, b) {
     if (a.tier !== b.tier) return a.tier - b.tier
+    // Criticals: the newest first, shown or not; at equal arrival the one on screen stays.
+    if (a.tier === 1) return b.arrival - a.arrival || (a.shown === b.shown ? 0 : a.shown ? -1 : 1) || a.index - b.index
     if (a.shown !== b.shown) return a.shown ? -1 : 1
     if (a.shown) {
       var first = a.since === null ? -Infinity : a.since, second = b.since === null ? -Infinity : b.since
@@ -603,9 +610,12 @@ function planStack(groups, options) {
     else dropped.push(e.group)
   })
   entries.forEach(function(e) { if (e.held) waiting.push(e) })
-  // Queue order (a card just sent back waits in its arrival turn too).
+  // Queue order, the order they show in: criticals newest first, then the
+  // others oldest first (a card just sent back waits in its arrival turn too).
   function waitOrder(a, b) {
-    return (b.group.urgency === 2 ? 1 : 0) - (a.group.urgency === 2 ? 1 : 0) || a.arrival - b.arrival || b.index - a.index
+    var first = a.group.urgency === 2, second = b.group.urgency === 2
+    if (first !== second) return first ? -1 : 1
+    return first ? b.arrival - a.arrival || a.index - b.index : a.arrival - b.arrival || b.index - a.index
   }
   waiting.sort(waitOrder)
 
@@ -635,7 +645,8 @@ function planStack(groups, options) {
   // Oldest first, so the newest arrival ends on top.
   fresh.sort(function(a, b) { return b.index - a.index })
   fresh.forEach(function(e) { e.rank = ++top })
-  // In queue order: the first to wait joins right under the stack.
+  // In queue order: the next in line joins right under the stack, so a newer
+  // critical sits above an older one and criticals above the other cards.
   promoted.sort(function(a, b) { return waitOrder(a, b) })
   promoted.forEach(function(e) { e.rank = --bottom })
   fresh.concat(promoted).forEach(function(e) { if (!e.shown || e.since === null) e.since = ++seq })

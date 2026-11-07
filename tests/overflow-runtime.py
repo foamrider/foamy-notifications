@@ -149,22 +149,27 @@ def reset():
 try:
     wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'], 'startup')
 
-    # Queue order: arrival order, a critical ahead of the waiting normal cards.
+    # Queue order: criticals newest first, then the normal cards in arrival order.
+    # E, the newest critical, takes the slot of A, the oldest critical on screen.
     a = send('A', 'critical'); b = send('B', 'critical'); c = send('C'); d = send('D'); e = send('E', 'critical')
-    wait(lambda: shown() == [b, a] and queue() == [e, c, d] and settled(), 'criticals show, the rest waits in order')
-    assert files('popups')[c].get('queued') is True and 'queued' not in files('popups')[a], 'waiting cards are not marked queued on disk'
+    wait(lambda: shown() == [e, b] and queue() == [a, c, d] and settled(), 'the newest criticals show, the rest waits in order')
+    assert [card['summary'] for card in stack()['cards']] == ['E', 'B'], stack()
+    popups = files('popups')
+    assert popups[c].get('queued') is True and popups[a].get('queued') is True and 'queued' not in popups[e] and 'queued' not in popups[b], \
+        'waiting cards are not marked queued on disk'
     assert not files('history'), 'a waiting card went to history'
     assert stack()['noteText'] == '+3 waiting', stack()
     # A dismissed card's slot goes to the head of the queue, at the bottom of the stack.
     ipc('notifications', 'dismissOne')
-    wait(lambda: shown() == [a, e] and queue() == [c, d], 'the waiting critical joins the bottom')
-    print('PASS: queue order (criticals first, then arrival), queued flag on disk, +N waiting note')
+    wait(lambda: shown() == [b, a] and queue() == [c, d] and settled(), 'the waiting critical joins the bottom')
+    assert [card['summary'] for card in stack()['cards']] == ['B', 'A'], stack()
+    print('PASS: queue order (criticals newest first, then arrival), queued flag on disk, +N waiting note')
 
     # A waiting card's timer starts when it shows: C waited past its 2 s timeout.
     time.sleep(2.3)
     assert queue() == [c, d], 'a waiting card expired before it showed'
     ipc('notifications', 'dismissOne')
-    wait(lambda: shown() == [e, c], 'C shows')
+    wait(lambda: shown() == [a, c], 'C shows')
     shown_at = time.monotonic()
     wait(lambda: files('popups')[c].get('deadline', 0) > 0 and 'queued' not in files('popups')[c], 'a card that showed after waiting is saved with its own deadline', 1)
     time.sleep(1.4)
@@ -174,6 +179,24 @@ try:
     assert c in files('history'), 'an expired card did not go to history'
     reset()
     print('PASS: the timer of a waiting card starts on show; expiry still archives')
+
+    # Criticals that never expire (criticalTimeoutSec 0) cannot starve a new alert:
+    # it rotates the oldest critical on screen back into the queue.
+    assert state()['settings']['criticalTimeoutSec'] == 0
+    first = send('Flood 1', 'critical'); second = send('Flood 2', 'critical')
+    wait(lambda: shown() == [second, first] and not queue() and settled(), 'two criticals fill the stack')
+    genuine = send('Genuine alert', 'critical')
+    wait(lambda: shown() == [genuine, second] and queue() == [first] and settled(), 'the new critical shows; the oldest waits')
+    assert [card['summary'] for card in stack()['cards']] == ['Genuine alert', 'Flood 2'] and stack()['noteText'] == '+1 waiting', stack()
+    assert files('popups')[first].get('queued') is True and first not in files('history'), 'the displaced critical did not go back to the queue'
+    time.sleep(.5)
+    assert shown() == [genuine, second] and queue() == [first], 'the rotation did not hold'
+    # It shows again, at the bottom, when a slot frees.
+    ipc('notifications', 'dismissOne')
+    wait(lambda: shown() == [second, first] and not queue() and settled(), 'the displaced critical shows again')
+    wait(lambda: 'queued' not in files('popups')[first], 'the re-shown critical is still marked queued', 1)
+    reset()
+    print('PASS: a new critical rotates the oldest non-expiring critical back into the queue')
 
     # An update that stops a card expiring drops the deadline it got when it showed after waiting.
     a = send('A', 'critical'); b = send('B', 'critical'); c = send('Promoted')
@@ -262,8 +285,9 @@ try:
     view = stack()
     assert view['settledHeight'] <= view['room'], view
     assert not files('history'), 'screen-space overflow went to history'
-    assert queue() == sent[len(state()['groups']):], 'screen-space waiting order'
     fitted = len(state()['groups'])
+    # The newest criticals show; the older ones wait, the next to show first.
+    assert shown() == sent[::-1][:fitted] and queue() == sent[::-1][fitted:], 'screen-space waiting order'
     assert 2 <= fitted < 6, fitted
     ipc('notifications', 'dismissOne')
     wait(lambda: len(state()['groups']) == fitted and len(state()['queue']) == 6 - fitted - 1, 'a freed slot shows the next waiting card')
