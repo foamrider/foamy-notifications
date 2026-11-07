@@ -13,7 +13,8 @@ from favicon_test import png
 import hostenv
 
 source = Path(__file__).resolve().parents[1]
-center = source.name == 'foamy-notification-center'
+# By manifest id, not folder name: a worktree or clone may be named anything.
+center = json.loads((source / 'manifest.json').read_text())['id'] == 'foamy.notification-center'
 base = Path(tempfile.mkdtemp(prefix='foamy-browser-ui-'))
 app = base / 'app'
 app.mkdir()
