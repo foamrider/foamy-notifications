@@ -1983,6 +1983,10 @@ Item {
   // Escape, a choice, a click or ten idle seconds give the keyboard back.
   property bool keyboardMode: false
   property string keyboardKey: ""
+  // A keyboard-selected card keeps its slot (pinnedGroup); when the selection
+  // moves or the keyboard is given back, a waiting card may take that slot.
+  onKeyboardModeChanged: scheduleRebuild()
+  onKeyboardKeyChanged: scheduleRebuild()
   property bool expanded: false
   onDisplayGroupsChanged: {
     if (!displayGroups.length) expanded = false

@@ -240,6 +240,19 @@ try:
     reset()
     print('PASS: the queue survives a shell restart without duplicates or early expiry')
 
+    # A keyboard-selected card keeps its slot; giving the keyboard back lets a waiting critical take it.
+    configure(maxVisible=1)
+    wait(lambda: state()['settings']['maxVisible'] == 1, 'maxVisible 1')
+    n = send('Selected')
+    wait(lambda: shown() == [n] and settled(), 'keyboard fixture')
+    assert ipc('notifications', 'keyboard') == 'on'
+    c = send('Urgent', 'critical')
+    wait(lambda: shown() == [n] and queue() == [c] and settled(), 'the critical waits behind the keyboard-selected card')
+    assert ipc('notifications', 'keyboard') == 'off'
+    wait(lambda: shown() == [c] and queue() == [n] and settled(), 'giving the keyboard back lets the waiting critical show', 2)
+    reset()
+    print('PASS: releasing the keyboard selection frees its slot for a waiting critical')
+
     # Screen-space overflow waits too: a short window fits fewer cards than maxVisible.
     configure(maxVisible=10)
     wait(lambda: state()['settings']['maxVisible'] == 10, 'maxVisible 10')
