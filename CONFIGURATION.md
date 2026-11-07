@@ -66,18 +66,32 @@ When `maxVisible` cards are on screen, or no further card fits the screen
 height, a new card waits in a queue instead of going to history. Nothing is
 lost for lack of room:
 
-- **Order.** Critical alerts go first. A new critical alert takes the slot of
-  the non-critical card shown last; that card waits again, ahead of the other
-  waiting non-critical cards. Among critical alerts the newest win: when only
-  criticals are on screen, a newer critical rotates the oldest one back into
+- **Order.** Critical alerts go first, with one slot kept for the rest. A
+  new critical alert takes the slot of the non-critical card shown last; that
+  card waits again, ahead of the other waiting non-critical cards.
+- **One slot for normal notifications.** When the limit (`maxVisible`, or
+  what fits the screen) is 2 or more and a non-critical notification is
+  shown or waiting, critical alerts take at most all slots but one. The last
+  one goes to the non-critical card shown longest, else to the oldest
+  waiting one. So a stack of critical alerts that never expire
+  (`criticalTimeoutSec` 0) cannot keep everything else waiting; it does not
+  change how long a critical alert stays. With a limit of 1, or with no
+  non-critical card, critical alerts may take every slot. For example, at a
+  limit of 3, one normal notification followed by three critical alerts
+  shows the normal one and the two newest criticals; the first critical
+  waits and shows when a slot frees.
+- **Rotation.** Among critical alerts the newest win: when the critical
+  alerts' slots are full, a newer critical rotates the oldest one back into
   the queue (not to history), and it shows again when a slot frees. So
-  alerts that never expire (`criticalTimeoutSec` 0) cannot hold every slot
-  and keep later alerts waiting. Waiting cards show one per freed slot (when a
-  card is dismissed, expires, or is handled by a click or an action) in queue
-  order: critical alerts newest first, then the other cards in arrival order,
-  oldest first. A hovered card, a card with an action in progress and the
-  keyboard-selected card always keep their slot; a newer critical takes the
-  slot of the oldest critical that is free to go.
+  alerts that never expire cannot hold every slot and keep later alerts
+  waiting. Waiting cards show one per freed slot (when a card is dismissed,
+  expires, or is handled by a click or an action) in queue order: critical
+  alerts newest first, then the other cards in arrival order, oldest first,
+  except that a freed normal slot goes to the next normal card. A hovered
+  card, a card with an action in progress and the keyboard-selected card
+  always keep their slot and count toward the limit (a pinned normal card
+  fills the normal slot); a newer critical takes the slot of the oldest
+  critical that is free to go.
 - **Timers.** A waiting card's timer does not run. It starts when the card
   shows, so the card gets its full time on screen. A card that waits again
   starts over when it shows again.
@@ -88,9 +102,9 @@ lost for lack of room:
   under the last card counts the waiting cards, held ones included; it
   disappears with the queue.
 - **Screen space.** When the cards do not fit between the bar and the bottom
-  of the screen, the non-critical card shown last waits again (with only
-  critical alerts on screen, the oldest of them), and the limit drops to what
-  fits. Each card that leaves lets one more try; a change of screen height
+  of the screen, the non-critical card shown last waits again (unless it holds
+  the normal slot; then the oldest critical alert waits), and the limit drops
+  to what fits; the normal slot applies to that limit too. Each card that leaves lets one more try; a change of screen height
   (or of the settings) resets the limit to `maxVisible`. While the pointer is in
   the stack nothing is sent back; the check runs when it leaves.
 - **Updates.** Replacements (`replaces_id`) and duplicates update a waiting
@@ -142,7 +156,8 @@ nothing moves under the pointer:
   cannot silence the desktop), the held cards show as the new arrivals they
   are: on top, newest first, with the usual entrance (at once with Omarchy's
   animations off). Critical alerts follow the queue's priority: one takes the
-  slot of the normal card shown last, else of the oldest critical. Held cards
+  slot of the normal card shown last, unless that is the normal slot, else of
+  the oldest critical. Held cards
   that do not fit wait like any other. After a release at the maximum the
   pointer may still be on the stack, and the released cards push the hovered
   card down, as in stock; arrivals after that are held again.

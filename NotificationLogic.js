@@ -532,15 +532,25 @@ function popupExpired(entry, duration, now) {
 //   2. other shown cards, the longest shown first;
 //   3. other waiting cards, oldest arrival first.
 //
-// The first `limit` show. So a critical arrival takes the slot of the
-// non-critical card shown last, which waits again (at the head of the other
-// cards: it arrived before those waiting). With only criticals on screen, a
-// new one takes the slot of the oldest unpinned critical, which waits again,
-// not to history, and shows again when a slot frees: criticals rotate, so
-// ones that never expire (criticalTimeoutSec 0) cannot hold every slot and
-// keep later alerts waiting. When the limit drops (the screen is full) the
-// non-critical card shown last waits again (the one that did not fit), else
-// the oldest critical. A display that cannot wait and does not fit is
+// The first `limit` show, but while the limit is 2 or more and a
+// non-critical card is shown or waiting (and not held), unpinned criticals
+// get at most `limit` - 1 slots: one stays for the other cards, the one shown
+// longest, else the oldest waiting. Pinned cards count toward the limit (and
+// a pinned non-critical card fills the reserved slot). So a stack of
+// criticals that never expire (criticalTimeoutSec 0) cannot keep every other
+// card waiting. With a limit of 1, or with no other card, criticals may take
+// every slot.
+//
+// So a critical arrival takes the slot of the non-critical card shown last
+// unless that is the reserved one, and that card waits again (at the head of
+// the other cards: it arrived before those waiting). Otherwise it takes the
+// slot of the oldest unpinned critical, which waits again, not to history,
+// and shows again when a slot frees: criticals rotate, so ones that never
+// expire cannot hold every slot and keep later alerts waiting. A critical
+// that loses the reserved slot waits the same way, at the head of the queue.
+// When the limit drops (the screen is full) the non-critical card shown last
+// waits again (the one that did not fit) unless it holds the reserved slot,
+// else the oldest critical. A display that cannot wait and does not fit is
 // dropped. `since` orders shown cards (higher is shown later; restored cards
 // have none and count as the earliest, oldest first). Arrival is a key's
 // timestamp unless `arrivals` says otherwise; a group's is its oldest key's,
@@ -604,9 +614,16 @@ function planStack(groups, options) {
   })
   var take = Math.max(limit, entries.filter(function(e) { return e.tier === 0 && e.shown }).length)
   var visible = [], waiting = [], dropped = []
-  entries.filter(function(e) { return !e.held }).forEach(function(e, index) {
-    if (index < take) visible.push(e)
-    else if (e.canWait) waiting.push(e)
+  var ready = entries.filter(function(e) { return !e.held })
+  // One slot stays for the other cards while any can take it, so criticals
+  // that never expire cannot keep them waiting; with a limit of 1 criticals win.
+  var reserve = limit >= 2 && ready.some(function(e) { return e.group.urgency !== 2 })
+  ready.forEach(function(e) {
+    var room = e.tier === 1 && reserve ? take - 1 : take
+    if (visible.length < room) {
+      visible.push(e)
+      if (e.group.urgency !== 2) reserve = false
+    } else if (e.canWait) waiting.push(e)
     else dropped.push(e.group)
   })
   entries.forEach(function(e) { if (e.held) waiting.push(e) })

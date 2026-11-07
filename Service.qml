@@ -1649,7 +1649,8 @@ Item {
   // screen (dismissed, expired, handled) makes room for the next. Which card
   // shows, waits or goes first is NotificationLogic.planStack's priority:
   // criticals first, the newest first (a newer one rotates the oldest back
-  // into the queue), then the other cards in arrival order. A waiting card's
+  // into the queue), then the other cards in arrival order, with one slot
+  // kept for those when visibleLimit is 2 or more. A waiting card's
   // timer starts when it shows, and it joins the bottom of the stack, so the
   // cards on screen (and the one under the pointer) do not move for it.
   readonly property int queueLimit: 100

@@ -90,13 +90,16 @@ continue to work (see "Omarchy 4.5" below).
   instead of going to history, and show as cards leave (dismissed, expired or
   handled), oldest first. A waiting card's timer starts when it shows, so it
   gets its full time on screen, and it joins the bottom of the stack, so the
-  cards already there do not move. Critical alerts go first: a new one takes
-  the slot of the normal card shown last, which waits again. When only
-  critical alerts are on screen, a newer one rotates the oldest back into the
-  queue, and waiting critical alerts show newest first, so alerts that never
-  expire cannot keep a new one off the screen. A small "+N waiting" note
-  under the stack counts the queue. Details, and how the queue survives a
-  restart: [overflow queue](CONFIGURATION.md#overflow-queue).
+  cards already there do not move. Critical alerts go first, but when the
+  limit is 2 or more one slot stays for normal notifications, so a stack of
+  critical alerts that never expire cannot keep everything else waiting. A
+  newer critical alert rotates the oldest one back into the queue, and
+  waiting critical alerts show newest first, so they cannot keep a new alert
+  off the screen either. For example, at a limit of 3, one normal
+  notification followed by three critical alerts shows the normal one and
+  the two newest criticals, and the first critical waits. A small
+  "+N waiting" note under the stack counts the queue. Details, and how the
+  queue survives a restart: [overflow queue](CONFIGURATION.md#overflow-queue).
 - As in stock Omarchy 4.5, new notifications, critical alerts too, wait while
   the pointer is over the stack, so nothing moves under it. They show on top
   when the pointer leaves, or after 30 seconds at most:

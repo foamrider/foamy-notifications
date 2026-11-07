@@ -97,7 +97,8 @@ HANDLERS
 '''.replace('FIT', local(fit)).replace('HANDLERS', local(handlers)).replace('DELEGATE', local(delegate)))
 home = base/'home'; home.mkdir()
 config = home/'.config/omarchy'; config.mkdir(parents=True)
-settings = {'id': 'foamy.notifications', 'maxVisible': 2, 'normalTimeoutSec': 2, 'criticalTimeoutSec': 0}
+# Normal cards stay until the timer test, so the first scenarios do not race their expiry.
+settings = {'id': 'foamy.notifications', 'maxVisible': 2, 'normalTimeoutSec': 30, 'criticalTimeoutSec': 0}
 def configure(**values):
     settings.update(values)
     (config/'shell.json').write_text(json.dumps({'plugins': [settings]}))
@@ -150,35 +151,25 @@ try:
     wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'], 'startup')
 
     # Queue order: criticals newest first, then the normal cards in arrival order.
-    # E, the newest critical, takes the slot of A, the oldest critical on screen.
+    # One of the two slots stays for a normal card: C takes it from A, the
+    # oldest critical, and E, the newest critical, takes B's.
     a = send('A', 'critical'); b = send('B', 'critical'); c = send('C'); d = send('D'); e = send('E', 'critical')
-    wait(lambda: shown() == [e, b] and queue() == [a, c, d] and settled(), 'the newest criticals show, the rest waits in order')
-    assert [card['summary'] for card in stack()['cards']] == ['E', 'B'], stack()
+    wait(lambda: shown() == [e, c] and queue() == [b, a, d] and settled(), 'the newest critical and a normal card show, the rest waits in order')
+    assert [card['summary'] for card in stack()['cards']] == ['E', 'C'], stack()
     popups = files('popups')
-    assert popups[c].get('queued') is True and popups[a].get('queued') is True and 'queued' not in popups[e] and 'queued' not in popups[b], \
+    assert all(popups[key].get('queued') is True for key in (b, a, d)) and 'queued' not in popups[e] and 'queued' not in popups[c], \
         'waiting cards are not marked queued on disk'
     assert not files('history'), 'a waiting card went to history'
     assert stack()['noteText'] == '+3 waiting', stack()
     # A dismissed card's slot goes to the head of the queue, at the bottom of the stack.
     ipc('notifications', 'dismissOne')
-    wait(lambda: shown() == [b, a] and queue() == [c, d] and settled(), 'the waiting critical joins the bottom')
-    assert [card['summary'] for card in stack()['cards']] == ['B', 'A'], stack()
-    print('PASS: queue order (criticals newest first, then arrival), queued flag on disk, +N waiting note')
-
-    # A waiting card's timer starts when it shows: C waited past its 2 s timeout.
-    time.sleep(2.3)
-    assert queue() == [c, d], 'a waiting card expired before it showed'
+    wait(lambda: shown() == [c, b] and queue() == [a, d] and settled(), 'the waiting critical joins the bottom')
+    assert [card['summary'] for card in stack()['cards']] == ['C', 'B'], stack()
+    # The normal slot goes to the next normal card, not to the waiting critical.
     ipc('notifications', 'dismissOne')
-    wait(lambda: shown() == [a, c], 'C shows')
-    shown_at = time.monotonic()
-    wait(lambda: files('popups')[c].get('deadline', 0) > 0 and 'queued' not in files('popups')[c], 'a card that showed after waiting is saved with its own deadline', 1)
-    time.sleep(1.4)
-    assert c in shown(), 'C did not get its full time on screen'
-    wait(lambda: c not in shown() and d in shown(), 'C expires, D shows', 4)
-    assert time.monotonic() - shown_at >= 1.9, 'C expired early'
-    assert c in files('history'), 'an expired card did not go to history'
+    wait(lambda: shown() == [b, d] and queue() == [a] and settled(), 'the next normal card takes the reserved slot')
     reset()
-    print('PASS: the timer of a waiting card starts on show; expiry still archives')
+    print('PASS: queue order (criticals newest first, then arrival), one slot for normal cards, queued flag on disk, +N waiting note')
 
     # Criticals that never expire (criticalTimeoutSec 0) cannot starve a new alert:
     # it rotates the oldest critical on screen back into the queue.
@@ -198,8 +189,44 @@ try:
     reset()
     print('PASS: a new critical rotates the oldest non-expiring critical back into the queue')
 
+    # Nor can they starve normal notifications: one slot stays for them.
+    first = send('Flood 1', 'critical'); second = send('Flood 2', 'critical')
+    wait(lambda: shown() == [second, first] and not queue() and settled(), 'two criticals fill the stack')
+    normal = send('Normal')
+    wait(lambda: shown() == [normal, second] and queue() == [first] and settled(), 'the normal card shows; the older critical waits')
+    assert [card['summary'] for card in stack()['cards']] == ['Normal', 'Flood 2'] and stack()['noteText'] == '+1 waiting', stack()
+    assert files('popups')[first].get('queued') is True and first not in files('history'), 'the displaced critical did not go back to the queue'
+    time.sleep(.5)
+    assert shown() == [normal, second] and queue() == [first], 'the reserved slot did not hold'
+    # With no normal card left, the critical takes the slot again, at the bottom.
+    ipc('notifications', 'dismissOne')
+    wait(lambda: shown() == [second, first] and not queue() and settled(), 'the critical shows again once no normal card needs the slot')
+    reset()
+    print('PASS: non-expiring criticals leave one slot for a normal notification')
+
+    # The rest runs with one slot, where criticals take it, and 2 s normal timeouts.
+    configure(maxVisible=1, normalTimeoutSec=2)
+    wait(lambda: state()['settings']['maxVisible'] == 1 and state()['settings']['normalTimeoutSec'] == 2, 'maxVisible 1')
+
+    # A waiting card's timer starts when it shows: C waited past its 2 s timeout.
+    a = send('A', 'critical'); c = send('C'); d = send('D')
+    wait(lambda: shown() == [a] and queue() == [c, d] and settled(), 'timer fixture')
+    time.sleep(2.3)
+    assert queue() == [c, d], 'a waiting card expired before it showed'
+    ipc('notifications', 'dismissOne')
+    wait(lambda: shown() == [c], 'C shows')
+    shown_at = time.monotonic()
+    wait(lambda: files('popups')[c].get('deadline', 0) > 0 and 'queued' not in files('popups')[c], 'a card that showed after waiting is saved with its own deadline', 1)
+    time.sleep(1.4)
+    assert c in shown(), 'C did not get its full time on screen'
+    wait(lambda: c not in shown() and d in shown(), 'C expires, D shows', 4)
+    assert time.monotonic() - shown_at >= 1.9, 'C expired early'
+    assert c in files('history'), 'an expired card did not go to history'
+    reset()
+    print('PASS: the timer of a waiting card starts on show; expiry still archives')
+
     # An update that stops a card expiring drops the deadline it got when it showed after waiting.
-    a = send('A', 'critical'); b = send('B', 'critical'); c = send('Promoted')
+    a = send('A', 'critical'); c = send('Promoted')
     wait(lambda: queue() == [c] and settled(), 'promotion fixture')
     ipc('notifications', 'dismissOne')
     wait(lambda: c in shown() and files('popups')[c].get('deadline', 0) > 0, 'the promoted card is saved with a deadline')
@@ -212,14 +239,14 @@ try:
     print('PASS: an update that disables expiry drops the saved deadline')
 
     # Replacement and duplicates update a waiting card in place.
-    a = send('A', 'critical'); b = send('B', 'critical'); c = send('Waiting'); d = send('Behind')
+    a = send('A', 'critical'); c = send('Waiting'); d = send('Behind')
     wait(lambda: queue() == [c, d] and settled(), 'replacement fixture')
     key = state()['queue'][0]
     send('Waiting, edited', extra=('-r', c))
     wait(lambda: state()['queue'][0] == key and files('popups')[c]['summary'] == 'Waiting, edited' and settled(), 'the waiting card is updated in place')
     assert files('popups')[c].get('queued') is True, 'the replacement lost the queued flag'
     send('Behind')
-    wait(lambda: len(state()['queue']) == 2 and state()['popups'] == 5, 'a duplicate merges into its waiting group')
+    wait(lambda: len(state()['queue']) == 2 and state()['popups'] == 4, 'a duplicate merges into its waiting group')
     assert queue()[0] == c, 'the duplicate changed the queue order'
     print('PASS: replacement and duplicate merge update waiting cards in place')
 
@@ -227,7 +254,7 @@ try:
     subprocess.run(['gdbus', 'call', '--session', '--dest', 'org.freedesktop.Notifications', '--object-path', '/org/freedesktop/Notifications',
                     '--method', 'org.freedesktop.Notifications.CloseNotification', c], env=env, check=True, capture_output=True, timeout=3)
     wait(lambda: c not in queue() and c in files('history') and settled(), 'CloseNotification removes the waiting card')
-    assert shown() == [b, a], 'closing a waiting card changed the stack'
+    assert shown() == [a], 'closing a waiting card changed the stack'
     # The center removes a waiting card through releaseHistory.
     behind = [path.stem for path in (state_dir/'popups').glob('*.json') if json.loads(path.read_text())['summary'] == 'Behind']
     assert len(behind) == 2 and ipc('foamy.notifications', 'releaseHistory', ','.join(behind)) == 'ok'
@@ -240,32 +267,31 @@ try:
     wait(lambda: queue() == [c] and settled(), 'DND fixture')
     ipc('notifications', 'setDnd', 'on')
     wait(lambda: not queue() and c in files('history') and settled(), 'DND archives the waiting card')
-    assert shown() == [b, a], 'DND hid a visible card'
+    assert shown() == [a], 'DND hid a visible card'
     ipc('notifications', 'setDnd', 'off')
     reset()
     print('PASS: DND sends waiting cards to history and keeps the visible ones')
 
     # Restart: the queue survives, in order, and nothing shows twice. Y waited past its timeout.
     x = send('X', 'critical'); w = send('W', 'critical'); y = send('Y'); z = send('Z')
-    wait(lambda: shown() == [w, x] and queue() == [y, z] and settled(), 'restart fixture')
+    wait(lambda: shown() == [w] and queue() == [x, y, z] and settled(), 'restart fixture')
     keys = {group['key'] for group in state()['groups']} | set(state()['queue'])
     time.sleep(2.2)
     os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
     process = start()
     wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and state()['popups'] == 4, 'restart')
-    wait(lambda: set(shown()) == {w, x} and queue() == [y, z], 'the queue is restored waiting, in order')
+    wait(lambda: shown() == [w] and queue() == [x, y, z], 'the queue is restored waiting, in order')
     assert {group['key'] for group in state()['groups']} | set(state()['queue']) == keys, 'restart changed identities'
     assert len(files('popups')) == 4 and not files('history'), 'restart duplicated or archived a card'
     ipc('notifications', 'dismissOne'); ipc('notifications', 'dismissOne')
-    wait(lambda: shown() == [y, z] and not state()['queue'] and state()['popups'] == 2 and settled(), 'restored waiting cards show once')
+    wait(lambda: shown() == [y] and queue() == [z] and state()['popups'] == 2 and settled(), 'restored waiting cards show once')
     assert set(files('popups')) == {y, z} and set(files('history')) == {w, x}
-    assert all('queued' not in entry and entry.get('deadline', 0) > 0 for entry in files('popups').values()), 'shown cards kept the queued flag'
+    assert 'queued' not in files('popups')[y] and files('popups')[y].get('deadline', 0) > 0, 'the shown card kept the queued flag'
+    assert files('popups')[z].get('queued') is True, 'the waiting card lost the queued flag'
     reset()
     print('PASS: the queue survives a shell restart without duplicates or early expiry')
 
     # A keyboard-selected card keeps its slot; giving the keyboard back lets a waiting critical take it.
-    configure(maxVisible=1)
-    wait(lambda: state()['settings']['maxVisible'] == 1, 'maxVisible 1')
     n = send('Selected')
     wait(lambda: shown() == [n] and settled(), 'keyboard fixture')
     assert ipc('notifications', 'keyboard') == 'on'

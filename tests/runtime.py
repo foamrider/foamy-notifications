@@ -496,18 +496,19 @@ try:
     assert not in_history('Non-critical notification'),'the normal notification went to history'
     ipc('notifications','dismissAll')
     wait_for(lambda:state()['popups']==0 and not state()['busy'],'default sequence dismissed')
-    # With a limit of 3 the normal one waits for the criticals and shows when one is dismissed.
+    # With a limit of 3 one slot stays for the normal one: two criticals show with
+    # it, and the oldest critical waits and shows when one is dismissed.
     cfg['plugins'][0]['maxVisible']=3;(config/'shell.json').write_text(json.dumps(cfg))
     wait_for(lambda:state()['settings']['maxVisible']==3,'visible limit 3')
     normal,criticals=sequence()
     def ids(keys):return [key.split('-')[1] for key in keys]
-    wait_for(lambda:ids(g['key'] for g in state()['groups'])==criticals[::-1] and ids(state()['queue'])==[normal] and not state()['busy'],'three criticals show, the normal one waits')
+    wait_for(lambda:ids(g['key'] for g in state()['groups'])==[criticals[2],criticals[1],normal] and ids(state()['queue'])==[criticals[0]] and not state()['busy'],'the normal one and two criticals show, the oldest critical waits')
     archived=lambda:ids(path.stem for path in (home/'.local/state/foamy-notifications/history').glob('*.json'))
-    assert normal not in archived(),'the waiting normal notification went to history'
-    assert not set(criticals)&set(archived()),'a visible critical went to history'
+    assert normal not in archived() and criticals[0] not in archived(),'a shown or waiting notification went to history'
+    assert not set(criticals)&set(archived()),'a critical went to history'
     ipc('notifications','dismissOne')
     # The newest critical leaves; the waiting card joins the bottom of the stack.
-    wait_for(lambda:ids(g['key'] for g in state()['groups'])==[criticals[1],criticals[0],normal] and not state()['queue'],'the waiting card shows when a critical is dismissed')
+    wait_for(lambda:ids(g['key'] for g in state()['groups'])==[criticals[1],normal,criticals[0]] and not state()['queue'],'the waiting card shows when a critical is dismissed')
     wait_for(lambda:criticals[2] in archived(),'the dismissed critical is in history')
     ipc('notifications','dismissAll')
     wait_for(lambda:state()['popups']==0 and not state()['busy'],'overflow sequence dismissed')

@@ -54,16 +54,16 @@ test("the user's sequence shows all four cards with the default limit of 5", () 
   assert.deepEqual(s.queue(), [])
 })
 
-test('with a limit of 3 the normal card waits for the criticals and shows when one is dismissed', () => {
+test('with a limit of 3 the normal card keeps its slot: the oldest critical waits and shows when one is dismissed', () => {
   const s = stack(3)
   s.arrive(row(1, 'Non-critical notification'))
   for (const i of [1, 2, 3]) s.arrive(row(1 + i, 'Critical notification ' + i, 2))
-  assert.deepEqual(s.visible(), ['Critical notification 3', 'Critical notification 2', 'Critical notification 1'])
-  assert.deepEqual(s.queue(), ['Non-critical notification'])
+  assert.deepEqual(s.visible(), ['Critical notification 3', 'Critical notification 2', 'Non-critical notification'])
+  assert.deepEqual(s.queue(), ['Critical notification 1'])
   assert.deepEqual(s.history, [], 'nothing goes to history for lack of room')
   s.leave(3)
   // It joins the bottom: the cards on screen do not move for it.
-  assert.deepEqual(s.visible(), ['Critical notification 3', 'Critical notification 1', 'Non-critical notification'])
+  assert.deepEqual(s.visible(), ['Critical notification 3', 'Non-critical notification', 'Critical notification 1'])
   assert.deepEqual(s.queue(), [])
 })
 
@@ -78,12 +78,14 @@ test('waiting cards show in arrival order, criticals first, and join the bottom 
   s.arrive(row(6, 'Alert', 2))
   assert.deepEqual(s.visible(), ['Alert', 'A'])
   assert.deepEqual(s.queue(), ['B', 'C', 'D', 'E'])
-  // A waiting critical goes ahead of every waiting non-critical card.
+  // One slot stays for the normal cards: the second alert rotates the first
+  // back into the queue, ahead of every waiting non-critical card.
   s.arrive(row(7, 'Second alert', 2))
-  assert.deepEqual(s.visible(), ['Second alert', 'Alert'])
-  assert.deepEqual(s.queue(), ['A', 'B', 'C', 'D', 'E'])
+  assert.deepEqual(s.visible(), ['Second alert', 'A'])
+  assert.deepEqual(s.queue(), ['Alert', 'B', 'C', 'D', 'E'])
   s.leave(6)
   assert.deepEqual(s.visible(), ['Second alert', 'A'])
+  assert.deepEqual(s.queue(), ['B', 'C', 'D', 'E'])
   s.leave(7)
   assert.deepEqual(s.visible(), ['A', 'B'])
   s.leave(1)
@@ -188,18 +190,84 @@ test('criticals that never expire cannot starve a new one: it rotates the oldest
   assert.deepEqual(s.visible(), ['Genuine', 'Flood 5', 'Flood 4', 'Flood 3', 'Flood 2'], 'the new critical shows on top')
   assert.deepEqual(s.queue(), ['Flood 1'], 'the oldest shown critical waits')
   assert.deepEqual(s.history, [], 'the displaced critical waits instead of going to history')
-  // Normal cards still wait behind every critical.
-  s.arrive(row(7, 'Normal'))
-  assert.deepEqual(s.queue(), ['Flood 1', 'Normal'])
   // A freed slot shows it again, at the bottom: nothing on screen moves for it.
   s.leave(6)
   assert.deepEqual(s.visible(), ['Flood 5', 'Flood 4', 'Flood 3', 'Flood 2', 'Flood 1'])
-  assert.deepEqual(s.queue(), ['Normal'])
+  assert.deepEqual(s.queue(), [])
   // A pinned critical (hovered, busy, keyboard-selected) keeps its slot: the oldest unpinned one waits.
   s.pinned.add('1001-1')
   s.arrive(row(8, 'Another', 2))
   assert.deepEqual(s.visible(), ['Another', 'Flood 5', 'Flood 4', 'Flood 3', 'Flood 1'])
-  assert.deepEqual(s.queue(), ['Flood 2', 'Normal'])
+  assert.deepEqual(s.queue(), ['Flood 2'])
+})
+
+test('one slot stays for normal cards: five criticals that never expire cannot keep a normal one waiting', () => {
+  const s = stack(5)
+  for (const i of [1, 2, 3, 4, 5]) s.arrive(row(i, 'Flood ' + i, 2))
+  s.arrive(row(6, 'Normal'))
+  assert.deepEqual(s.visible(), ['Normal', 'Flood 5', 'Flood 4', 'Flood 3', 'Flood 2'], 'the normal card shows on top')
+  assert.deepEqual(s.queue(), ['Flood 1'], 'the oldest critical waits')
+  assert.deepEqual(s.history, [])
+  // A later critical rotates among the criticals; the normal card keeps its slot.
+  s.arrive(row(7, 'Alert', 2))
+  assert.deepEqual(s.visible(), ['Alert', 'Normal', 'Flood 5', 'Flood 4', 'Flood 3'])
+  assert.deepEqual(s.queue(), ['Flood 2', 'Flood 1'])
+  // Freed and refilled: the next normal card takes the reserved slot, at the bottom.
+  s.arrive(row(8, 'Later normal'))
+  assert.deepEqual(s.queue(), ['Flood 2', 'Flood 1', 'Later normal'])
+  s.leave(6)
+  assert.deepEqual(s.visible(), ['Alert', 'Flood 5', 'Flood 4', 'Flood 3', 'Later normal'])
+  assert.deepEqual(s.queue(), ['Flood 2', 'Flood 1'])
+  // With no normal card left, criticals take every slot again.
+  s.leave(8)
+  assert.deepEqual(s.visible(), ['Alert', 'Flood 5', 'Flood 4', 'Flood 3', 'Flood 2'])
+  assert.deepEqual(s.queue(), ['Flood 1'])
+})
+
+test('a normal card that waited behind five criticals (restored) takes the reserved slot at the bottom', () => {
+  const s = stack(5)
+  s.rows = [row(6, 'Waited'), ...[5, 4, 3, 2, 1].map(i => row(i, 'Flood ' + i, 2))]
+  s.shown = {'1001-1': true, '1002-2': true, '1003-3': true, '1004-4': true, '1005-5': true}; s.waiting = {'1006-6': true}
+  s.rebuild()
+  assert.deepEqual(s.visible(), ['Flood 5', 'Flood 4', 'Flood 3', 'Flood 2', 'Waited'])
+  assert.deepEqual(s.queue(), ['Flood 1'])
+})
+
+test('with a limit of 1 the critical wins', () => {
+  const s = stack(1)
+  s.arrive(row(1, 'Normal'))
+  s.arrive(row(2, 'Alert', 2))
+  assert.deepEqual(s.visible(), ['Alert'])
+  assert.deepEqual(s.queue(), ['Normal'])
+})
+
+test('with no normal card criticals fill every slot', () => {
+  const s = stack(3)
+  s.arrive(row(1, 'Normal'))
+  for (const i of [2, 3, 4]) s.arrive(row(i, 'Alert ' + i, 2))
+  assert.deepEqual(s.visible(), ['Alert 4', 'Alert 3', 'Normal'])
+  assert.deepEqual(s.queue(), ['Alert 2'])
+  s.leave(1)
+  assert.deepEqual(s.visible(), ['Alert 4', 'Alert 3', 'Alert 2'])
+  assert.deepEqual(s.queue(), [])
+  // A held normal card cannot take the slot, so it does not keep one free.
+  s.hover(); s.arrive(row(5, 'Held'))
+  assert.deepEqual(s.visible(), ['Alert 4', 'Alert 3', 'Alert 2'])
+  assert.deepEqual(s.queue(), ['Held'])
+})
+
+test('a pinned critical counts toward the criticals\' slots; a pinned normal card fills the reserved one', () => {
+  const s = stack(3)
+  for (const i of [1, 2, 3]) s.arrive(row(i, 'Alert ' + i, 2))
+  s.pinned.add('1001-1')
+  s.arrive(row(4, 'Normal'))
+  assert.deepEqual(s.visible(), ['Normal', 'Alert 3', 'Alert 1'])
+  assert.deepEqual(s.queue(), ['Alert 2'])
+  // The normal card is pinned: it is the reserved slot, and a new critical rotates among the others.
+  s.pinned.delete('1001-1'); s.pinned.add('1004-4')
+  s.arrive(row(5, 'Alert 5', 2))
+  assert.deepEqual(s.visible(), ['Alert 5', 'Normal', 'Alert 3'])
+  assert.deepEqual(s.queue(), ['Alert 2', 'Alert 1'])
 })
 
 test('waiting criticals show newest first, and join the bottom above the cards that waited behind them', () => {
