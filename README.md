@@ -3,7 +3,7 @@
 Compact notification popups for Omarchy 4.5 and 4.0, styled to match
 [Foamy Notification Center](https://github.com/foamrider/foamy-notification-center).
 
-![Foamy Notifications with sample messages, actions, and a critical alert](preview.png)
+![Foamy Notifications: a grouped chat message with actions, a screen recording with Omarchy action buttons, and a critical sign-in code alert with a copy button](preview.png)
 
 ## Install
 
@@ -11,8 +11,9 @@ Targets Omarchy 4.5; basic delivery, history, actions and DND also work on 4.0.
 Requires Quickshell and the standard Omarchy tools (including `hyprctl` and
 `omarchy-shell`) on an x86_64 or aarch64 CPU: persistence, window focus and
 favicons run in the bundled helper (`bin/<arch>/foamy-notifications-helper`),
-so no Python is needed. On other CPUs popups still show, but nothing is saved
-or focused. Notification Center is optional.
+so no Python is needed. On other CPUs popups still show, but nothing is saved,
+focused or converted from image files, and popups stay on the last known
+monitor. Notification Center is optional.
 File-backed app icons and sender pictures also need `file` and ImageMagick 7
 (`magick`). Missing conversion tools keep the text, actions and icon fallback.
 
@@ -159,7 +160,8 @@ it; with several choices it hands over the keyboard), **SUPER+CTRL+comma**
 (`keyboard`), SUPER+SHIFT+comma (`dismissAll`), SUPER+ALT+comma (`dismissOne`)
 and SUPER+SHIFT+ALT+comma (`showHistory`). Also available: `invokeAction <n>`,
 `invokeLast`, `count`, `expand`, `probe`, `isDnd`, `toggleDnd`, `setDnd`,
-`dismiss <summary>` and `ping`; `dndState` stays for 4.0 callers. IPC is
+`dismiss <summary>`, `clear` (empties history, keeps the popups), `snoozes`
+and `ping`; `dndState` stays for 4.0 callers. IPC is
 answered over the 4.5 shell socket and through `qs ipc` on 4.0.
 
 Keyboard mode: Up/Down, `j`/`k` or Tab move between cards, Enter or Space clicks,
@@ -218,7 +220,7 @@ and data outside the plugin directory remain in place.
 `kit/` holds shared components copied from [foamy-kit](https://github.com/foamrider/foamy-kit); edit them there, not here.
 
 [MIT](LICENSE), with [Omarchy attribution](LICENSE-OMARCHY).
-The preview uses synthetic messages and an original sample avatar.
+The preview uses synthetic messages (`preview/Preview.qml`, state `readme`).
 
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
 
