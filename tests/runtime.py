@@ -504,14 +504,16 @@ try:
         ipc('foamy.notification-center.test','clear')
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'clear unrelated history before editor scenarios')
         # Use a long-lived fake editor so the center must release its launch process.
+        # It is omasnap, the editor 4.5 names and the center's opener prefers, so the
+        # stub (first on PATH) shadows an installed one on every launch path.
         editor_marker=base/'screenshot-editor.txt'
-        editor=bin_dir/'tensaku-edit'
+        editor=bin_dir/'omasnap'
         editor.write_text('#!/bin/sh\nprintf "%s" "$1" > '+str(editor_marker)+'\nsleep 1\n')
         editor.chmod(0o755)
         spaced_image=base/'screenshot with spaces.png';shutil.copy(image,spaced_image)
         for mode in ['visible','history','reload','missing','launch-failure']:
             editor_marker.unlink(missing_ok=True)
-            omarchy_send('omarchy-action','Screenshot editor '+mode,'Click to edit',spaced_image,['tensaku-edit',str(spaced_image)])
+            omarchy_send('omarchy-action','Screenshot editor '+mode,'Click to edit',spaced_image,['omasnap',str(spaced_image)])
             wait_for(lambda:state()['popups']==1 and not state()['busy'],'screenshot ready '+mode)
             key=state()['groups'][0]['key']
             wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'screenshot archived '+mode)
