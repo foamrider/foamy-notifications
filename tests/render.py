@@ -80,7 +80,7 @@ ShellRoot {
 home=base/'home';home.mkdir()
 runtime=base/'runtime';runtime.mkdir(mode=0o700)
 desktop = '--desktop' in sys.argv
-env=dict(os.environ,HOME=str(home),QT_QPA_PLATFORM='wayland' if desktop else 'offscreen',QT_QUICK_BACKEND='rhi' if desktop else 'software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion',LANG='en_US.UTF-8')
+env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),QT_QPA_PLATFORM='wayland' if desktop else 'offscreen',QT_QUICK_BACKEND='rhi' if desktop else 'software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion',LANG='en_US.UTF-8')
 command=['quickshell','-p',str(app),'--no-color']
 if not desktop:
     env['XDG_RUNTIME_DIR']=str(runtime)
