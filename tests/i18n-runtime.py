@@ -32,7 +32,8 @@ with tempfile.TemporaryDirectory(prefix='foamy-language-test-') as directory:
     en = json.loads((plugin / 'i18n/en.json').read_text())
     en['English only'] = 'English only'
     (plugin / 'i18n/en.json').write_text(json.dumps(en))
-    (app / 'Commons').symlink_to(omarchy / 'shell/Commons', target_is_directory=True)
+    for name in ('Commons', 'Ui'):
+        (app / name).symlink_to(omarchy / 'shell' / name, target_is_directory=True)
     language = base / 'language'
     language.write_text('no')
     runtime = base / 'runtime'

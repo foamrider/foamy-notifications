@@ -9,7 +9,7 @@ import hostenv
 source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-ui-'))
 app=base/'app';app.mkdir()
-(app/'Commons').symlink_to(hostenv.root()/'shell/Commons',target_is_directory=True)
+for name in ('Commons','Ui'):(app/name).symlink_to(hostenv.root()/'shell'/name,target_is_directory=True)
 # The plugin's kit/ (FoamyI18n, FoamyStyle, …) and the files the card imports.
 (app / 'kit').symlink_to(source / 'kit', target_is_directory=True)
 (app / 'i18n').symlink_to(source / 'i18n', target_is_directory=True)
@@ -44,4 +44,4 @@ except subprocess.TimeoutExpired:
 print(output)
 hostenv.check(env, output, (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')
 # completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
-assert process.returncode==0 and 'UI_RESULT 23 passed 0 failed' in output
+assert process.returncode==0 and 'UI_RESULT 24 passed 0 failed' in output

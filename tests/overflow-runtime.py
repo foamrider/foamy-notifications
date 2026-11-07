@@ -20,7 +20,8 @@ if '--inside' not in sys.argv:
     raise SystemExit(subprocess.run(['dbus-run-session', '--', sys.executable, __file__, '--inside'], timeout=90).returncode)
 base = Path(tempfile.mkdtemp(prefix='foamy-notifications-overflow-'))
 app = base/'app'; app.mkdir()
-(app/'Commons').symlink_to(hostenv.root()/'shell/Commons', target_is_directory=True)
+for name in ('Commons', 'Ui'):
+    (app/name).symlink_to(hostenv.root()/'shell'/name, target_is_directory=True)
 shutil.copytree(SOURCE, app/'plugin', ignore=shutil.ignore_patterns('.git', '__pycache__'))
 full = (SOURCE/'Service.qml').read_text()
 # Keep the real service and server; the layer-shell windows are replaced below.
