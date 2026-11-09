@@ -110,6 +110,11 @@ Item {
   // How many notifications the history directory keeps, and therefore how
   // many `showHistory` can replay.
   readonly property int historyLimit: 100
+  // How long the center may use a notification's live actions after it
+  // arrived. Older ones are released; after that the center falls back to its
+  // fixed image opener or app focus. Actions never outlive this shell either.
+  readonly property double centerActionLifetime: 86400000
+  function actionNow() { return Date.now() }
 
   property var preferences: Preferences.defaults()
   property string configError: ""
@@ -646,11 +651,18 @@ Item {
     var key = NotificationLogic.imageStem(row)
     if (!centerEnabled || row.transient || handledKeys[key] || liveKeys[row.originalId] !== key
         || liveRefs[row.originalId] !== notification) return false
+    if (!(actionNow() - Number(row.timestamp) < centerActionLifetime)) return false
     try {
       if (NotificationLogic.hasRawImage(notification)) { detachRawNotification(notification); return false }
-      if (!notification.tracked || !notification.actions.some(function(action) { return action.identifier === "default" })) return false
+      // Anything the center can still press: the sender's own actions while it
+      // is live, or an Omarchy click command or --action buttons. They stay in
+      // memory only (never read back from a file) and expire with
+      // centerActionLifetime.
+      if (!notification.tracked || !(notification.actions.length > 0 || NotificationLogic.parseExecArgv(row.execArgv)
+          || NotificationLogic.parseExecActions(row.execActions))) return false
     } catch (e) { return false }
     retainedHistory[key] = Object.assign({}, row)
+    centerActionsChanged()
     // Bound live callbacks by the same count as popup history, even if the center is never opened.
     var keys = Object.keys(retainedHistory).sort(function(a, b) {
       return Number(retainedHistory[a].timestamp) - Number(retainedHistory[b].timestamp)
@@ -661,6 +673,7 @@ Item {
 
   function releaseHistoryAction(key) {
     var row = retainedHistory[key] || {originalId:Number(key.split("-")[1])}
+    if (retainedHistory[key]) centerActionsChanged()
     delete retainedHistory[key]
     if (liveKeys[row.originalId] !== key) return
     var ref = liveRefs[row.originalId]
@@ -875,14 +888,110 @@ Item {
       commitHandled(row, [key])
       return "invoked"
     }
-    var retained = retainedHistory[key]
-    if (retained && liveKeys[retained.originalId] === key && invokeLiveAction(retained, "default")) {
-      var retainedRow = Object.assign({}, retained, {key:key})
+    var retained = centerRow(key)
+    if (!retained) return "unavailable"
+    retained.key = key
+    // A retained click command came from this live notification, not a file.
+    var retainedArgv = NotificationLogic.parseExecArgv(retained.execArgv)
+    if (retainedArgv) {
       var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
-      commitHandled(retainedRow, [key])
+      commitHandled(retained, [key], function() { Util.execArgv(retainedArgv) })
+      return "invoked"
+    }
+    if (invokeLiveAction(retained, "default")) {
+      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+      commitHandled(retained, [key])
       return "invoked"
     }
     return "unavailable"
+  }
+
+  // The center's view of a notification's actions: a current popup with its
+  // tracked native identity, or a retained one, and only within
+  // centerActionLifetime of its arrival. Restored and archived rows never
+  // qualify. A copy, so the caller can add `key`.
+  function centerRow(key) {
+    if (!/^[0-9]+-[0-9]+$/.test(key) || !(actionNow() - Number(key.split("-")[0]) < centerActionLifetime)) return null
+    for (var i = 0; i < popupModel.count; i++) {
+      var row = popupModel.get(i)
+      if (NotificationLogic.imageStem(row) !== key) continue
+      if (isRestoredRow(row) || liveKeys[row.originalId] !== key) return null
+      var ref = liveRefs[row.originalId]
+      return ref && ref.tracked ? Object.assign({}, row) : null
+    }
+    var retained = retainedHistory[key]
+    if (!retained || liveKeys[retained.originalId] !== key) return null
+    var live = liveRefs[retained.originalId]
+    return live && live.tracked ? Object.assign({}, retained) : null
+  }
+
+  // The buttons a card draws, minus what only the card can do (codes, links):
+  // --action buttons, then the sender's actions (settings last).
+  function centerButtons(row) {
+    return NotificationLogic.deeds(row, null).filter(function(deed) { return deed.kind === "exec" || deed.kind === "action" })
+  }
+
+  // `centerActions`: { key: [label, …] } for every notification whose buttons
+  // the center may still press.
+  function centerActionList() {
+    expireCenterActions()
+    var out = {}
+    var keys = []
+    for (var i = 0; i < popupModel.count; i++) keys.push(NotificationLogic.imageStem(popupModel.get(i)))
+    keys = keys.concat(Object.keys(retainedHistory))
+    for (var k = 0; k < keys.length; k++) {
+      var key = keys[k]
+      if (out[key] || busyKeys[key] || handledKeys[key]) continue
+      var row = centerRow(key)
+      var buttons = row ? centerButtons(row) : []
+      if (buttons.length) out[key] = buttons.map(function(deed) { return String(deed.text).slice(0, 80) })
+    }
+    return out
+  }
+
+  // A center button: its index in `centerActions`. Runs like the card's button,
+  // with handling persisted before a command launches.
+  function invokeCenterAction(key, index) {
+    if (!/^[0-9]+-[0-9]+$/.test(key) || !/^[0-9]{1,2}$/.test(index)) return "invalid"
+    if (busyKeys[key]) return "busy"
+    var row = centerRow(key)
+    var deed = row ? centerButtons(row)[Number(index)] : null
+    if (!deed) return "unavailable"
+    row.key = key
+    if (deed.kind === "exec") {
+      var actions = NotificationLogic.parseExecActions(row.execActions)
+      var argv = actions && actions[Number(deed.value)] ? actions[Number(deed.value)].argv : null
+      if (!argv) return "unavailable"
+      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+      commitHandled(row, [key], function() { Util.execArgv(argv) })
+      return "invoked"
+    }
+    if (!invokeLiveAction(row, deed.value)) return "unavailable"
+    var busyAction = Object.assign({}, busyKeys); busyAction[key] = true; busyKeys = busyAction
+    commitHandled(row, [key])
+    return "invoked"
+  }
+
+  // Releases retained actions older than centerActionLifetime.
+  function expireCenterActions() {
+    var now = actionNow()
+    Object.keys(retainedHistory).forEach(function(key) {
+      if (!(now - Number(key.split("-")[0]) < service.centerActionLifetime)) service.releaseHistoryAction(key)
+    })
+  }
+
+  // The center re-reads `centerActions` when told; one poke per batch.
+  property bool centerActionsPoke: false
+  function centerActionsChanged() {
+    if (!centerEnabled || centerActionsPoke) return
+    centerActionsPoke = true
+    Qt.callLater(function() { service.centerActionsPoke = false; service.pokeCenter("actions") })
+  }
+  Timer {
+    interval: 600000
+    repeat: true
+    running: service.centerEnabled
+    onTriggered: service.expireCenterActions()
   }
 
   // Run the popup's click action, then dismiss. Omarchy's own toasts carry the
@@ -2195,6 +2304,9 @@ Item {
     // Foamy writes its own shell.json entry; the center only asks.
     function setPreference(key: string, valueJson: string): string { return service.savePreference(key, valueJson) }
     function invokeDefault(key: string): string { return service.invokeCenterDefault(key) }
+    // Labels of the buttons the center may press, by key (JSON); see README.
+    function centerActions(): string { return JSON.stringify(service.centerActionList()) }
+    function invokeCenterAction(key: string, index: string): string { return service.invokeCenterAction(key, index) }
     function releaseHistory(keysCsv: string): string {
       var keys = keysCsv.split(",")
       if (keys.length > 100 || keys.some(function(key) { return !/^[0-9]+-[0-9]+$/.test(key) })) return "invalid"

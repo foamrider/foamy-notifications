@@ -2,12 +2,13 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const source=fs.readFileSync(path.join(__dirname,'../Service.qml'),'utf8')
 function fixture() {
  const jobs=[],events=[]
- const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},deferredMoves:{},centerEnabled:true,historyLimit:100,helper:'helper',preferences:{browserMappings:[]},console,
+ const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},deferredMoves:{},centerEnabled:true,historyLimit:100,centerActionLifetime:86400000,now:1000,pokes:0,helper:'helper',preferences:{browserMappings:[]},console,
   NotificationLogic:{...require('../NotificationLogic.js')},isRestoredRow:()=>false,
   enqueueHelperJob:(op,data,done)=>jobs.push({command:op,done:done||null,payload:JSON.stringify(data)}),
-  notifyCenter:()=>events.push('center'),removeKeys:()=>events.push('remove'),scheduleRebuild(){},Util:{execArgv:()=>events.push('launch')}})
+  notifyCenter:()=>events.push('center'),centerActionsChanged(){state.pokes++},removeKeys:()=>events.push('remove'),scheduleRebuild(){},Util:{execArgv:()=>events.push('launch')}})
  state.service=state
- for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','activateGroup','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
+ state.actionNow=()=>state.now
+ for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','centerRow','centerButtons','centerActionList','invokeCenterAction','expireCenterActions','activateGroup','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
@@ -145,14 +146,78 @@ test('retention is bounded and cannot release a reused notification ID',()=>{
  state.releaseHistoryAction('11-2')
  assert.equal(state.liveRefs[2].tracked,true);assert.equal(state.liveKeys[2],'12-2')
 })
-test('stock-only, transient and command-only notifications do not retain callbacks',()=>{
- for(const mode of ['stock','transient','command']) {
+test('stock-only, transient, action-less and day-old notifications do not retain callbacks',()=>{
+ for(const mode of ['stock','transient','none','old']) {
   const {state,row,ref}=retainedFixture()
   if(mode==='stock')state.centerEnabled=false
   if(mode==='transient')row.transient=true
-  if(mode==='command'){ref.actions=[];row.execArgv='["command"]'}
+  if(mode==='none')ref.actions=[]
+  if(mode==='old')state.now=10+86400000
   assert.equal(state.retainHistoryAction(row,ref),false)
  }
+})
+
+const plain=value=>JSON.parse(JSON.stringify(value))
+// Omarchy commands (a click and --action buttons) from a live notification:
+// kept in memory, never read back from a file, for 24 hours.
+function commandFixture() {
+ const f=retainedFixture()
+ f.ref.actions=[]
+ f.row.execArgv='["omarchy-shell","-q","foamy.zendesk","show","4821"]'
+ f.row.execActions=JSON.stringify([{label:'View in Zendesk',argv:['omarchy-shell','-q','foamy.zendesk','viewInZendesk','4821:5']},
+  {label:'Mark as read',argv:['omarchy-shell','-q','foamy.zendesk','markRead','4821:5']}])
+ f.row.actionsJson='[]'
+ const launched=[];f.state.Util={execArgv:argv=>{launched.push(argv);f.events.push('launch')}}
+ return {...f,launched}
+}
+test('command notifications keep their click and buttons for the center',()=>{
+ const {state,row,ref,jobs,events,launched}=commandFixture()
+ assert.equal(state.retainHistoryAction(row,ref),true);assert.equal(state.pokes,1)
+ assert.deepEqual(plain(state.centerActionList()),{'10-1':['View in Zendesk','Mark as read']})
+ assert.equal(state.invokeCenterAction('10-1','2'),'unavailable')
+ assert.equal(state.invokeCenterAction('10-1','x'),'invalid')
+ assert.equal(state.invokeCenterAction('10-1','1'),'invoked');assert.deepEqual(events,[])
+ assert.equal(state.invokeCenterAction('10-1','0'),'busy')
+ jobs.shift().done(true)
+ assert.deepEqual(launched,[['omarchy-shell','-q','foamy.zendesk','markRead','4821:5']])
+ assert.deepEqual(events,['center','launch','remove','closed'])
+ assert.deepEqual(plain(state.centerActionList()),{})
+})
+test('a retained click command runs after handling is persisted',()=>{
+ const {state,row,ref,jobs,events,launched}=commandFixture()
+ state.retainHistoryAction(row,ref)
+ assert.equal(state.invokeCenterDefault('10-1'),'invoked');assert.deepEqual(events,[])
+ jobs.shift().done(true)
+ assert.deepEqual(launched,[['omarchy-shell','-q','foamy.zendesk','show','4821']])
+})
+test('the center presses sender actions by index while the sender is live',()=>{
+ const {state,row,ref,jobs,events}=retainedFixture()
+ ref.actions.push({identifier:'reply',invoke(){events.push('reply')}})
+ row.actionsJson=JSON.stringify([{identifier:'reply',text:'Reply'}])
+ state.retainHistoryAction(row,ref)
+ assert.deepEqual(plain(state.centerActionList()),{'10-1':['Reply']})
+ assert.equal(state.invokeCenterAction('10-1','0'),'invoked');assert.deepEqual(events,['reply'])
+ jobs.shift().done(true);assert.deepEqual(events,['reply','center','remove','closed'])
+})
+test('actions expire 24 hours after arrival',()=>{
+ const {state,row,ref,events}=commandFixture()
+ state.retainHistoryAction(row,ref)
+ state.now=10+86400000-1;assert.deepEqual(Object.keys(state.centerActionList()),['10-1'])
+ state.now=10+86400000
+ assert.equal(state.invokeCenterAction('10-1','0'),'unavailable')
+ assert.equal(state.invokeCenterDefault('10-1'),'unavailable')
+ assert.deepEqual(plain(state.centerActionList()),{})
+ assert.equal(Object.keys(state.retainedHistory).length,0);assert.equal(ref.tracked,false)
+ assert.deepEqual(events,['closed'])
+})
+test('restored popups and released notifications offer the center nothing',()=>{
+ const {state,row,ref}=commandFixture()
+ state.popupModel={count:1,get:()=>row};state.isRestoredRow=()=>true
+ assert.deepEqual(plain(state.centerActionList()),{})
+ assert.equal(state.invokeCenterAction('10-1','0'),'unavailable')
+ state.isRestoredRow=()=>false;state.popupModel={count:0,get:()=>null}
+ state.retainHistoryAction(row,ref);state.releaseHistoryKeys(['10-1'])
+ assert.deepEqual(plain(state.centerActionList()),{})
 })
 test('history cleanup also closes a callback awaiting its first history write',()=>{
  const {state,ref}=retainedFixture()
