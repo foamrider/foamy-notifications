@@ -3,12 +3,14 @@ const source=fs.readFileSync(path.join(__dirname,'../Service.qml'),'utf8')
 function fixture() {
  const jobs=[],events=[]
  const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},deferredMoves:{},centerEnabled:true,historyLimit:100,centerActionLifetime:86400000,now:1000,pokes:0,helper:'helper',preferences:{browserMappings:[]},console,
-  NotificationLogic:{...require('../NotificationLogic.js')},isRestoredRow:()=>false,
+  NotificationLogic:{...require('../NotificationLogic.js')},BrowserIdentity:require('../BrowserIdentity.js'),isRestoredRow:()=>false,
+  omarchyPath:'/omarchy',processes:[],appWindowBrowsers:{vivaldi:true,chromium:true,'google-chrome':true,chrome:true,brave:true,'microsoft-edge':true,msedge:true},
+  siteFocusProcess:{createObject:(parent,props)=>{const proc={...props,done:null,running:false};state.processes.push(proc);return proc}},
   enqueueHelperJob:(op,data,done)=>jobs.push({command:op,done:done||null,payload:JSON.stringify(data)}),
   notifyCenter:()=>events.push('center'),centerActionsChanged(){state.pokes++},removeKeys:()=>events.push('remove'),scheduleRebuild(){},Util:{execArgv:()=>events.push('launch')}})
  state.service=state
  state.actionNow=()=>state.now
- for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','centerRow','centerButtons','centerActionList','invokeCenterAction','expireCenterActions','activateGroup','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
+ for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','centerRow','centerButtons','centerActionList','invokeCenterAction','expireCenterActions','activateGroup','activateSender','siteFocusCandidate','regexLiteral','focusSiteWindow','siteRowFocus','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
@@ -261,4 +263,66 @@ test('clearing before a cutoff releases every eligible live key, not just the fi
  assert.ok(drops.every(d=>!d.keys||d.keys.length<=100),'helper batches stay within 100 keys')
  assert.equal(drops.filter(d=>d.keys).reduce((n,d)=>n+d.keys.length,0),150)
  assert.ok(drops.some(d=>d.before===1000))
+})
+
+const site='^(chrome|vivaldi|msedge|brave)-outlook\\.office\\.com__'
+const outlook={app:'Vivaldi',desktopEntry:'vivaldi-stable',body:'outlook.office.com\nTest notification'}
+test('a browser notification naming its site focuses the site app window instead of the browser callback',()=>{
+ const {state,jobs,events,row}=fixture()
+ Object.assign(row,outlook)
+ state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+ state.activateGroup(row,'default')
+ assert.equal(jobs.length,0);assert.equal(state.processes.length,1)
+ assert.deepEqual(Array.from(state.processes[0].command),['/omarchy/bin/omarchy-hyprland-focus-app',site])
+ assert.equal(state.processes[0].running,true)
+ state.processes[0].done(true)
+ assert.equal(jobs[0].command,'forget');jobs.shift().done(true)
+ assert.deepEqual(events,['center','remove'],'the browser never received the click')
+})
+test('a browserMappings window is tried before the site pattern; no app window falls back to the browser callback',()=>{
+ const {state,jobs,events,row}=fixture()
+ Object.assign(row,outlook)
+ state.preferences.browserMappings=[{origin:'outlook.office.com',windowClass:'vivaldi-outlook.office.com__-Profile_2'}]
+ state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+ state.activateGroup(row,'default')
+ assert.deepEqual(Array.from(state.processes[0].command),['/omarchy/bin/omarchy-hyprland-focus-app','^vivaldi-outlook\\.office\\.com__-Profile_2$'])
+ state.processes[0].done(false)
+ assert.deepEqual(Array.from(state.processes[1].command),['/omarchy/bin/omarchy-hyprland-focus-app',site])
+ state.processes[1].done(false)
+ assert.deepEqual(events,['invoke']);assert.equal(jobs[0].command,'forget')
+})
+test('browser identity comes from BrowserIdentity alone, including the desktop entry',()=>{
+ const {state,events,row}=fixture()
+ Object.assign(row,{app:'Teams',desktopEntry:'google-chrome',body:'teams.microsoft.com\nAlex: Hi'})
+ state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+ state.activateGroup(row,'default')
+ assert.deepEqual(Array.from(state.processes[0].command),['/omarchy/bin/omarchy-hyprland-focus-app','^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__'])
+ assert.deepEqual(events,[])
+})
+test('other senders, and no Omarchy, keep the sender callback first',()=>{
+ for(const [app,body,omarchy] of [['Slack','outlook.office.com\nHi','/omarchy'],['Firefox','outlook.office.com\nHi','/omarchy'],['Vivaldi','Ticket update','/omarchy'],['Vivaldi','outlook.office.com\nHi','']]) {
+  const {state,jobs,events,row}=fixture()
+  Object.assign(row,{app,body});state.omarchyPath=omarchy
+  state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+  state.activateGroup(row,'default')
+  assert.deepEqual(events,['invoke'],app+' '+body);assert.equal(state.processes.length,0);assert.equal(jobs[0].command,'forget')
+ }
+})
+test('the center click on a live browser notification focuses the site window, else runs the callback',()=>{
+ const {state,jobs,events}=fixture()
+ state.popupModel={count:1,get:()=>({id:7,originalId:7,timestamp:5,...outlook,summary:'x'})}
+ state.liveKeys[7]='5-7';state.liveRefs[7]={tracked:true,actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+ state.NotificationLogic.imageStem=row=>row.timestamp+'-'+row.originalId
+ assert.equal(state.invokeCenterDefault('5-7'),'invoked');assert.equal(state.busyKeys['5-7'],true)
+ state.processes[0].done(false)
+ assert.deepEqual(events,['invoke']);assert.equal(jobs[0].command,'forget')
+})
+test('a center click whose focus fails at once does not stay busy',()=>{
+ const {state,events}=fixture()
+ state.popupModel={count:1,get:()=>({id:7,originalId:7,timestamp:5,...outlook,summary:'x'})}
+ state.liveKeys[7]='5-7';state.liveRefs[7]={tracked:true,actions:[]}
+ state.NotificationLogic.imageStem=row=>row.timestamp+'-'+row.originalId
+ state.siteFocusProcess={createObject:()=>null}
+ assert.equal(state.invokeCenterDefault('5-7'),'invoked')
+ assert.equal(state.busyKeys['5-7'],undefined,'busy was restored after a synchronous miss');assert.deepEqual(events,[])
 })

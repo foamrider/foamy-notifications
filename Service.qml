@@ -881,8 +881,9 @@ Item {
         commitHandled(row, [key], function() { Util.execArgv(argv) })
         return "invoked"
       }
-      if (!invokeLiveAction(row, "default")) return "unavailable"
       row.key = key
+      if (siteRowFocus(row, key)) return "invoked"
+      if (!invokeLiveAction(row, "default")) return "unavailable"
       var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
       // Use normal handling to remove the popup and its persisted copy as well.
       commitHandled(row, [key])
@@ -898,12 +899,28 @@ Item {
       commitHandled(retained, [key], function() { Util.execArgv(retainedArgv) })
       return "invoked"
     }
+    if (siteRowFocus(retained, key)) return "invoked"
     if (invokeLiveAction(retained, "default")) {
       var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
       commitHandled(retained, [key])
       return "invoked"
     }
     return "unavailable"
+  }
+
+  // The center's click on a browser notification that names its site: the
+  // site's app window (focusSiteWindow), else the sender's live callback. The
+  // center has its answer ("invoked") already; Foamy reports `handled`, or
+  // clears busy so the row can be clicked again.
+  function siteRowFocus(row, key) {
+    if (!siteFocusCandidate(row)) return false
+    // Busy first: every completion below clears it, and must not be overwritten.
+    var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+    focusSiteWindow(row, function() { service.commitHandled(row, [key]) }, function() {
+      if (service.invokeLiveAction(row, "default")) service.commitHandled(row, [key])
+      else service.finishAction(key, "")
+    })
+    return true
   }
 
   // The center's view of a notification's actions: a current popup with its
@@ -1013,6 +1030,13 @@ Item {
       commitHandled(row, keys, function() { Util.execArgv(argv) })
       return
     }
+    if (identifier === "default" && focusSiteWindow(row, function() { service.commitHandled(row, keys) },
+                                                    function() { service.activateSender(row, keys, identifier) })) return
+    activateSender(row, keys, identifier)
+  }
+
+  // The sender's own action, else app focus. activateGroup has set the card busy.
+  function activateSender(row, keys, identifier) {
     var invoked = invokeLiveAction(row, identifier)
     if (invoked) commitHandled(row, keys)
     else if (identifier === "default") {
@@ -1029,6 +1053,60 @@ Item {
           : "Could not focus the sending app. Open it yourself or dismiss this popup.")
       })
     } else finishAction(row.key, "This action is no longer available.")
+  }
+
+  // Chromium-family browsers can't raise an installed web app when they get the
+  // click ("default"): the shell's notification server sends no activation
+  // token, so the site opens a new tab instead (Outlook does). For a
+  // notification that names its site, Foamy asks Omarchy's
+  // omarchy-hyprland-focus-app to bring the site's app window forward: the
+  // browserMappings window for the site first, then any app window of the site
+  // (several when browser profiles each have one; Omarchy takes the one focused
+  // last). Identity is BrowserIdentity's alone. With no app window for the
+  // site, onMiss hands the click to the browser as before.
+  readonly property var appWindowBrowsers: ({"vivaldi": true, "chromium": true, "google-chrome": true, "chrome": true,
+                                             "brave": true, "microsoft-edge": true, "msedge": true})
+  function siteFocusCandidate(row) {
+    return !!omarchyPath && !!appWindowBrowsers[BrowserIdentity.browser(row)] && !!BrowserIdentity.hostname(row)
+  }
+  // A literal for omarchy-hyprland-focus-app's (jq) regex.
+  function regexLiteral(text) { return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
+  // Each pattern is one argv entry, never shell text. False (nothing started)
+  // for any other sender.
+  function focusSiteWindow(row, onFocused, onMiss) {
+    if (!siteFocusCandidate(row)) return false
+    var host = BrowserIdentity.hostname(row)
+    var patterns = []
+    var mappings = Array.isArray(preferences.browserMappings) ? preferences.browserMappings : []
+    for (var m = 0; m < mappings.length; m++) {
+      var mapping = mappings[m] || {}
+      if (String(mapping.origin || "").toLowerCase() === host && String(mapping.windowClass || "")) {
+        patterns.push("^" + regexLiteral(mapping.windowClass) + "$")
+        break
+      }
+    }
+    patterns.push("^(chrome|vivaldi|msedge|brave)-" + regexLiteral(host) + "__")
+    function attempt(index) {
+      if (index >= patterns.length) { onMiss(); return }
+      var proc = siteFocusProcess.createObject(service, {command: [service.omarchyPath + "/bin/omarchy-hyprland-focus-app", patterns[index]]})
+      if (!proc) { onMiss(); return }
+      proc.done = function(focused) { if (focused) onFocused(); else attempt(index + 1) }
+      proc.running = true
+    }
+    attempt(0)
+    return true
+  }
+  Component {
+    id: siteFocusProcess
+    Process {
+      property var done: null
+      onExited: function(code, status) {
+        var callback = done
+        done = null
+        Qt.callLater(destroy)
+        if (callback) callback(code === 0 && status === 0)
+      }
+    }
   }
 
   function commitHandled(row, keys, beforeDismiss) {
