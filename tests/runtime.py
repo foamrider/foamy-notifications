@@ -376,15 +376,15 @@ try:
             wait_for(lambda:len(dispatches())==before+1,'Teams focus dispatched once')
             expected='0x101' if target=='popup' else '0x100'
             assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:'+expected+'" })'],'incorrect focus fallback'
-            # One app window per browser profile: Omarchy's focus-app picks the newest,
-            # through the site's literal class pattern (never a browser tab).
-            asked=[l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ^(')]
-            assert asked==(['omarchy-hyprland-focus-app ^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__'] if ambiguous and target=='popup' else []),asked
+            # Omarchy's focus-app picks the site's app window through its literal class
+            # pattern (the newest of one per browser profile), never a browser tab.
+            asked=[l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ^')]
+            assert asked==(['omarchy-hyprland-focus-app ^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__'] if target=='popup' else []),asked
             if target=='popup':wait_for(lambda:state()['popups']==0 and not state()['busy'] and not state()['lastError'],'Teams popup handled')
             if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'Teams history handled')
             ipc('countdown-test','leave')
             if ambiguous and target=='popup':
-                # A browserMappings entry still names the exact window, before Omarchy is asked.
+                # A browserMappings entry names the exact window, asked for before the site pattern.
                 cfg['plugins'][0]['browserMappings']=[{'origin':'teams.microsoft.com','windowClass':other_teams['class']}]
                 (config/'shell.json').write_text(json.dumps(cfg))
                 wait_for(lambda:bool(state()['settings']['browserMappings']),'Teams mapping loaded')
@@ -395,7 +395,8 @@ try:
                 ipc('countdown-test','clickFirst')
                 wait_for(lambda:len(dispatches())==before+1,'mapped Teams focus dispatched once')
                 assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:0x102" })'],'mapping ignored'
-                assert not [l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ^(')],'mapped click asked Omarchy'
+                asked=[l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ^')]
+                assert asked==['omarchy-hyprland-focus-app ^vivaldi-teams\\.microsoft\\.com__-Profile_2$'],asked
                 wait_for(lambda:state()['popups']==0 and not state()['busy'],'mapped Teams popup handled')
                 if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'mapped Teams history handled')
                 ipc('countdown-test','leave')

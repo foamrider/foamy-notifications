@@ -913,13 +913,14 @@ Item {
   // center has its answer ("invoked") already; Foamy reports `handled`, or
   // clears busy so the row can be clicked again.
   function siteRowFocus(row, key) {
-    var busy = Object.assign({}, busyKeys); busy[key] = true
-    var started = focusSiteWindow(row, function() { service.commitHandled(row, [key]) }, function() {
+    if (!siteFocusCandidate(row)) return false
+    // Busy first: every completion below clears it, and must not be overwritten.
+    var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+    focusSiteWindow(row, function() { service.commitHandled(row, [key]) }, function() {
       if (service.invokeLiveAction(row, "default")) service.commitHandled(row, [key])
       else service.finishAction(key, "")
     })
-    if (started) busyKeys = busy
-    return started
+    return true
   }
 
   // The center's view of a notification's actions: a current popup with its
@@ -1057,31 +1058,42 @@ Item {
   // Chromium-family browsers can't raise an installed web app when they get the
   // click ("default"): the shell's notification server sends no activation
   // token, so the site opens a new tab instead (Outlook does). For a
-  // notification that names its site, Foamy brings that site's app window
-  // forward itself: the helper's exact match first (it honours
-  // browserMappings), then, when the site has several app windows (one per
-  // browser profile) or the mapping's window is gone, Omarchy's
-  // omarchy-hyprland-focus-app, which takes the one focused last. With no app
-  // window for the site, onMiss hands the click to the browser as before.
-  // False (nothing started) for any other sender.
+  // notification that names its site, Foamy asks Omarchy's
+  // omarchy-hyprland-focus-app to bring the site's app window forward: the
+  // browserMappings window for the site first, then any app window of the site
+  // (several when browser profiles each have one; Omarchy takes the one focused
+  // last). Identity is BrowserIdentity's alone. With no app window for the
+  // site, onMiss hands the click to the browser as before.
   readonly property var appWindowBrowsers: ({"vivaldi": true, "chromium": true, "google-chrome": true, "chrome": true,
                                              "brave": true, "microsoft-edge": true, "msedge": true})
+  function siteFocusCandidate(row) {
+    return !!omarchyPath && !!appWindowBrowsers[BrowserIdentity.browser(row)] && !!BrowserIdentity.hostname(row)
+  }
+  // A literal for omarchy-hyprland-focus-app's (jq) regex.
+  function regexLiteral(text) { return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
+  // Each pattern is one argv entry, never shell text. False (nothing started)
+  // for any other sender.
   function focusSiteWindow(row, onFocused, onMiss) {
+    if (!siteFocusCandidate(row)) return false
     var host = BrowserIdentity.hostname(row)
-    if (!host || !appWindowBrowsers[BrowserIdentity.browser(row)]) return false
-    enqueueHelperJob("focus", {app:row.app, desktopEntry:row.desktopEntry, body:row.body, mappings:preferences.browserMappings}, function(ok, out, reason) {
-      if (ok && String(out).trim() !== "none") { onFocused(); return }
-      if (ok || reason !== "browser" || !service.omarchyPath) { onMiss(); return }
-      // No single window was only this step's answer; what follows reports its own failures.
-      service.lastError = ""
-      // The hostname is a validated DNS name (letters, digits, hyphens, dots),
-      // so escaping the dots makes it a literal; it is one argv entry, never shell text.
-      var pattern = "^(chrome|vivaldi|msedge|brave)-" + host.replace(/\./g, "\\.") + "__"
-      var proc = siteFocusProcess.createObject(service, {command: [service.omarchyPath + "/bin/omarchy-hyprland-focus-app", pattern]})
+    var patterns = []
+    var mappings = Array.isArray(preferences.browserMappings) ? preferences.browserMappings : []
+    for (var m = 0; m < mappings.length; m++) {
+      var mapping = mappings[m] || {}
+      if (String(mapping.origin || "").toLowerCase() === host && String(mapping.windowClass || "")) {
+        patterns.push("^" + regexLiteral(mapping.windowClass) + "$")
+        break
+      }
+    }
+    patterns.push("^(chrome|vivaldi|msedge|brave)-" + regexLiteral(host) + "__")
+    function attempt(index) {
+      if (index >= patterns.length) { onMiss(); return }
+      var proc = siteFocusProcess.createObject(service, {command: [service.omarchyPath + "/bin/omarchy-hyprland-focus-app", patterns[index]]})
       if (!proc) { onMiss(); return }
-      proc.done = function(focused) { if (focused) onFocused(); else onMiss() }
+      proc.done = function(focused) { if (focused) onFocused(); else attempt(index + 1) }
       proc.running = true
-    })
+    }
+    attempt(0)
     return true
   }
   Component {
