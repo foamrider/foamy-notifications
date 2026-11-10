@@ -326,3 +326,16 @@ test('a center click whose focus fails at once does not stay busy',()=>{
  assert.equal(state.invokeCenterDefault('5-7'),'invoked')
  assert.equal(state.busyKeys['5-7'],undefined,'busy was restored after a synchronous miss');assert.deepEqual(events,[])
 })
+
+test('the center cannot invoke a card still on screen once its action lifetime is over',()=>{
+ const {state,jobs,events}=fixture()
+ state.popupModel={count:1,get:()=>({id:7,originalId:7,timestamp:5,app:'Mail',body:'x',summary:'x'})}
+ state.liveKeys[7]='5-7';state.liveRefs[7]={tracked:true,actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+ state.NotificationLogic.imageStem=row=>row.timestamp+'-'+row.originalId
+ state.now=5+state.centerActionLifetime
+ assert.equal(state.centerRow('5-7'),null)
+ assert.equal(state.invokeCenterDefault('5-7'),'unavailable')
+ assert.deepEqual(events,[]);assert.equal(jobs.length,0)
+ state.now=4+state.centerActionLifetime
+ assert.equal(state.invokeCenterDefault('5-7'),'invoked');assert.deepEqual(events,['invoke'])
+})

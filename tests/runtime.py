@@ -642,6 +642,19 @@ try:
         ipc('foamy.notification-center.test','focus',key)
         wait_for(lambda:button_marker.exists() and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'center click runs the live click command')
         assert button_marker.read_text()=='click'
+        # A sender that withdraws its notification after the popup left takes its
+        # buttons with it: the center is told, without any other change.
+        closing=subprocess.Popen(['notify-send','-a','Zendesk','-u','normal','-t','0','--wait','--action=default=Open','--action=read=Mark read','Withdrawn','Ticket update'],env=env,stdout=subprocess.PIPE,text=True)
+        wait_for(lambda:state()['popups']==1 and not state()['busy'],'withdrawn notification shown')
+        key=state()['groups'][0]['key']
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'withdrawn notification archived')
+        ipc('notifications','dismissAll')
+        wait_for(lambda:state()['popups']==0 and state()['retainedActions']==1,'withdrawn notification retained')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','liveActions')).get(key)==['Mark read'],'center shows the retained button')
+        subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications','--method','org.freedesktop.Notifications.CloseNotification',key.split('-')[1]],env=env,check=True,capture_output=True,timeout=3)
+        assert closing.communicate(timeout=4)[0].strip()==''
+        wait_for(lambda:key not in json.loads(ipc('foamy.notification-center.test','liveActions')),'sender closure refreshes the center buttons')
+        ipc('foamy.notification-center.test','clear')
     cfg=json.loads((config/'shell.json').read_text())
     settings=cfg['plugins'][0]
     settings.update({'suppressFullscreen':True,'fullscreenCritical':False,'criticalTimeoutSec':2,'normalTimeoutSec':1})

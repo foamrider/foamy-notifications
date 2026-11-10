@@ -453,7 +453,10 @@ Item {
       if (service.liveRefs[snapshot.originalId] !== notification) return
       delete service.liveRefs[snapshot.originalId]
       delete service.liveKeys[snapshot.originalId]
-      delete service.retainedHistory[NotificationLogic.imageStem(snapshot)]
+      var closedKey = NotificationLogic.imageStem(snapshot)
+      // The center's buttons for this notification are gone with its sender.
+      if (service.retainedHistory[closedKey]) service.centerActionsChanged()
+      delete service.retainedHistory[closedKey]
       // Action labels are primitives; remove them when their live callback dies.
       // A card on screen stays (without them); one still waiting in the overflow
       // queue never shows once the sender withdrew it (CloseNotification), and
@@ -867,6 +870,9 @@ Item {
   function invokeCenterDefault(key) {
     if (!/^[0-9]+-[0-9]+$/.test(key)) return "invalid"
     if (busyKeys[key]) return "busy"
+    // The center may use live actions only within centerActionLifetime of
+    // arrival, a card still on screen included (centerRow, centerActions).
+    if (!(actionNow() - Number(key.split("-")[0]) < centerActionLifetime)) return "unavailable"
     // Resolve only current live rows by full identity; archived IDs can be reused.
     for (var i = 0; i < popupModel.count; i++) {
       var row = Object.assign({}, popupModel.get(i))
