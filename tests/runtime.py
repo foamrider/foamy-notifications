@@ -157,6 +157,10 @@ def omarchy_send(app_name, summary, body, image, argv):
     subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications',
         '--method','org.freedesktop.Notifications.Notify',app_name,'0','',summary,body,'[]',hints,'0'],env=env,check=True,timeout=3,stdout=subprocess.DEVNULL)
 
+def omarchy_calls():
+    log=base/'omarchy-calls.log'
+    return [line[line.rfind('/')+1:] for line in log.read_text().splitlines()] if log.exists() else []
+
 def dispatches():
     return dispatch_path.read_text().splitlines() if dispatch_path.exists() else []
 try:
@@ -367,22 +371,55 @@ try:
             def click_teams():
                 if target=='popup':ipc('countdown-test','clickFirst')
                 else:ipc('foamy.notification-center.test','focus',key)
+            calls=omarchy_calls()
             click_teams()
-            if ambiguous and target=='popup':
-                wait_for(lambda:bool(state()['lastError']) if target=='popup' else bool(json.loads(ipc('foamy.notification-center.test','state'))['focusError']),'ambiguous Teams target reports failure')
-                assert len(dispatches())==before,'ambiguous Teams click dispatched focus'
-                if CENTER:assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'ambiguous Teams click removed history'
-                cfg['plugins'][0]['browserMappings']=[{'origin':'teams.microsoft.com','windowClass':teams['class']}]
-                (config/'shell.json').write_text(json.dumps(cfg))
-                wait_for(lambda:bool(state()['settings']['browserMappings']),'Teams mapping loaded')
-                click_teams()
             wait_for(lambda:len(dispatches())==before+1,'Teams focus dispatched once')
             expected='0x101' if target=='popup' else '0x100'
             assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:'+expected+'" })'],'incorrect focus fallback'
-            if target=='popup':wait_for(lambda:state()['popups']==0 and not state()['busy'],'Teams popup handled')
+            # One app window per browser profile: Omarchy's focus-app picks the newest,
+            # through the site's literal class pattern (never a browser tab).
+            asked=[l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ^(')]
+            assert asked==(['omarchy-hyprland-focus-app ^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__'] if ambiguous and target=='popup' else []),asked
+            if target=='popup':wait_for(lambda:state()['popups']==0 and not state()['busy'] and not state()['lastError'],'Teams popup handled')
             if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'Teams history handled')
             ipc('countdown-test','leave')
-    # Both entry points must deliver the native callback without local window focus.
+            if ambiguous and target=='popup':
+                # A browserMappings entry still names the exact window, before Omarchy is asked.
+                cfg['plugins'][0]['browserMappings']=[{'origin':'teams.microsoft.com','windowClass':other_teams['class']}]
+                (config/'shell.json').write_text(json.dumps(cfg))
+                wait_for(lambda:bool(state()['settings']['browserMappings']),'Teams mapping loaded')
+                send('Teams mapped',('-a','Vivaldi','-h','string:desktop-entry:vivaldi-stable'),body='teams.microsoft.com\nAlex: Hi')
+                wait_for(lambda:state()['popups']==1 and not state()['busy'],'mapped Teams popup ready')
+                wait_for(lambda:json.loads(ipc('countdown-test','stackState'))['settled'],'mapped Teams card ready for click')
+                before=len(dispatches());calls=omarchy_calls()
+                ipc('countdown-test','clickFirst')
+                wait_for(lambda:len(dispatches())==before+1,'mapped Teams focus dispatched once')
+                assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:0x102" })'],'mapping ignored'
+                assert not [l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ^(')],'mapped click asked Omarchy'
+                wait_for(lambda:state()['popups']==0 and not state()['busy'],'mapped Teams popup handled')
+                if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'mapped Teams history handled')
+                ipc('countdown-test','leave')
+    # A browser notification whose site has an app window: Foamy focuses that window
+    # and never hands the click to the browser, which would open the site in a new
+    # tab (no activation token reaches it). The sender only sees its notification close.
+    ctx['clients']=[browser,teams];context_path.write_text(json.dumps(ctx))
+    cfg['plugins'][0]['browserMappings']=[];(config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:not state()['settings']['browserMappings'],'clear browser mapping for live clicks')
+    for target in (['popup','center'] if CENTER else ['popup']):
+        before=len(dispatches())
+        action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open','Teams app window','teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
+        wait_for(lambda:state()['popups']==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'live Teams popup ready')
+        if target=='center':
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'live Teams archived')
+            ipc('foamy.notification-center.test','focus',state()['groups'][0]['key'])
+        else:ipc('countdown-test','clickFirst')
+        output=action.communicate(timeout=4)[0].strip();assert output=='',output
+        assert [json.loads(d) for d in dispatches()[before:]]==[['hl.dsp.focus({ window = "address:0x101" })']],dispatches()[before:]
+        wait_for(lambda:state()['popups']==0 and not state()['busy'],'live Teams click handled')
+        if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'live Teams click clears center')
+    # Without an app window for the site, both entry points deliver the native
+    # callback without local window focus.
+    ctx['clients']=[browser];context_path.write_text(json.dumps(ctx))
     for target in (['popup','center'] if CENTER else ['popup']):
         before=len(dispatches())
         action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open','Teams live callback','teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
