@@ -110,6 +110,11 @@ Item {
   // How many notifications the history directory keeps, and therefore how
   // many `showHistory` can replay.
   readonly property int historyLimit: 100
+  // How long the center may use a notification's live actions after it
+  // arrived. Older ones are released; after that the center falls back to its
+  // fixed image opener or app focus. Actions never outlive this shell either.
+  readonly property double centerActionLifetime: 86400000
+  function actionNow() { return Date.now() }
 
   property var preferences: Preferences.defaults()
   property string configError: ""
@@ -448,7 +453,10 @@ Item {
       if (service.liveRefs[snapshot.originalId] !== notification) return
       delete service.liveRefs[snapshot.originalId]
       delete service.liveKeys[snapshot.originalId]
-      delete service.retainedHistory[NotificationLogic.imageStem(snapshot)]
+      var closedKey = NotificationLogic.imageStem(snapshot)
+      // The center's buttons for this notification are gone with its sender.
+      if (service.retainedHistory[closedKey]) service.centerActionsChanged()
+      delete service.retainedHistory[closedKey]
       // Action labels are primitives; remove them when their live callback dies.
       // A card on screen stays (without them); one still waiting in the overflow
       // queue never shows once the sender withdrew it (CloseNotification), and
@@ -646,11 +654,18 @@ Item {
     var key = NotificationLogic.imageStem(row)
     if (!centerEnabled || row.transient || handledKeys[key] || liveKeys[row.originalId] !== key
         || liveRefs[row.originalId] !== notification) return false
+    if (!(actionNow() - Number(row.timestamp) < centerActionLifetime)) return false
     try {
       if (NotificationLogic.hasRawImage(notification)) { detachRawNotification(notification); return false }
-      if (!notification.tracked || !notification.actions.some(function(action) { return action.identifier === "default" })) return false
+      // Anything the center can still press: the sender's own actions while it
+      // is live, or an Omarchy click command or --action buttons. They stay in
+      // memory only (never read back from a file) and expire with
+      // centerActionLifetime.
+      if (!notification.tracked || !(notification.actions.length > 0 || NotificationLogic.parseExecArgv(row.execArgv)
+          || NotificationLogic.parseExecActions(row.execActions))) return false
     } catch (e) { return false }
     retainedHistory[key] = Object.assign({}, row)
+    centerActionsChanged()
     // Bound live callbacks by the same count as popup history, even if the center is never opened.
     var keys = Object.keys(retainedHistory).sort(function(a, b) {
       return Number(retainedHistory[a].timestamp) - Number(retainedHistory[b].timestamp)
@@ -661,6 +676,7 @@ Item {
 
   function releaseHistoryAction(key) {
     var row = retainedHistory[key] || {originalId:Number(key.split("-")[1])}
+    if (retainedHistory[key]) centerActionsChanged()
     delete retainedHistory[key]
     if (liveKeys[row.originalId] !== key) return
     var ref = liveRefs[row.originalId]
@@ -854,6 +870,9 @@ Item {
   function invokeCenterDefault(key) {
     if (!/^[0-9]+-[0-9]+$/.test(key)) return "invalid"
     if (busyKeys[key]) return "busy"
+    // The center may use live actions only within centerActionLifetime of
+    // arrival, a card still on screen included (centerRow, centerActions).
+    if (!(actionNow() - Number(key.split("-")[0]) < centerActionLifetime)) return "unavailable"
     // Resolve only current live rows by full identity; archived IDs can be reused.
     for (var i = 0; i < popupModel.count; i++) {
       var row = Object.assign({}, popupModel.get(i))
@@ -868,21 +887,134 @@ Item {
         commitHandled(row, [key], function() { Util.execArgv(argv) })
         return "invoked"
       }
-      if (!invokeLiveAction(row, "default")) return "unavailable"
       row.key = key
+      if (siteRowFocus(row, key)) return "invoked"
+      if (!invokeLiveAction(row, "default")) return "unavailable"
       var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
       // Use normal handling to remove the popup and its persisted copy as well.
       commitHandled(row, [key])
       return "invoked"
     }
-    var retained = retainedHistory[key]
-    if (retained && liveKeys[retained.originalId] === key && invokeLiveAction(retained, "default")) {
-      var retainedRow = Object.assign({}, retained, {key:key})
+    var retained = centerRow(key)
+    if (!retained) return "unavailable"
+    retained.key = key
+    // A retained click command came from this live notification, not a file.
+    var retainedArgv = NotificationLogic.parseExecArgv(retained.execArgv)
+    if (retainedArgv) {
       var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
-      commitHandled(retainedRow, [key])
+      commitHandled(retained, [key], function() { Util.execArgv(retainedArgv) })
+      return "invoked"
+    }
+    if (siteRowFocus(retained, key)) return "invoked"
+    if (invokeLiveAction(retained, "default")) {
+      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+      commitHandled(retained, [key])
       return "invoked"
     }
     return "unavailable"
+  }
+
+  // The center's click on a browser notification that names its site: the
+  // site's app window (focusSiteWindow), else the sender's live callback. The
+  // center has its answer ("invoked") already; Foamy reports `handled`, or
+  // clears busy so the row can be clicked again.
+  function siteRowFocus(row, key) {
+    if (!siteFocusCandidate(row)) return false
+    // Busy first: every completion below clears it, and must not be overwritten.
+    var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+    focusSiteWindow(row, function() { service.commitHandled(row, [key]) }, function() {
+      if (service.invokeLiveAction(row, "default")) service.commitHandled(row, [key])
+      else service.finishAction(key, "")
+    })
+    return true
+  }
+
+  // The center's view of a notification's actions: a current popup with its
+  // tracked native identity, or a retained one, and only within
+  // centerActionLifetime of its arrival. Restored and archived rows never
+  // qualify. A copy, so the caller can add `key`.
+  function centerRow(key) {
+    if (!/^[0-9]+-[0-9]+$/.test(key) || !(actionNow() - Number(key.split("-")[0]) < centerActionLifetime)) return null
+    for (var i = 0; i < popupModel.count; i++) {
+      var row = popupModel.get(i)
+      if (NotificationLogic.imageStem(row) !== key) continue
+      if (isRestoredRow(row) || liveKeys[row.originalId] !== key) return null
+      var ref = liveRefs[row.originalId]
+      return ref && ref.tracked ? Object.assign({}, row) : null
+    }
+    var retained = retainedHistory[key]
+    if (!retained || liveKeys[retained.originalId] !== key) return null
+    var live = liveRefs[retained.originalId]
+    return live && live.tracked ? Object.assign({}, retained) : null
+  }
+
+  // The buttons a card draws, minus what only the card can do (codes, links):
+  // --action buttons, then the sender's actions (settings last).
+  function centerButtons(row) {
+    return NotificationLogic.deeds(row, null).filter(function(deed) { return deed.kind === "exec" || deed.kind === "action" })
+  }
+
+  // `centerActions`: { key: [label, …] } for every notification whose buttons
+  // the center may still press.
+  function centerActionList() {
+    expireCenterActions()
+    var out = {}
+    var keys = []
+    for (var i = 0; i < popupModel.count; i++) keys.push(NotificationLogic.imageStem(popupModel.get(i)))
+    keys = keys.concat(Object.keys(retainedHistory))
+    for (var k = 0; k < keys.length; k++) {
+      var key = keys[k]
+      if (out[key] || busyKeys[key] || handledKeys[key]) continue
+      var row = centerRow(key)
+      var buttons = row ? centerButtons(row) : []
+      if (buttons.length) out[key] = buttons.map(function(deed) { return String(deed.text).slice(0, 80) })
+    }
+    return out
+  }
+
+  // A center button: its index in `centerActions`. Runs like the card's button,
+  // with handling persisted before a command launches.
+  function invokeCenterAction(key, index) {
+    if (!/^[0-9]+-[0-9]+$/.test(key) || !/^[0-9]{1,2}$/.test(index)) return "invalid"
+    if (busyKeys[key]) return "busy"
+    var row = centerRow(key)
+    var deed = row ? centerButtons(row)[Number(index)] : null
+    if (!deed) return "unavailable"
+    row.key = key
+    if (deed.kind === "exec") {
+      var actions = NotificationLogic.parseExecActions(row.execActions)
+      var argv = actions && actions[Number(deed.value)] ? actions[Number(deed.value)].argv : null
+      if (!argv) return "unavailable"
+      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+      commitHandled(row, [key], function() { Util.execArgv(argv) })
+      return "invoked"
+    }
+    if (!invokeLiveAction(row, deed.value)) return "unavailable"
+    var busyAction = Object.assign({}, busyKeys); busyAction[key] = true; busyKeys = busyAction
+    commitHandled(row, [key])
+    return "invoked"
+  }
+
+  // Releases retained actions older than centerActionLifetime.
+  function expireCenterActions() {
+    var now = actionNow()
+    Object.keys(retainedHistory).forEach(function(key) {
+      if (!(now - Number(key.split("-")[0]) < service.centerActionLifetime)) service.releaseHistoryAction(key)
+    })
+  }
+
+  // The center re-reads `centerActions` when told; one poke per batch.
+  property bool centerActionsPoke: false
+  function centerActionsChanged() {
+    if (!centerEnabled || centerActionsPoke) return
+    centerActionsPoke = true
+    Qt.callLater(function() { service.centerActionsPoke = false; service.pokeCenter("actions") })
+  }
+  Timer {
+    interval: 600000
+    repeat: true
+    running: service.centerEnabled
+    onTriggered: service.expireCenterActions()
   }
 
   // Run the popup's click action, then dismiss. Omarchy's own toasts carry the
@@ -904,6 +1036,13 @@ Item {
       commitHandled(row, keys, function() { Util.execArgv(argv) })
       return
     }
+    if (identifier === "default" && focusSiteWindow(row, function() { service.commitHandled(row, keys) },
+                                                    function() { service.activateSender(row, keys, identifier) })) return
+    activateSender(row, keys, identifier)
+  }
+
+  // The sender's own action, else app focus. activateGroup has set the card busy.
+  function activateSender(row, keys, identifier) {
     var invoked = invokeLiveAction(row, identifier)
     if (invoked) commitHandled(row, keys)
     else if (identifier === "default") {
@@ -920,6 +1059,60 @@ Item {
           : "Could not focus the sending app. Open it yourself or dismiss this popup.")
       })
     } else finishAction(row.key, "This action is no longer available.")
+  }
+
+  // Chromium-family browsers can't raise an installed web app when they get the
+  // click ("default"): the shell's notification server sends no activation
+  // token, so the site opens a new tab instead (Outlook does). For a
+  // notification that names its site, Foamy asks Omarchy's
+  // omarchy-hyprland-focus-app to bring the site's app window forward: the
+  // browserMappings window for the site first, then any app window of the site
+  // (several when browser profiles each have one; Omarchy takes the one focused
+  // last). Identity is BrowserIdentity's alone. With no app window for the
+  // site, onMiss hands the click to the browser as before.
+  readonly property var appWindowBrowsers: ({"vivaldi": true, "chromium": true, "google-chrome": true, "chrome": true,
+                                             "brave": true, "microsoft-edge": true, "msedge": true})
+  function siteFocusCandidate(row) {
+    return !!omarchyPath && !!appWindowBrowsers[BrowserIdentity.browser(row)] && !!BrowserIdentity.hostname(row)
+  }
+  // A literal for omarchy-hyprland-focus-app's (jq) regex.
+  function regexLiteral(text) { return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
+  // Each pattern is one argv entry, never shell text. False (nothing started)
+  // for any other sender.
+  function focusSiteWindow(row, onFocused, onMiss) {
+    if (!siteFocusCandidate(row)) return false
+    var host = BrowserIdentity.hostname(row)
+    var patterns = []
+    var mappings = Array.isArray(preferences.browserMappings) ? preferences.browserMappings : []
+    for (var m = 0; m < mappings.length; m++) {
+      var mapping = mappings[m] || {}
+      if (String(mapping.origin || "").toLowerCase() === host && String(mapping.windowClass || "")) {
+        patterns.push("^" + regexLiteral(mapping.windowClass) + "$")
+        break
+      }
+    }
+    patterns.push("^(chrome|vivaldi|msedge|brave)-" + regexLiteral(host) + "__")
+    function attempt(index) {
+      if (index >= patterns.length) { onMiss(); return }
+      var proc = siteFocusProcess.createObject(service, {command: [service.omarchyPath + "/bin/omarchy-hyprland-focus-app", patterns[index]]})
+      if (!proc) { onMiss(); return }
+      proc.done = function(focused) { if (focused) onFocused(); else attempt(index + 1) }
+      proc.running = true
+    }
+    attempt(0)
+    return true
+  }
+  Component {
+    id: siteFocusProcess
+    Process {
+      property var done: null
+      onExited: function(code, status) {
+        var callback = done
+        done = null
+        Qt.callLater(destroy)
+        if (callback) callback(code === 0 && status === 0)
+      }
+    }
   }
 
   function commitHandled(row, keys, beforeDismiss) {
@@ -2195,6 +2388,9 @@ Item {
     // Foamy writes its own shell.json entry; the center only asks.
     function setPreference(key: string, valueJson: string): string { return service.savePreference(key, valueJson) }
     function invokeDefault(key: string): string { return service.invokeCenterDefault(key) }
+    // Labels of the buttons the center may press, by key (JSON); see README.
+    function centerActions(): string { return JSON.stringify(service.centerActionList()) }
+    function invokeCenterAction(key: string, index: string): string { return service.invokeCenterAction(key, index) }
     function releaseHistory(keysCsv: string): string {
       var keys = keysCsv.split(",")
       if (keys.length > 100 || keys.some(function(key) { return !/^[0-9]+-[0-9]+$/.test(key) })) return "invalid"

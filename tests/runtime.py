@@ -53,7 +53,7 @@ print(json.dumps(data[command]) if command else "ok")
 if CENTER:
     shutil.copytree(CENTER,app/'center',ignore=shutil.ignore_patterns('.git','__pycache__'))
     center_service=app/'center/Service.qml'
-    center_service.write_text(center_service.read_text().replace('    function seed(count: int): string {', '    function focus(key: string): string { root.focusNotification(root.entries.find(function(row) { return row.key === key })); return "queued" }\n    function seed(count: int): string {'))
+    center_service.write_text(center_service.read_text().replace('    function seed(count: int): string {', '    function focus(key: string): string { root.focusNotification(root.entries.find(function(row) { return row.key === key })); return "queued" }\n    function liveActions(): string { return JSON.stringify(root.liveActions) }\n    function press(key: string, index: int): string { root.pressAction(root.entries.find(function(row) { return row.key === key }), index); return "queued" }\n    function seed(count: int): string {'))
     candidate=os.environ.get('FOAMY_CENTER_SERVICE','')
     if candidate:shutil.copy(candidate,app/'center/Service.qml')
     plugins=config/'plugins';plugins.mkdir()
@@ -156,6 +156,10 @@ def omarchy_send(app_name, summary, body, image, argv):
     hints = "{'urgency': <byte 2>, 'image-path': <" + quote(image) + ">, 'omarchy-exec-argv': <" + quote(json.dumps(argv)) + ">}"
     subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications',
         '--method','org.freedesktop.Notifications.Notify',app_name,'0','',summary,body,'[]',hints,'0'],env=env,check=True,timeout=3,stdout=subprocess.DEVNULL)
+
+def omarchy_calls():
+    log=base/'omarchy-calls.log'
+    return [line[line.rfind('/')+1:] for line in log.read_text().splitlines()] if log.exists() else []
 
 def dispatches():
     return dispatch_path.read_text().splitlines() if dispatch_path.exists() else []
@@ -367,22 +371,56 @@ try:
             def click_teams():
                 if target=='popup':ipc('countdown-test','clickFirst')
                 else:ipc('foamy.notification-center.test','focus',key)
+            calls=omarchy_calls()
             click_teams()
-            if ambiguous and target=='popup':
-                wait_for(lambda:bool(state()['lastError']) if target=='popup' else bool(json.loads(ipc('foamy.notification-center.test','state'))['focusError']),'ambiguous Teams target reports failure')
-                assert len(dispatches())==before,'ambiguous Teams click dispatched focus'
-                if CENTER:assert json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'ambiguous Teams click removed history'
-                cfg['plugins'][0]['browserMappings']=[{'origin':'teams.microsoft.com','windowClass':teams['class']}]
-                (config/'shell.json').write_text(json.dumps(cfg))
-                wait_for(lambda:bool(state()['settings']['browserMappings']),'Teams mapping loaded')
-                click_teams()
             wait_for(lambda:len(dispatches())==before+1,'Teams focus dispatched once')
             expected='0x101' if target=='popup' else '0x100'
             assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:'+expected+'" })'],'incorrect focus fallback'
-            if target=='popup':wait_for(lambda:state()['popups']==0 and not state()['busy'],'Teams popup handled')
+            # Omarchy's focus-app picks the site's app window through its literal class
+            # pattern (the newest of one per browser profile), never a browser tab.
+            asked=[l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ^')]
+            assert asked==(['omarchy-hyprland-focus-app ^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__'] if target=='popup' else []),asked
+            if target=='popup':wait_for(lambda:state()['popups']==0 and not state()['busy'] and not state()['lastError'],'Teams popup handled')
             if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'Teams history handled')
             ipc('countdown-test','leave')
-    # Both entry points must deliver the native callback without local window focus.
+            if ambiguous and target=='popup':
+                # A browserMappings entry names the exact window, asked for before the site pattern.
+                cfg['plugins'][0]['browserMappings']=[{'origin':'teams.microsoft.com','windowClass':other_teams['class']}]
+                (config/'shell.json').write_text(json.dumps(cfg))
+                wait_for(lambda:bool(state()['settings']['browserMappings']),'Teams mapping loaded')
+                send('Teams mapped',('-a','Vivaldi','-h','string:desktop-entry:vivaldi-stable'),body='teams.microsoft.com\nAlex: Hi')
+                wait_for(lambda:state()['popups']==1 and not state()['busy'],'mapped Teams popup ready')
+                wait_for(lambda:json.loads(ipc('countdown-test','stackState'))['settled'],'mapped Teams card ready for click')
+                before=len(dispatches());calls=omarchy_calls()
+                ipc('countdown-test','clickFirst')
+                wait_for(lambda:len(dispatches())==before+1,'mapped Teams focus dispatched once')
+                assert json.loads(dispatches()[-1])==['hl.dsp.focus({ window = "address:0x102" })'],'mapping ignored'
+                asked=[l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ^')]
+                assert asked==['omarchy-hyprland-focus-app ^vivaldi-teams\\.microsoft\\.com__-Profile_2$'],asked
+                wait_for(lambda:state()['popups']==0 and not state()['busy'],'mapped Teams popup handled')
+                if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'mapped Teams history handled')
+                ipc('countdown-test','leave')
+    # A browser notification whose site has an app window: Foamy focuses that window
+    # and never hands the click to the browser, which would open the site in a new
+    # tab (no activation token reaches it). The sender only sees its notification close.
+    ctx['clients']=[browser,teams];context_path.write_text(json.dumps(ctx))
+    cfg['plugins'][0]['browserMappings']=[];(config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:not state()['settings']['browserMappings'],'clear browser mapping for live clicks')
+    for target in (['popup','center'] if CENTER else ['popup']):
+        before=len(dispatches())
+        action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open','Teams app window','teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
+        wait_for(lambda:state()['popups']==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'live Teams popup ready')
+        if target=='center':
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'live Teams archived')
+            ipc('foamy.notification-center.test','focus',state()['groups'][0]['key'])
+        else:ipc('countdown-test','clickFirst')
+        output=action.communicate(timeout=4)[0].strip();assert output=='',output
+        assert [json.loads(d) for d in dispatches()[before:]]==[['hl.dsp.focus({ window = "address:0x101" })']],dispatches()[before:]
+        wait_for(lambda:state()['popups']==0 and not state()['busy'],'live Teams click handled')
+        if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'live Teams click clears center')
+    # Without an app window for the site, both entry points deliver the native
+    # callback without local window focus.
+    ctx['clients']=[browser];context_path.write_text(json.dumps(ctx))
     for target in (['popup','center'] if CENTER else ['popup']):
         before=len(dispatches())
         action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open','Teams live callback','teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
@@ -553,11 +591,15 @@ try:
             if mode!='visible':
                 ipc('notifications','dismissAll')
                 wait_for(lambda:state()['popups']==0 and not state()['busy'],'screenshot outlives popup '+mode)
-                assert ipc('foamy.notifications','invokeDefault',key)=='unavailable'
-            if mode=='reload':
+            # Within 24 h the live command still runs from the center, like the
+            # popup ('history'); a reload releases it, and the center's fixed
+            # opener (with its failure feedback) takes over.
+            if mode in ['reload','missing','launch-failure']:
                 os.killpg(process.pid,signal.SIGTERM);process.wait(timeout=3)
                 process=subprocess.Popen(['quickshell','-p',str(app),'--no-color'],env=env,stdout=log,stderr=log,start_new_session=True)
                 wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'screenshot survives shell reload')
+                assert ipc('foamy.notifications','invokeDefault',key)=='unavailable'
+                assert ipc('foamy.notifications','centerActions')=='{}','a reload must release live commands'
             if mode=='missing':spaced_image.unlink()
             if mode=='launch-failure':editor.write_text('#!/bin/sh\nexit 3\n')
             ipc('foamy.notification-center.test','focus',key)
@@ -570,6 +612,49 @@ try:
             wait_for(lambda:editor_marker.exists() and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'center launches screenshot editor '+mode)
             assert editor_marker.read_text()==str(spaced_image),'center changed screenshot filename'
             wait_for(lambda:state()['popups']==0 and not state()['busy'],'screenshot cleanup '+mode)
+    if CENTER:
+        # Omarchy click commands and --action buttons stay pressable from the
+        # center after the popup (in Foamy's memory only); a press runs once.
+        button_marker=base/'button.txt'
+        button=bin_dir/'button-stub';button.write_text('#!/bin/sh\nprintf "%s" "$1" > '+str(button_marker)+'\n');button.chmod(0o755)
+        def send_buttons(summary):
+            hints="{'urgency': <byte 1>, 'omarchy-exec-argv': <'"+json.dumps(['button-stub','click'])+"'>, 'omarchy-actions': <'"+json.dumps([{'label':'View in Zendesk','argv':['button-stub','view']},{'label':'Mark as read','argv':['button-stub','read']}])+"'>}"
+            subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications',
+                '--method','org.freedesktop.Notifications.Notify','Zendesk','0','',summary,'Anna: a reply','[]',hints,'0'],env=env,check=True,timeout=3,stdout=subprocess.DEVNULL)
+            wait_for(lambda:state()['popups']==1 and not state()['busy'],'button notification '+summary)
+            key=state()['groups'][0]['key']
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'button notification archived '+summary)
+            ipc('notifications','dismissAll')
+            wait_for(lambda:state()['popups']==0 and not state()['busy'],'button notification leaves the screen '+summary)
+            return key
+        ipc('foamy.notification-center.test','clear')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'clear before button scenarios')
+        key=send_buttons('Buttons')
+        assert json.loads(ipc('foamy.notifications','centerActions'))=={key:['View in Zendesk','Mark as read']}
+        ipc('foamy.notification-center.store','peerChanged','actions')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','liveActions'))=={key:['View in Zendesk','Mark as read']},'center reads the live buttons')
+        ipc('foamy.notification-center.test','press',key,'1')
+        wait_for(lambda:button_marker.exists() and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'center button runs once and clears the entry')
+        assert button_marker.read_text()=='read'
+        wait_for(lambda:ipc('foamy.notifications','centerActions')=='{}' and state()['retainedActions']==0,'pressed buttons are released')
+        button_marker.unlink()
+        key=send_buttons('Click')
+        ipc('foamy.notification-center.test','focus',key)
+        wait_for(lambda:button_marker.exists() and json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'center click runs the live click command')
+        assert button_marker.read_text()=='click'
+        # A sender that withdraws its notification after the popup left takes its
+        # buttons with it: the center is told, without any other change.
+        closing=subprocess.Popen(['notify-send','-a','Zendesk','-u','normal','-t','0','--wait','--action=default=Open','--action=read=Mark read','Withdrawn','Ticket update'],env=env,stdout=subprocess.PIPE,text=True)
+        wait_for(lambda:state()['popups']==1 and not state()['busy'],'withdrawn notification shown')
+        key=state()['groups'][0]['key']
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==1,'withdrawn notification archived')
+        ipc('notifications','dismissAll')
+        wait_for(lambda:state()['popups']==0 and state()['retainedActions']==1,'withdrawn notification retained')
+        wait_for(lambda:json.loads(ipc('foamy.notification-center.test','liveActions')).get(key)==['Mark read'],'center shows the retained button')
+        subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications','--method','org.freedesktop.Notifications.CloseNotification',key.split('-')[1]],env=env,check=True,capture_output=True,timeout=3)
+        assert closing.communicate(timeout=4)[0].strip()==''
+        wait_for(lambda:key not in json.loads(ipc('foamy.notification-center.test','liveActions')),'sender closure refreshes the center buttons')
+        ipc('foamy.notification-center.test','clear')
     cfg=json.loads((config/'shell.json').read_text())
     settings=cfg['plugins'][0]
     settings.update({'suppressFullscreen':True,'fullscreenCritical':False,'criticalTimeoutSec':2,'normalTimeoutSec':1})

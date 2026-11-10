@@ -160,13 +160,25 @@ Notification Center can invoke a live default action through
 key and handles that notification without clearing its whole duplicate group.
 For a visible popup with its current tracked native identity, its structured
 command runs with the same persist-before-launch ordering as a popup click.
-Restored, detached, or archived command vectors are unavailable through this IPC. With the center enabled, live default actions remain
-available after popup expiry, hiding, and DND silencing. At most `historyLimit`
-(100) history callbacks remain tracked; older callbacks are released first.
-Sender closure, successful handling, history dismissal/clearing, and disabling
-the center release callbacks. Replacements update the retained history entry.
-Browser or shell restarts cannot restore callbacks; unavailable actions still
-use the center's fixed image opener or app-focus fallback. The center preserves
+
+With the center enabled, a notification's live actions stay available after
+popup expiry, hiding, and DND silencing, so the center offers the same click and
+buttons as the popup: the sender's own actions, and Omarchy's structured click
+command (`omarchy-exec-argv`) and `--action` buttons (`omarchy-actions`).
+`foamy.notifications centerActions` returns `{ "<timestamp-id>": ["label", …] }`
+for every notification whose buttons the center may still press, and
+`invokeCenterAction <timestamp-id> <index>` presses one (same results as
+`invokeDefault`). Foamy runs the action itself, with the popup's
+persist-before-launch ordering; the center only shows labels.
+
+These actions live only in this shell's memory, taken from the notification as
+it arrived: restored and archived command vectors are never used, and nothing is
+read back from a file. They are released 24 hours after the notification arrived,
+when at most `historyLimit` (100) are retained (oldest first), on sender closure,
+successful handling, history dismissal/clearing, disabling the center, and on any
+shell or browser restart. Replacements update the retained entry. Foamy tells the
+center (`peerChanged actions`) when the set changes. Unavailable actions still use
+the center's fixed image opener or app-focus fallback. The center preserves
 standard Omasnap and legacy Tensaku screenshot actions as a fixed image-editing intent through
 expiry and reload.
 
@@ -217,11 +229,13 @@ DND bypass rules also apply to snoozes; normal Omarchy action feedback still app
 The two plugins talk over IPC only; neither reads, writes or deletes the other's
 files or runs the other's scripts. Foamy publishes its read-only file locations
 with `foamy.notifications storeInfo`, and answers `invokeDefault`,
+`centerActions`, `invokeCenterAction`,
 `releaseHistory`, `releaseHistoryBefore` (which now also delete Foamy's own copies),
 `preferences` and `setPreference` (Foamy saves its own `shell.json` entry through
 the host's `shell.updateEntryInline`). It
 appends handled keys to its `handled` journal before running a click command,
-then calls `foamy.notification-center.store handled` and `peerChanged`. The
+then calls `foamy.notification-center.store handled` and `peerChanged`
+(`store`, `preferences`, or `actions` when its live actions change). The
 foamy-kit `FoamyPeerIpc` answers in-process on 4.5 and falls back
 to `omarchy-shell`. Shared files are listed in `tests/shared-files.sha256`.
 

@@ -217,11 +217,20 @@ not change notification click targets or identify browser profiles/accounts.
 The plugin uses a browser notification's leading website origin to select its
 web-app window. It accepts a leading HTTP(S) URL or link, and a bare hostname
 on its own first line, as supplied by Vivaldi. It does not treat links inside
-the message as app identity. This lookup is shared with Notification Center
-and is used by popups when no live default action is available. Live popup
-actions still go to the sender so it can open the specific conversation.
-When multiple profiles have the same website open, the notification may not
-contain enough information to choose one. An exact mapping resolves that case:
+the message as app identity. This lookup is shared with Notification Center.
+
+For a Chromium-family browser (Vivaldi, Chrome, Chromium, Brave, Edge), a click
+on a notification that names its website focuses that website's app window
+(`vivaldi-outlook.office.com__-Profile_1` and similar) instead of sending the
+click to the browser. The shell's notification server gives the browser no
+activation token, so the browser cannot raise an app window itself and sites
+such as Outlook open a new tab instead. Focusing brings the app forward; it
+does not open the specific message. Only when the website has no app window
+does the click go to the browser, as for any other sender. This applies to
+popup clicks and to clicks in Notification Center.
+
+When multiple profiles have the same website open, the notification does not
+say which profile sent it. An exact mapping names the window to use:
 
 ```json
 "browserMappings": [
@@ -229,9 +238,11 @@ contain enough information to choose one. An exact mapping resolves that case:
 ]
 ```
 
-Mappings select one window class per origin. They cannot recover account identity
-that the sender did not supply. Ambiguous or unavailable targets display an error
-on the popup rather than selecting a random browser window. Failed actions keep
+Without a mapping (or when the mapped window is gone), Omarchy's
+`omarchy-hyprland-focus-app` chooses among that website's app windows and takes
+the one focused last. Mappings select one window class per origin. They cannot
+recover account identity that the sender did not supply. When no window can be
+focused, the popup shows an error rather than selecting a random browser window. Failed actions keep
 the message and its history available for retry. Successful actions mark it handled
 and remove it from the center. Structured shell commands are marked handled before
 launch because they may restart the shell.
