@@ -322,13 +322,12 @@ omarchy-shell foamy.notifications state
 
 The helper is Rust in `native/` (its contract is the comment at the top of
 `native/src/main.rs`), committed as static binaries in `bin/x86_64/` and
-`bin/aarch64/`. After changing it, rebuild and check with foamy-kit:
+`bin/aarch64/`. After changing it, rebuild and check with the build tool in `kit/native/`:
 
 ```sh
-KIT=~/GitHub/Personal/foamy-kit
-$KIT/tools/build-native.sh . --test    # fmt, clippy, cargo tests
-$KIT/tools/build-native.sh .           # both arches, native/native.pin
-$KIT/tools/build-native.sh . --verify  # byte-identical clean rebuild
+kit/native/build-native.sh . --test    # fmt, clippy, cargo tests
+kit/native/build-native.sh .           # both arches, native/native.pin
+kit/native/build-native.sh . --verify  # byte-identical clean rebuild
 bash tests/kit-check.sh
 # The black-box tests run any build (aarch64 through qemu-user binfmt):
 FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-notifications-helper\"]" python3 -m unittest discover -s tests -p '*_test.py'
