@@ -1,4 +1,5 @@
 """Render the actual popup card at wide/narrow sizes with synthetic messages."""
+
 import os
 import signal
 from pathlib import Path
@@ -8,14 +9,20 @@ import tempfile
 import testhost
 from testhost import hostenv
 
-source=Path(__file__).resolve().parents[1]
-base=Path(tempfile.mkdtemp(prefix='foamy-notifications-render-'))
-app=base/'app';app.mkdir()
-for name in ('Commons','Ui'):(app/name).symlink_to(hostenv.root()/'shell'/name,target_is_directory=True)
-(app/'plugin').symlink_to(source,target_is_directory=True)
-(app/'avatar.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#435d5b"/><text x="32" y="42" text-anchor="middle" fill="#d9ede5" font-size="28" font-family="sans-serif">AJ</text></svg>')
-(app/'screenshot.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#172535"/><rect x="55" y="40" width="530" height="280" rx="12" fill="#dfe6ed"/><path d="M55 65H585" stroke="#647997" stroke-width="40"/><rect x="75" y="100" width="75" height="190" fill="#aebed0"/><path d="M185 125H540M185 165H540M185 205H540M185 245H420" stroke="#819ab1" stroke-width="14"/></svg>')
-(app/'shell.qml').write_text('''import QtQuick
+source = Path(__file__).resolve().parents[1]
+base = Path(tempfile.mkdtemp(prefix="foamy-notifications-render-"))
+app = base / "app"
+app.mkdir()
+for name in ("Commons", "Ui"):
+    (app / name).symlink_to(hostenv.root() / "shell" / name, target_is_directory=True)
+(app / "plugin").symlink_to(source, target_is_directory=True)
+(app / "avatar.svg").write_text(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#435d5b"/><text x="32" y="42" text-anchor="middle" fill="#d9ede5" font-size="28" font-family="sans-serif">AJ</text></svg>'
+)
+(app / "screenshot.svg").write_text(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#172535"/><rect x="55" y="40" width="530" height="280" rx="12" fill="#dfe6ed"/><path d="M55 65H585" stroke="#647997" stroke-width="40"/><rect x="75" y="100" width="75" height="190" fill="#aebed0"/><path d="M185 125H540M185 165H540M185 205H540M185 245H420" stroke="#819ab1" stroke-width="14"/></svg>'
+)
+(app / "shell.qml").write_text("""import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Commons as Commons
@@ -77,24 +84,39 @@ ShellRoot {
     }
   }
 }
-''')
-home=base/'home';home.mkdir()
-runtime=base/'runtime';runtime.mkdir(mode=0o700)
-desktop = '--desktop' in sys.argv
-env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),QT_QPA_PLATFORM='wayland' if desktop else 'offscreen',QT_QUICK_BACKEND='rhi' if desktop else 'software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion',LANG='en_US.UTF-8')
-command=['quickshell','-p',str(app),'--no-color']
+""")
+home = base / "home"
+home.mkdir()
+runtime = base / "runtime"
+runtime.mkdir(mode=0o700)
+desktop = "--desktop" in sys.argv
+env = dict(
+    os.environ,
+    HOME=str(home),
+    XDG_CONFIG_HOME=str(home / ".config"),
+    XDG_STATE_HOME=str(home / ".local/state"),
+    QT_QPA_PLATFORM="wayland" if desktop else "offscreen",
+    QT_QUICK_BACKEND="rhi" if desktop else "software",
+    QT_QPA_PLATFORMTHEME="basic",
+    QT_STYLE_OVERRIDE="Fusion",
+    LANG="en_US.UTF-8",
+)
+command = ["quickshell", "-p", str(app), "--no-color"]
 if not desktop:
-    env['XDG_RUNTIME_DIR']=str(runtime)
-    for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
-    command=['dbus-run-session','--',*command]
+    env["XDG_RUNTIME_DIR"] = str(runtime)
+    for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
+        env.pop(key, None)
+    command = ["dbus-run-session", "--", *command]
 testhost.make(base, app, env)
 # Desktop rendering uses the GPU for rounded image masks; it owns only this test window.
-process=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
+process = subprocess.Popen(
+    command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True
+)
 try:
-    output=process.communicate(timeout=20)[0]
+    output = process.communicate(timeout=20)[0]
 except subprocess.TimeoutExpired:
-    os.killpg(process.pid,signal.SIGTERM)
-    output=process.communicate(timeout=3)[0]
+    os.killpg(process.pid, signal.SIGTERM)
+    output = process.communicate(timeout=3)[0]
 print(output)
-assert process.returncode==0 and 'PASS:' in output
-print('Renders:',app)
+assert process.returncode == 0 and "PASS:" in output
+print("Renders:", app)

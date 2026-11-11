@@ -4,6 +4,7 @@ The catalog checks every plugin shares (fallback, literal values, plurals, RTL) 
 foamy-kit's preview/i18n_runtime.py, which tests/suite.sh runs too. This test keeps
 what only this plugin has: the card's footer, header and number bindings following
 the language, and its RTL header and footer order."""
+
 import json
 import os
 from pathlib import Path
@@ -16,28 +17,29 @@ from testhost import hostenv
 source = Path(__file__).resolve().parents[1]
 # The host tree (hostenv.root(): the installed 4.5 by default; OMARCHY_TEST_ROOT,
 # FOAMY_HOST_45 or else OMARCHY_PATH picks another); only its QML and data are loaded.
-if not os.environ.get('OMARCHY_TEST_ROOT') and not os.environ.get('FOAMY_HOST_45') and os.environ.get('OMARCHY_PATH'):
-    os.environ['OMARCHY_TEST_ROOT'] = os.environ['OMARCHY_PATH']
+if not os.environ.get("OMARCHY_TEST_ROOT") and not os.environ.get("FOAMY_HOST_45") and os.environ.get("OMARCHY_PATH"):
+    os.environ["OMARCHY_TEST_ROOT"] = os.environ["OMARCHY_PATH"]
 omarchy = hostenv.root()
-catalog = json.loads((source / 'i18n/no.json').read_text())
-key = next(k for k, v in catalog.items() if k != v and '%' not in k and '{' not in k)
-with tempfile.TemporaryDirectory(prefix='foamy-language-test-') as directory:
+catalog = json.loads((source / "i18n/no.json").read_text())
+key = next(k for k, v in catalog.items() if k != v and "%" not in k and "{" not in k)
+with tempfile.TemporaryDirectory(prefix="foamy-language-test-") as directory:
     base = Path(directory)
-    app = base / 'app'
+    app = base / "app"
     app.mkdir()
-    plugin = app / 'plugin'
+    plugin = app / "plugin"
     plugin.mkdir()
-    shutil.copytree(source / 'kit', plugin / 'kit')
-    shutil.copytree(source / 'i18n', plugin / 'i18n')
-    shutil.copytree(source / 'components', plugin / 'components')
-    for name in ('NotificationLogic.js', 'Markup.js', 'BrowserIdentity.js'): shutil.copy(source / name, plugin)
-    for name in ('Commons', 'Ui'):
-        (app / name).symlink_to(omarchy / 'shell' / name, target_is_directory=True)
-    language = base / 'language'
-    language.write_text('no')
-    runtime = base / 'runtime'
+    shutil.copytree(source / "kit", plugin / "kit")
+    shutil.copytree(source / "i18n", plugin / "i18n")
+    shutil.copytree(source / "components", plugin / "components")
+    for name in ("NotificationLogic.js", "Markup.js", "BrowserIdentity.js"):
+        shutil.copy(source / name, plugin)
+    for name in ("Commons", "Ui"):
+        (app / name).symlink_to(omarchy / "shell" / name, target_is_directory=True)
+    language = base / "language"
+    language.write_text("no")
+    runtime = base / "runtime"
     runtime.mkdir(mode=0o700)
-    qml = '''import QtQuick
+    qml = """import QtQuick
 import Quickshell
 import Quickshell.Io
 import "plugin/kit" as Plugin
@@ -106,19 +108,32 @@ ShellRoot {
     }
   }
 }
-'''
-    qml = qml.replace('LANGUAGE_FILE', json.dumps(str(language))).replace('TRANSLATED', json.dumps(catalog[key])).replace('KEY', json.dumps(key))
-    (app / 'shell.qml').write_text(qml)
-    env = dict(os.environ, OMARCHY_LANGUAGE_FILE=str(language),
-               XDG_RUNTIME_DIR=str(runtime), QT_QPA_PLATFORM='offscreen',
-               QT_QPA_PLATFORMTHEME='generic', QT_QUICK_BACKEND='software')
-    env.pop('WAYLAND_DISPLAY', None)
+"""
+    qml = (
+        qml.replace("LANGUAGE_FILE", json.dumps(str(language)))
+        .replace("TRANSLATED", json.dumps(catalog[key]))
+        .replace("KEY", json.dumps(key))
+    )
+    (app / "shell.qml").write_text(qml)
+    env = dict(
+        os.environ,
+        OMARCHY_LANGUAGE_FILE=str(language),
+        XDG_RUNTIME_DIR=str(runtime),
+        QT_QPA_PLATFORM="offscreen",
+        QT_QPA_PLATFORMTHEME="generic",
+        QT_QUICK_BACKEND="software",
+    )
+    env.pop("WAYLAND_DISPLAY", None)
     testhost.make(base, app, env)
-    result = subprocess.run(['quickshell', '-p', str(app), '--no-color'], env=env,
-                            capture_output=True, text=True, timeout=60)
+    result = subprocess.run(
+        ["quickshell", "-p", str(app), "--no-color"], env=env, capture_output=True, text=True, timeout=60
+    )
     output = result.stdout + result.stderr
     hostenv.check(env, output)
-    if result.returncode or 'I18N_RUNTIME_PASS' not in output or any(e in output for e in ['ReferenceError', 'TypeError', 'Unable to assign']):
+    if (
+        result.returncode
+        or "I18N_RUNTIME_PASS" not in output
+        or any(e in output for e in ["ReferenceError", "TypeError", "Unable to assign"])
+    ):
         raise AssertionError(output)
-    print(source.name, '4.5 live no/da/en/ar/no with card bindings and RTL passed')
-
+    print(source.name, "4.5 live no/da/en/ar/no with card bindings and RTL passed")

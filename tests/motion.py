@@ -1,4 +1,5 @@
 """Exercise the shipped popup delegate's animations on an isolated Qt surface."""
+
 import os
 from pathlib import Path
 import signal
@@ -8,19 +9,26 @@ import tempfile
 import testhost
 from testhost import hostenv
 
-source=Path(__file__).resolve().parents[1]
-base=Path(tempfile.mkdtemp(prefix='foamy-notifications-motion-'));app=base/'app';app.mkdir()
-for name in ('Commons','Ui'):(app/name).symlink_to(hostenv.root()/'shell'/name,target_is_directory=True)
+source = Path(__file__).resolve().parents[1]
+base = Path(tempfile.mkdtemp(prefix="foamy-notifications-motion-"))
+app = base / "app"
+app.mkdir()
+for name in ("Commons", "Ui"):
+    (app / name).symlink_to(hostenv.root() / "shell" / name, target_is_directory=True)
 # The plugin's kit/ (FoamyI18n, FoamyStyle, …) and the files the card imports.
-(app / 'kit').symlink_to(source / 'kit', target_is_directory=True)
-(app / 'i18n').symlink_to(source / 'i18n', target_is_directory=True)
-for name in ('Markup.js', 'BrowserIdentity.js'): (app / name).symlink_to(source / name)
-(app / 'qmldir').write_text('')
-(app/'components').symlink_to(source/'components',target_is_directory=True)
-(app/'NotificationLogic.js').symlink_to(source/'NotificationLogic.js')
-s=(source/'Service.qml').read_text();start=s.index('          NotificationCard {',s.index('  Variants {'));end=s.index('\n      }\n    }\n  }',start)
-delegate=s[start:end].replace('service.','fixture.').replace('popupWindow.screen.name','"TEST-1"')
-(app/'shell.qml').write_text('''import QtQuick
+(app / "kit").symlink_to(source / "kit", target_is_directory=True)
+(app / "i18n").symlink_to(source / "i18n", target_is_directory=True)
+for name in ("Markup.js", "BrowserIdentity.js"):
+    (app / name).symlink_to(source / name)
+(app / "qmldir").write_text("")
+(app / "components").symlink_to(source / "components", target_is_directory=True)
+(app / "NotificationLogic.js").symlink_to(source / "NotificationLogic.js")
+s = (source / "Service.qml").read_text()
+start = s.index("          NotificationCard {", s.index("  Variants {"))
+end = s.index("\n      }\n    }\n  }", start)
+delegate = s[start:end].replace("service.", "fixture.").replace("popupWindow.screen.name", '"TEST-1"')
+(app / "shell.qml").write_text(
+    """import QtQuick
 import QtTest
 import Quickshell
 import qs.Commons
@@ -251,18 +259,42 @@ ShellRoot {
   }
  }
 }
-'''.replace('DELEGATE',delegate))
-home=base/'home';home.mkdir();runtime=base/'runtime';runtime.mkdir(mode=0o700)
-desktop='--desktop' in sys.argv
-env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),QT_QPA_PLATFORM='wayland' if desktop else 'offscreen',QT_QUICK_BACKEND='rhi' if desktop else 'software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion')
+""".replace("DELEGATE", delegate)
+)
+home = base / "home"
+home.mkdir()
+runtime = base / "runtime"
+runtime.mkdir(mode=0o700)
+desktop = "--desktop" in sys.argv
+env = dict(
+    os.environ,
+    HOME=str(home),
+    XDG_CONFIG_HOME=str(home / ".config"),
+    XDG_STATE_HOME=str(home / ".local/state"),
+    QT_QPA_PLATFORM="wayland" if desktop else "offscreen",
+    QT_QUICK_BACKEND="rhi" if desktop else "software",
+    QT_QPA_PLATFORMTHEME="basic",
+    QT_STYLE_OVERRIDE="Fusion",
+)
 if not desktop:
- env['XDG_RUNTIME_DIR']=str(runtime)
- for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
+    env["XDG_RUNTIME_DIR"] = str(runtime)
+    for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
+        env.pop(key, None)
 testhost.make(base, app, env)
-process=subprocess.Popen(['dbus-run-session','--','quickshell','-p',str(app),'--no-color'],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
-try:output=process.communicate(timeout=15)[0]
+process = subprocess.Popen(
+    ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"],
+    env=env,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    start_new_session=True,
+)
+try:
+    output = process.communicate(timeout=15)[0]
 except subprocess.TimeoutExpired:
- os.killpg(process.pid,signal.SIGTERM);output=process.communicate(timeout=3)[0]
-print(output);print('Motion captures:',app)
+    os.killpg(process.pid, signal.SIGTERM)
+    output = process.communicate(timeout=3)[0]
+print(output)
+print("Motion captures:", app)
 hostenv.check(env, output)
-assert process.returncode==0 and 'MOTION_RESULT 9 passed 0 failed' in output
+assert process.returncode == 0 and "MOTION_RESULT 9 passed 0 failed" in output

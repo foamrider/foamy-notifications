@@ -20,7 +20,7 @@ import hostenv  # noqa: E402
 # newest window whose class matches, through the test's own hyprctl stub.
 FOCUS_APP = (
     '#!/bin/bash\nprintf "%s\\n" "$0 $*" >> "{log}"\n'
-    "address=$(hyprctl clients -j 2>/dev/null | jq -r --arg p \"$1\" 'def m($v): ($v // \"\") | test($p; \"i\"); "
+    'address=$(hyprctl clients -j 2>/dev/null | jq -r --arg p "$1" \'def m($v): ($v // "") | test($p; "i"); '
     'sort_by(.focusHistoryID) | first((.[] | select(m(.class))), (.[] | select(.initialClass == "org.omarchy.agent" and m(.initialTitle)))).address // empty\')\n'
     "[[ -n $address ]] || exit 1\n"
     'hyprctl dispatch "hl.dsp.focus({{ window = \\"address:$address\\" }})"\n'
@@ -56,7 +56,9 @@ def session(script, timeout, *args):
     if "--inside" in sys.argv:
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
         return
-    inner = subprocess.Popen(["dbus-run-session", "--", sys.executable, str(script), "--inside", *args], start_new_session=True)
+    inner = subprocess.Popen(
+        ["dbus-run-session", "--", sys.executable, str(script), "--inside", *args], start_new_session=True
+    )
     try:
         code = inner.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
