@@ -227,7 +227,9 @@ activation token, so the browser cannot raise an app window itself and sites
 such as Outlook open a new tab instead. Focusing brings the app forward; it
 does not open the specific message. Only when the website has no app window
 does the click go to the browser, as for any other sender. This applies to
-popup clicks and to clicks in Notification Center.
+popup clicks and to clicks in Notification Center. When the sender has no live
+callback either, both fall back to focusing the sending app's window, and
+report an error when none matches.
 
 When multiple profiles have the same website open, the notification does not
 say which profile sent it. An exact mapping names the window to use:

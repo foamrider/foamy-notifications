@@ -116,6 +116,7 @@ ShellRoot {
     sameCard:popupColumn.count===1 && popupColumn.itemAtIndex(0)===testState.heldCard})
   }
   function state(): string { return JSON.stringify({updates:countdown.progressUpdates,remaining:countdown.remainingMs,progress:countdown.timeoutProgress,duration:countdown.timeoutMs,enabled:countdown.showTimeoutIndicator}) }
+  function actionError(key: string): string { return notifications.actionErrors[key] || "" }
   function pause(mode: string): void {
    var key=notifications.displayGroups[0].key
    notifications.hoveredKeys["TEST-1|"+key]=mode === "hover"
@@ -469,6 +470,39 @@ try:
         ipc('countdown-test','leave')
     focus_app.write_text(focus_app_text);focus_app.chmod(0o755)
     print('PASS: a hung or missing focus-app falls back to the sender callback; no busy card, no leaked Process')
+    # The center's click (invokeDefault, the contract the center calls) on a live
+    # browser notification that names its site. With the site's app window
+    # (Outlook's and Teams' case) Omarchy's focus-app raises it and the sender's
+    # callback is not run, exactly as a popup click.
+    def center_click(title,live,expect):
+        if live:sender=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open',title,'teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
+        else:send(title,('-a','Vivaldi'),body='teams.microsoft.com\nAlex: Hi')
+        wait_for(lambda:state()['popups']==1 and not state()['busy'],'center click fixture '+title)
+        key=state()['groups'][0]['key'];before=len(dispatches());calls=omarchy_calls()
+        assert ipc('foamy.notifications','invokeDefault',key)=='invoked',title
+        wait_for(lambda:state()['cardsBusy']==0 and state()['siteFocusProcesses']==0 and not state()['busy'],'center click settles '+title)
+        asked=[l for l in omarchy_calls()[len(calls):] if l.startswith('omarchy-hyprland-focus-app ')]
+        result={'dispatches':[json.loads(d) for d in dispatches()[before:]],'asked':asked,'popups':state()['popups'],'error':ipc('countdown-test','actionError',key)}
+        if live:result['sender']=sender.communicate(timeout=4)[0].strip()
+        assert result==expect,(title,result)
+        ipc('notifications','dismissAll');wait_for(lambda:state()['popups']==0 and not state()['busy'],'center click cleanup '+title)
+        if CENTER:
+            ipc('foamy.notification-center.test','clear')
+            wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'center click history cleanup '+title)
+    site=['omarchy-hyprland-focus-app ^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__']
+    teams_focus=[['hl.dsp.focus({ window = "address:0x101" })']]
+    ctx['clients']=[browser,teams];context_path.write_text(json.dumps(ctx))
+    center_click('Center site window',True,{'dispatches':teams_focus,'asked':site,'popups':0,'error':'','sender':''})
+    # Without a live "default" action a miss used to end the click silently
+    # (nothing focused, no error, the row still "invoked"). It now takes the popup
+    # click's app-focus path: the helper finds the site window when focus-app
+    # can't (missing here), and reports the popup's error when there is none.
+    focus_app.unlink()
+    center_click('Center fallback focus',False,{'dispatches':teams_focus,'asked':[],'popups':0,'error':''})
+    focus_app.write_text(focus_app_text);focus_app.chmod(0o755)
+    ctx['clients']=[browser];context_path.write_text(json.dumps(ctx))
+    center_click('Center fallback error',False,{'dispatches':[],'asked':site,'popups':1,'error':'Could not identify the window. Configure browserMappings or dismiss this popup.'})
+    print('PASS: a center click on a site notification focuses the site window like a popup click, and without a live action falls back to app focus')
     if CENTER:
         # Hiding a popup must not send NotificationClosed before the history click.
         cfg['plugins'][0]['normalTimeoutSec']=1;(config/'shell.json').write_text(json.dumps(cfg))

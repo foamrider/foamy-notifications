@@ -916,16 +916,17 @@ Item {
   }
 
   // The center's click on a browser notification that names its site: the
-  // site's app window (focusSiteWindow), else the sender's live callback. The
-  // center has its answer ("invoked") already; Foamy reports `handled`, or
-  // clears busy so the row can be clicked again.
+  // site's app window (focusSiteWindow), else what a popup click does
+  // (activateSender): the sender's live callback, else the helper's app
+  // focus. The center has its answer ("invoked") already; Foamy reports
+  // `handled`, or clears busy (with the popup's error) so the row can be
+  // clicked again.
   function siteRowFocus(row, key) {
     if (!siteFocusCandidate(row)) return false
     // Busy first: every completion below clears it, and must not be overwritten.
     var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
     focusSiteWindow(row, function() { service.commitHandled(row, [key]) }, function() {
-      if (service.invokeLiveAction(row, "default")) service.commitHandled(row, [key])
-      else service.finishAction(key, "")
+      service.activateSender(row, [key], "default")
     })
     return true
   }
