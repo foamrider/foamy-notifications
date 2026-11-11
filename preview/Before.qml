@@ -18,20 +18,97 @@ Item {
   readonly property Item popup: stack
 
   readonly property double now: 1793350800000
-  readonly property string recording: JSON.stringify([{label: "Open", argv: ["mpv", "/tmp/screenrecording.mp4"]}, {label: "Omacut", argv: ["omacut", "/tmp/screenrecording.mp4"]}])
+  readonly property string recording: JSON.stringify([
+    {
+      label: "Open",
+      argv: ["mpv", "/tmp/screenrecording.mp4"]
+    },
+    {
+      label: "Omacut",
+      argv: ["omacut", "/tmp/screenrecording.mp4"]
+    }
+  ])
   readonly property var cards: [
-    { key: "1-1", app: "Signal", appIcon: "signal-desktop", summary: "Ada Lovelace", body: "Are we still on for the <b>review</b> at 3? &amp;amp; bring <font color=\"#000\">notes</font>",
-      urgency: 1, actionsJson: JSON.stringify([{identifier: "reply", text: "Reply"}, {identifier: "read", text: "Mark read"}]), execActions: "", offers: {codes: "", link: ""} },
-    { key: "2-2", app: "Screen recording", appIcon: "", glyph: "\u{f0a1c}", summary: "Recording saved", body: "screenrecording-2026-10-30.mp4",
-      urgency: 1, actionsJson: "[]", execActions: recording, offers: {codes: "", link: ""} },
-    { key: "3-3", app: "Bank", appIcon: "", summary: "Sign-in code", body: "Your code is 482913. It expires in 5 minutes.",
-      urgency: 2, actionsJson: "[]", execActions: "", offers: {codes: "482913", link: ""} },
+    {
+      key: "1-1",
+      app: "Signal",
+      appIcon: "signal-desktop",
+      summary: "Ada Lovelace",
+      body: "Are we still on for the <b>review</b> at 3? &amp;amp; bring <font color=\"#000\">notes</font>",
+      urgency: 1,
+      actionsJson: JSON.stringify([
+        {
+          identifier: "reply",
+          text: "Reply"
+        },
+        {
+          identifier: "read",
+          text: "Mark read"
+        }
+      ]),
+      execActions: "",
+      offers: {
+        codes: "",
+        link: ""
+      }
+    },
+    {
+      key: "2-2",
+      app: "Screen recording",
+      appIcon: "",
+      glyph: "\u{f0a1c}",
+      summary: "Recording saved",
+      body: "screenrecording-2026-10-30.mp4",
+      urgency: 1,
+      actionsJson: "[]",
+      execActions: recording,
+      offers: {
+        codes: "",
+        link: ""
+      }
+    },
+    {
+      key: "3-3",
+      app: "Bank",
+      appIcon: "",
+      summary: "Sign-in code",
+      body: "Your code is 482913. It expires in 5 minutes.",
+      urgency: 2,
+      actionsJson: "[]",
+      execActions: "",
+      offers: {
+        codes: "482913",
+        link: ""
+      }
+    },
     // README screenshot: a grouped chat message (three duplicates).
-    { key: "4-4", app: "Chat", appIcon: "", glyph: "\u{f0361}", summary: "Alex · Design review", body: "The updated files are ready. Have a look when you have a moment.",
-      urgency: 1, count: 3, actionsJson: JSON.stringify([{identifier: "reply", text: "Reply"}, {identifier: "read", text: "Mark as read"}]), execActions: "", offers: {codes: "", link: ""} }
+    {
+      key: "4-4",
+      app: "Chat",
+      appIcon: "",
+      glyph: "\u{f0361}",
+      summary: "Alex · Design review",
+      body: "The updated files are ready. Have a look when you have a moment.",
+      urgency: 1,
+      count: 3,
+      actionsJson: JSON.stringify([
+        {
+          identifier: "reply",
+          text: "Reply"
+        },
+        {
+          identifier: "read",
+          text: "Mark as read"
+        }
+      ]),
+      execActions: "",
+      offers: {
+        codes: "",
+        link: ""
+      }
+    }
   ]
-  readonly property var shown: previewState === "default" ? [cards[0], cards[2]] : previewState === "actions" ? [cards[1], cards[0]]
-    : previewState === "readme" ? [cards[3], cards[1], cards[2]] : [cards[1], cards[0], cards[2]]
+  readonly property var shown: previewState === "default" ? [cards[0], cards[2]] : previewState === "actions" ? [cards[1], cards[0]] : previewState === "readme" ? [cards[3], cards[1], cards[2]] : [cards[1], cards[0], cards[2]]
 
   Column {
     id: stack

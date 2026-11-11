@@ -56,8 +56,10 @@ Item {
   readonly property int defaultBarSize: barVertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
   readonly property int liveBarSize: {
     var bar = shell && shell.bar ? shell.bar : null
-    if (!bar) return defaultBarSize
-    if (bar.barHidden) return 0
+    if (!bar)
+      return defaultBarSize
+    if (bar.barHidden)
+      return 0
     // A notch can thicken the bar on one screen (barSizeFor); the host's own
     // panels fall back to barSize the same way.
     var size = Number(typeof bar.barSizeFor === "function" ? bar.barSizeFor(service.focusedMonitor) : bar.barSize)
@@ -85,7 +87,8 @@ Item {
     property bool doNotDisturb: false
     onDoNotDisturbChanged: {
       // Suppress the write that load-time hydration would otherwise trigger.
-      if (service._hydrating) return
+      if (service._hydrating)
+        return
       service.scheduleSettingsSave()
     }
   }
@@ -106,7 +109,10 @@ Item {
   // Aliased as a property so consumers outside this Item's id scope can bind
   // to it. QML ids aren't visible to external consumers without the alias.
   property alias popupModel: popupModel
-  ListModel { id: popupModel; onCountChanged: service.scheduleRebuild() }
+  ListModel {
+    id: popupModel
+    onCountChanged: service.scheduleRebuild()
+  }
 
   // How many notifications the history directory keeps, and therefore how
   // many `showHistory` can replay.
@@ -115,7 +121,9 @@ Item {
   // arrived. Older ones are released; after that the center falls back to its
   // fixed image opener or app focus. Actions never outlive this shell either.
   readonly property double centerActionLifetime: 86400000
-  function actionNow() { return Date.now() }
+  function actionNow() {
+    return Date.now()
+  }
 
   property var preferences: Preferences.defaults()
   property string configError: ""
@@ -128,13 +136,19 @@ Item {
   property bool helperUnavailable: false
 
   function markHelperUnavailable() {
-    if (helperUnavailable) return
+    if (helperUnavailable)
+      return
     helperUnavailable = true
     reportPersistenceError(FoamyNative.UNAVAILABLE_TEXT)
     var queue = popupFileQueue
     popupFileQueue = []
     deferredMoves = ({})
-    for (var i = 0; i < queue.length; i++) if (queue[i].done) { try { queue[i].done(false, "", "") } catch (e) {} }
+    for (var i = 0; i < queue.length; i++)
+      if (queue[i].done) {
+        try {
+          queue[i].done(false, "", "")
+        } catch (e) {}
+      }
   }
 
   function durationFor(urgency, expireTimeout) {
@@ -155,12 +169,17 @@ Item {
         service.preferences = parsed.settings
         var layout = JSON.parse(text()).bar || {}
         service.centerEnabled = JSON.stringify(layout).indexOf('"foamy.notification-center"') >= 0
-      }
-      else console.warn("foamy.notifications configuration:", parsed.error)
+      } else
+        console.warn("foamy.notifications configuration:", parsed.error)
     }
     onLoadFailed: service.configError = "Cannot read notification settings; using last valid settings"
   }
-  onPreferencesChanged: { fitLimit = maxFitLimit; scheduleRebuild(); refreshContext(); pokeCenter("preferences") }
+  onPreferencesChanged: {
+    fitLimit = maxFitLimit
+    scheduleRebuild()
+    refreshContext()
+    pokeCenter("preferences")
+  }
 
   // DND bypass: only let through notifications we trust to be intentional
   // and rare.
@@ -177,26 +196,34 @@ Item {
 
   property var snoozes: ({})
   property double quietNow: Date.now()
-  readonly property bool anySnooze: Object.keys(snoozes).some(function(key) { return snoozes[key] > quietNow })
+  readonly property bool anySnooze: Object.keys(snoozes).some(function (key) {
+    return snoozes[key] > quietNow
+  })
   readonly property double globalSnoozeUntil: snoozes["*"] > quietNow ? snoozes["*"] : 0
 
   function isQuiet(row) {
     var quiet = doNotDisturb || snoozes["*"] > Date.now() || snoozes[Features.source(row)] > Date.now()
-    return quiet && !shouldBypassDnd({appName:row.app, urgency:row.urgency})
+    return quiet && !shouldBypassDnd({
+      appName: row.app,
+      urgency: row.urgency
+    })
   }
 
   function snoozeSource(source, minutes) {
     var duration = Number(minutes)
-    if ([15, 30, 60, 240].indexOf(duration) < 0 || (source !== "*" && !/^(app|web):.{1,256}$/.test(source))) return "invalid"
+    if ([15, 30, 60, 240].indexOf(duration) < 0 || (source !== "*" && !/^(app|web):.{1,256}$/.test(source)))
+      return "invalid"
     var next = Features.quietState(snoozes, Date.now())
-    if (!next[source] && Object.keys(next).length >= 128) return "full"
+    if (!next[source] && Object.keys(next).length >= 128)
+      return "full"
     next[source] = Date.now() + duration * 60000
     snoozes = next
     quietNow = Date.now()
     scheduleSettingsSave()
     // Hide current matching cards without discarding their history or callbacks.
     for (var i = popupModel.count - 1; i >= 0; i--)
-      if ((source === "*" || Features.source(popupModel.get(i)) === source) && !busyKeys[NotificationLogic.imageStem(popupModel.get(i))]) dismissPopup(i)
+      if ((source === "*" || Features.source(popupModel.get(i)) === source) && !busyKeys[NotificationLogic.imageStem(popupModel.get(i))])
+        dismissPopup(i)
     return "ok"
   }
 
@@ -207,54 +234,79 @@ Item {
   }
 
   Timer {
-    interval: 1000; repeat: true; running: service.anySnooze
+    interval: 1000
+    repeat: true
+    running: service.anySnooze
     onTriggered: {
       service.quietNow = Date.now()
       var next = Features.quietState(service.snoozes, service.quietNow)
-      if (JSON.stringify(next) !== JSON.stringify(service.snoozes)) { service.snoozes = next; service.scheduleSettingsSave() }
+      if (JSON.stringify(next) !== JSON.stringify(service.snoozes)) {
+        service.snoozes = next
+        service.scheduleSettingsSave()
+      }
     }
   }
 
   readonly property var sharingCandidates: {
     var nodes = Pipewire.nodes.values, out = []
     for (var i = 0; i < nodes.length && out.length < 64; i++)
-      if (nodes[i].type === PwNodeType.VideoSource) out.push(nodes[i])
+      if (nodes[i].type === PwNodeType.VideoSource)
+        out.push(nodes[i])
     return out
   }
-  PwObjectTracker { objects: service.sharingCandidates }
-  readonly property bool sharingActive: Pipewire.ready && sharingCandidates.some(function(node) { return node.ready && Features.isSharing(node.properties) })
+  PwObjectTracker {
+    objects: service.sharingCandidates
+  }
+  readonly property bool sharingActive: Pipewire.ready && sharingCandidates.some(function (node) {
+    return node.ready && Features.isSharing(node.properties)
+  })
   property bool sharingOfferHandled: false
   property real sharingPromptHeight: Style.space(140)
   readonly property string sharingPromptScreen: targetMonitors.length ? targetMonitors[0] : ""
   readonly property bool sharingOfferPending: preferences.offerSnoozeWhenSharing && sharingActive && !sharingOfferHandled && !doNotDisturb && !globalSnoozeUntil
   onSharingActiveChanged: sharingOfferHandled = sharingActive && (doNotDisturb || globalSnoozeUntil > 0)
   onDoNotDisturbChanged: {
-    if (doNotDisturb && sharingActive) sharingOfferHandled = true
+    if (doNotDisturb && sharingActive)
+      sharingOfferHandled = true
     // Cards still waiting in the overflow queue go to history, as new arrivals do.
     scheduleRebuild()
   }
-  onGlobalSnoozeUntilChanged: if (globalSnoozeUntil > 0 && sharingActive) sharingOfferHandled = true
+  onGlobalSnoozeUntilChanged: if (globalSnoozeUntil > 0 && sharingActive)
+    sharingOfferHandled = true
 
-  function offersFor(row) { return Features.offers(row) }
+  function offersFor(row) {
+    return Features.offers(row)
+  }
 
   function featureAction(group, kind, value) {
     // Resolve the current card so stale delegates cannot act on replacement text.
-    var row = displayGroups.find(function(row) { return row.key === group.key })
-    if (!row || busyKeys[row.key]) return
+    var row = displayGroups.find(function (row) {
+      return row.key === group.key
+    })
+    if (!row || busyKeys[row.key])
+      return
     if (kind === "snooze") {
-      if (snoozeSource(Features.source(row), value) !== "ok") finishAction(row.key, "Could not snooze this sender. Resume an existing snooze and try again.")
+      if (snoozeSource(Features.source(row), value) !== "ok")
+        finishAction(row.key, "Could not snooze this sender. Resume an existing snooze and try again.")
       return
     }
-    if (kind === "exec") { runExecAction(row, Number(value)); return }
+    if (kind === "exec") {
+      runExecAction(row, Number(value))
+      return
+    }
     var offers = Features.offers(row)
     if (kind === "code" && offers.codes.split(" ").indexOf(value) >= 0) {
-      if (clipboardProc.running) { finishAction(row.key, "Clipboard is busy. Try again."); return }
+      if (clipboardProc.running) {
+        finishAction(row.key, "Clipboard is busy. Try again.")
+        return
+      }
       clipboardProc.entryKey = row.key
       clipboardProc.value = value
       clipboardProc.mode = "copy"
       clipboardProc.running = true
     } else if (kind === "link" && value === offers.link && Security.safeHttpUrl(value)) {
-      if (!Qt.openUrlExternally(Security.safeHttpUrl(value))) finishAction(row.key, "Could not open the link. Try again.")
+      if (!Qt.openUrlExternally(Security.safeHttpUrl(value)))
+        finishAction(row.key, "Could not open the link. Try again.")
     }
   }
 
@@ -262,23 +314,35 @@ Item {
   // command: handling is persisted first, because the command may restart the shell.
   function runExecAction(group, index) {
     var actions = Security.parseExecActions(group.execActions)
-    if (!actions || !(index >= 0 && index < actions.length)) { finishAction(group.key, "This action is no longer available."); return }
+    if (!actions || !(index >= 0 && index < actions.length)) {
+      finishAction(group.key, "This action is no longer available.")
+      return
+    }
     var row = Object.assign({}, group)
     var keys = group.keys.slice()
-    var busy = Object.assign({}, busyKeys); busy[row.key] = true; busyKeys = busy
+    var busy = Object.assign({}, busyKeys)
+    busy[row.key] = true
+    busyKeys = busy
     actionErrors = ({})
     lastError = ""
     var argv = actions[index].argv
-    commitHandled(row, keys, function() { Util.execArgv(argv) })
+    commitHandled(row, keys, function () {
+      Util.execArgv(argv)
+    })
   }
 
   property string clipboardSecret: ""
   property string clipboardCopiedKey: ""
   Timer {
-    id: clipboardExpiry; interval: 60000
+    id: clipboardExpiry
+    interval: 60000
     onTriggered: {
-      if (!service.clipboardSecret) return
-      if (clipboardProc.running) { restart(); return }
+      if (!service.clipboardSecret)
+        return
+      if (clipboardProc.running) {
+        restart()
+        return
+      }
       clipboardProc.entryKey = ""
       clipboardProc.value = service.clipboardSecret
       clipboardProc.mode = "clear"
@@ -292,16 +356,21 @@ Item {
     property string mode: "copy"
     command: ["bash", Qt.resolvedUrl("bin/notification-clipboard").toString().replace(/^file:\/\//, ""), mode]
     stdinEnabled: true
-    onStarted: { write(value + "\n"); stdinEnabled = false }
-    onExited: function(code, status) {
+    onStarted: {
+      write(value + "\n")
+      stdinEnabled = false
+    }
+    onExited: function (code, status) {
       if (code === 0 && status === 0 && mode === "copy") {
         service.clipboardSecret = value
         service.clipboardCopiedKey = entryKey
         clipboardExpiry.restart()
         service.finishAction(entryKey, "")
-      } else if (mode === "copy") service.finishAction(entryKey, "Could not copy the code. Check wl-copy and try again.")
+      } else if (mode === "copy")
+        service.finishAction(entryKey, "Could not copy the code. Check wl-copy and try again.")
       else {
-        if (code !== 0 || status !== 0) service.reportPersistenceError("Could not check or clear the verification-code clipboard")
+        if (code !== 0 || status !== 0)
+          service.reportPersistenceError("Could not check or clear the verification-code clipboard")
         service.clipboardSecret = ""
         service.clipboardCopiedKey = ""
       }
@@ -319,13 +388,15 @@ Item {
   property double nextImageWriteVersion: 0
 
   function acceptNormalizedImages(result) {
-    if (!result || !result.sources || !/^[0-9]+-[0-9]+$/.test(result.key)
-        || imageWriteVersions[result.key] !== result.version) return
+    if (!result || !result.sources || !/^[0-9]+-[0-9]+$/.test(result.key) || imageWriteVersions[result.key] !== result.version)
+      return
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
-      if (NotificationLogic.imageStem(row) !== result.key) continue
+      if (NotificationLogic.imageStem(row) !== result.key)
+        continue
       // A queued conversion must never overwrite the image of a newer replacement.
-      if (String(row.appIcon || "") !== result.sources.appIcon || String(row.image || "") !== result.sources.image) return
+      if (String(row.appIcon || "") !== result.sources.appIcon || String(row.image || "") !== result.sources.image)
+        return
       var images = Object.assign({}, normalizedImages)
       images[result.key] = result
       normalizedImages = images
@@ -335,10 +406,13 @@ Item {
 
   function popupImageFor(row, role) {
     var source = String(row[role] || "")
-    if (role === "appIcon" && NotificationLogic.themeIcon(source)) return source
-    if (isRestoredRow(row)) return NotificationLogic.normalizedImage(source, imagesDir)
+    if (role === "appIcon" && NotificationLogic.themeIcon(source))
+      return source
+    if (isRestoredRow(row))
+      return NotificationLogic.normalizedImage(source, imagesDir)
     var result = normalizedImages[NotificationLogic.imageStem(row)]
-    if (!result || result.sources[role] !== source) return ""
+    if (!result || result.sources[role] !== source)
+      return ""
     return NotificationLogic.normalizedImage(result[role], imagesDir)
   }
 
@@ -346,14 +420,14 @@ Item {
     var images = Object.assign({}, normalizedImages)
     delete images[NotificationLogic.imageStem(row)]
     normalizedImages = images
-    if (!keepVersion) delete imageWriteVersions[NotificationLogic.imageStem(row)]
+    if (!keepVersion)
+      delete imageWriteVersions[NotificationLogic.imageStem(row)]
   }
 
   function shouldArchiveSilenced(snapshot) {
     // Critical CLI alerts explicitly silenced by DND or snooze still need history.
     // Respect transient senders and keep routine CLI feedback out of history.
-    return !snapshot.transient && (!NotificationLogic.isEphemeralApp(snapshot.app)
-      || (isQuiet(snapshot) && preferences.dndSilenceCritical && snapshot.urgency === NotificationUrgency.Critical))
+    return !snapshot.transient && (!NotificationLogic.isEphemeralApp(snapshot.app) || (isQuiet(snapshot) && preferences.dndSilenceCritical && snapshot.urgency === NotificationUrgency.Critical))
   }
 
   // Raw buffers have no readable size in QML. Keep only primitives and release
@@ -380,51 +454,73 @@ Item {
         notification[updateSignals[signalIndex]].connect(finishSnapshot)
     }
     var historyOnly = key && !!retainedHistory[key]
-    var pendingIndex = pendingNotifications.findIndex(function(job) { return job.notification === notification })
+    var pendingIndex = pendingNotifications.findIndex(function (job) {
+      return job.notification === notification
+    })
     if (key) {
       delete retainedHistory[key]
       delete liveKeys[originalId]
       delete liveRefs[originalId]
       cancelPendingWrites([key])
     }
-    if (pendingIndex >= 0) pendingNotifications[pendingIndex] = {snapshot:snapshot}
+    if (pendingIndex >= 0)
+      pendingNotifications[pendingIndex] = {
+        snapshot: snapshot
+      }
     notification.tracked = false
-    if (pendingIndex >= 0) return
-    if (!key) { receiveDetachedSnapshot(snapshot); return }
+    if (pendingIndex >= 0)
+      return
+    if (!key) {
+      receiveDetachedSnapshot(snapshot)
+      return
+    }
     // The first popup insert may already be deferred; update it after that insert.
-    Qt.callLater(function() {
-      if (service.handledKeys[key]) return
+    Qt.callLater(function () {
+      if (service.handledKeys[key])
+        return
       for (var i = 0; i < popupModel.count; i++) {
-        if (NotificationLogic.imageStem(popupModel.get(i)) !== key) continue
+        if (NotificationLogic.imageStem(popupModel.get(i)) !== key)
+          continue
         var roles = NotificationLogic.popupRoles()
-        for (var r = 0; r < roles.length; r++) popupModel.setProperty(i, roles[r], snapshot[roles[r]])
+        for (var r = 0; r < roles.length; r++)
+          popupModel.setProperty(i, roles[r], snapshot[roles[r]])
         service.restartLifetime(key, service.durationFor(snapshot.urgency, snapshot.expireTimeout))
-        if (!service.busyKeys[key]) service.persistPopupFile(snapshot)
+        if (!service.busyKeys[key])
+          service.persistPopupFile(snapshot)
         service.scheduleRebuild()
         return
       }
-      if (!service.busyKeys[key]) service.handleDetachedSnapshot(snapshot, historyOnly)
+      if (!service.busyKeys[key])
+        service.handleDetachedSnapshot(snapshot, historyOnly)
     })
   }
 
   function receiveDetachedSnapshot(snapshot) {
-    if (!preferences.suppressFullscreen && preferences.monitor !== "pointer") { handleDetachedSnapshot(snapshot, false); return }
+    if (!preferences.suppressFullscreen && preferences.monitor !== "pointer") {
+      handleDetachedSnapshot(snapshot, false)
+      return
+    }
     if (pendingNotifications.length >= 100) {
       reportPersistenceError("Notification monitor-context backlog is full")
       return
     }
-    pendingNotifications = pendingNotifications.concat([{snapshot:snapshot}])
+    pendingNotifications = pendingNotifications.concat([
+      {
+        snapshot: snapshot
+      }
+    ])
     refreshContext()
   }
 
   function handleDetachedSnapshot(snapshot, historyOnly) {
     if (historyOnly || isQuiet(snapshot) || suppressForFullscreen(snapshot.urgency)) {
-      if (shouldArchiveSilenced(snapshot)) writeHistoryFile(snapshot)
+      if (shouldArchiveSilenced(snapshot))
+        writeHistoryFile(snapshot)
       return
     }
     // Persistence degrades, display does not: a rejected write is reported and the toast still shows.
     persistPopupFile(snapshot)
-    Qt.callLater(function() {
+    Qt.callLater(function () {
       var place = removePopupsByOriginalId(snapshot.originalId, NotificationLogic.popupFileName(snapshot))
       popupModel.insert(0, snapshot)
       service.inheritPlace(snapshot, place)
@@ -433,9 +529,11 @@ Item {
   }
 
   function handleNotification(notification) {
-    if (NotificationLogic.hasRawImage(notification)) { detachRawNotification(notification); return }
-    if (!NotificationLogic.notificationWithinLimits(notification)
-        || (!liveRefs[notification.id] && Object.keys(liveRefs).length >= 256)) {
+    if (NotificationLogic.hasRawImage(notification)) {
+      detachRawNotification(notification)
+      return
+    }
+    if (!NotificationLogic.notificationWithinLimits(notification) || (!liveRefs[notification.id] && Object.keys(liveRefs).length >= 256)) {
       rejectNotification(notification, "Notification exceeds sender or live-callback limits")
       return
     }
@@ -445,29 +543,35 @@ Item {
     notification.tracked = true
     var snapshot = snapshotOf(notification)
     var previousKey = liveKeys[snapshot.originalId]
-    if (previousKey) delete retainedHistory[previousKey]
+    if (previousKey)
+      delete retainedHistory[previousKey]
     liveRefs[snapshot.originalId] = notification
     liveKeys[snapshot.originalId] = NotificationLogic.imageStem(snapshot)
     // Guard the delete: a newer notification may have reused this originalId
     // (freedesktop replaces_id) and taken over the map slot.
-    notification.closed.connect(function() {
-      if (service.liveRefs[snapshot.originalId] !== notification) return
+    notification.closed.connect(function () {
+      if (service.liveRefs[snapshot.originalId] !== notification)
+        return
       delete service.liveRefs[snapshot.originalId]
       delete service.liveKeys[snapshot.originalId]
       var closedKey = NotificationLogic.imageStem(snapshot)
       // The center's buttons for this notification are gone with its sender.
-      if (service.retainedHistory[closedKey]) service.centerActionsChanged()
+      if (service.retainedHistory[closedKey])
+        service.centerActionsChanged()
       delete service.retainedHistory[closedKey]
       // Action labels are primitives; remove them when their live callback dies.
       // A card on screen stays (without them); one still waiting in the overflow
       // queue never shows once the sender withdrew it (CloseNotification), and
       // goes to history like a card that left the screen.
-      Qt.callLater(function() {
+      Qt.callLater(function () {
         for (var i = popupModel.count - 1; i >= 0; i--) {
           var row = popupModel.get(i)
-          if (row.originalId !== snapshot.originalId || row.timestamp !== snapshot.timestamp) continue
-          if (service.shownKeys[NotificationLogic.imageStem(row)]) popupModel.setProperty(i,"actionsJson","[]")
-          else service.removePopup(i, "closed")
+          if (row.originalId !== snapshot.originalId || row.timestamp !== snapshot.timestamp)
+            continue
+          if (service.shownKeys[NotificationLogic.imageStem(row)])
+            popupModel.setProperty(i, "actionsJson", "[]")
+          else
+            service.removePopup(i, "closed")
         }
         service.scheduleRebuild()
       })
@@ -495,7 +599,7 @@ Item {
     watchForUpdates(notification, snapshot)
     // Qt.callLater avoids "QV4::Object::insertMember" crashes when a
     // Repeater is mid-incubation while we mutate its model.
-    Qt.callLater(function() {
+    Qt.callLater(function () {
       var place = removePopupsByOriginalId(snapshot.originalId, NotificationLogic.popupFileName(snapshot))
       popupModel.insert(0, snapshot)
       service.inheritPlace(snapshot, place)
@@ -513,9 +617,12 @@ Item {
   // object without a second onNotification — releasing on a stale snapshot
   // would drop it. Each catch-up write reuses the original file identity.
   function writeSilenced(notification, written) {
-    writeHistoryFile(written, function(ok) {
+    writeHistoryFile(written, function (ok) {
       // A rejected/cancelled job is terminal; never enqueue a catch-up retry on overload.
-      if (!ok) { service.releaseSilenced(notification, written.originalId); return }
+      if (!ok) {
+        service.releaseSilenced(notification, written.originalId)
+        return
+      }
       var updated = null
       try {
         if (!NotificationLogic.notificationWithinLimits(notification)) {
@@ -554,7 +661,8 @@ Item {
   }
 
   function reportPersistenceError(message) {
-    if (lastError !== message) console.warn("foamy.notifications:", message)
+    if (lastError !== message)
+      console.warn("foamy.notifications:", message)
     lastError = message
   }
 
@@ -565,20 +673,19 @@ Item {
       cancelPendingWrites([key])
       for (var i = 0; i < popupModel.count; i++) {
         var row = popupModel.get(i)
-        if (NotificationLogic.imageStem(row) === key) popupModel.setProperty(i, "actionsJson", "[]")
+        if (NotificationLogic.imageStem(row) === key)
+          popupModel.setProperty(i, "actionsJson", "[]")
       }
       releaseSilenced(notification, notification.id)
       scheduleRebuild()
-    } else notification.tracked = false
+    } else
+      notification.tracked = false
   }
 
   // Everything the card draws. A change to any of these is a client updating
   // the notification in place, which is the only kind of update we ever hear
   // about after the popup exists.
-  readonly property var updateSignals: [
-    "summaryChanged", "bodyChanged", "appNameChanged", "appIconChanged",
-    "imageChanged", "urgencyChanged", "expireTimeoutChanged", "hintsChanged", "actionsChanged", "desktopEntryChanged"
-  ]
+  readonly property var updateSignals: ["summaryChanged", "bodyChanged", "appNameChanged", "appIconChanged", "imageChanged", "urgencyChanged", "expireTimeoutChanged", "hintsChanged", "actionsChanged", "desktopEntryChanged"]
 
   // A client that updates a notification through replaces_id does not produce
   // a second onNotification: the server writes the new content onto the object
@@ -592,7 +699,8 @@ Item {
 
     for (var i = 0; i < updateSignals.length; i++) {
       var signal = notification[updateSignals[i]]
-      if (signal && typeof signal.connect === "function") signal.connect(refresh)
+      if (signal && typeof signal.connect === "function")
+        signal.connect(refresh)
     }
   }
 
@@ -601,10 +709,12 @@ Item {
       detachRawNotification(notification)
       return
     }
-    if (busyKeys[String(timestamp) + "-" + String(originalId)] || handledKeys[String(timestamp) + "-" + String(originalId)]) return
+    if (busyKeys[String(timestamp) + "-" + String(originalId)] || handledKeys[String(timestamp) + "-" + String(originalId)])
+      return
     // A newer notification may have taken this id over, and the object may
     // outlive its popup — in both cases there is nothing here to refresh.
-    if (service.liveRefs[originalId] !== notification) return
+    if (service.liveRefs[originalId] !== notification)
+      return
     if (!NotificationLogic.notificationWithinLimits(notification)) {
       rejectNotification(notification, "Notification update exceeds sender limits")
       return
@@ -621,9 +731,12 @@ Item {
     var roles = NotificationLogic.popupRoles()
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
-      if (!row || row.originalId !== originalId || row.timestamp !== timestamp) continue
-      if (!NotificationLogic.popupRowChanged(row, updated)) return
-      for (var r = 0; r < roles.length; r++) popupModel.setProperty(i, roles[r], updated[roles[r]])
+      if (!row || row.originalId !== originalId || row.timestamp !== timestamp)
+        continue
+      if (!NotificationLogic.popupRowChanged(row, updated))
+        return
+      for (var r = 0; r < roles.length; r++)
+        popupModel.setProperty(i, roles[r], updated[roles[r]])
       // The file name is the timestamp and id this popup was persisted under,
       // so the rewrite lands on the same file: a restart restores the version
       // last shown, and so does the copy that ends up in history.
@@ -646,71 +759,102 @@ Item {
   // started; the rebuild clears its lifetime again.
   function restartLifetime(key, duration) {
     lifetimes[key] = duration
-    if (!shownDeadlines[key]) return
-    if (duration > 0) shownDeadlines[key] = Date.now() + duration
-    else delete shownDeadlines[key]
+    if (!shownDeadlines[key])
+      return
+    if (duration > 0)
+      shownDeadlines[key] = Date.now() + duration
+    else
+      delete shownDeadlines[key]
   }
 
   function retainHistoryAction(row, notification) {
     var key = NotificationLogic.imageStem(row)
-    if (!centerEnabled || row.transient || handledKeys[key] || liveKeys[row.originalId] !== key
-        || liveRefs[row.originalId] !== notification) return false
-    if (!(actionNow() - Number(row.timestamp) < centerActionLifetime)) return false
+    if (!centerEnabled || row.transient || handledKeys[key] || liveKeys[row.originalId] !== key || liveRefs[row.originalId] !== notification)
+      return false
+    if (!(actionNow() - Number(row.timestamp) < centerActionLifetime))
+      return false
     try {
-      if (NotificationLogic.hasRawImage(notification)) { detachRawNotification(notification); return false }
+      if (NotificationLogic.hasRawImage(notification)) {
+        detachRawNotification(notification)
+        return false
+      }
       // Anything the center can still press: the sender's own actions while it
       // is live, or an Omarchy click command or --action buttons. They stay in
       // memory only (never read back from a file) and expire with
       // centerActionLifetime.
-      if (!notification.tracked || !(notification.actions.length > 0 || NotificationLogic.parseExecArgv(row.execArgv)
-          || NotificationLogic.parseExecActions(row.execActions))) return false
-    } catch (e) { return false }
+      if (!notification.tracked || !(notification.actions.length > 0 || NotificationLogic.parseExecArgv(row.execArgv) || NotificationLogic.parseExecActions(row.execActions)))
+        return false
+    } catch (e) {
+      return false
+    }
     retainedHistory[key] = Object.assign({}, row)
     centerActionsChanged()
     // Bound live callbacks by the same count as popup history, even if the center is never opened.
-    var keys = Object.keys(retainedHistory).sort(function(a, b) {
+    var keys = Object.keys(retainedHistory).sort(function (a, b) {
       return Number(retainedHistory[a].timestamp) - Number(retainedHistory[b].timestamp)
     })
-    while (keys.length > historyLimit) releaseHistoryAction(keys.shift())
+    while (keys.length > historyLimit)
+      releaseHistoryAction(keys.shift())
     return !!retainedHistory[key]
   }
 
   function releaseHistoryAction(key) {
-    var row = retainedHistory[key] || {originalId:Number(key.split("-")[1])}
-    if (retainedHistory[key]) centerActionsChanged()
+    var row = retainedHistory[key] || {
+      originalId: Number(key.split("-")[1])
+    }
+    if (retainedHistory[key])
+      centerActionsChanged()
     delete retainedHistory[key]
-    if (liveKeys[row.originalId] !== key) return
+    if (liveKeys[row.originalId] !== key)
+      return
     var ref = liveRefs[row.originalId]
     delete liveKeys[row.originalId]
     delete liveRefs[row.originalId]
-    try { if (ref && ref.tracked) ref.dismiss() }
-    catch (e) { console.warn("foamy.notifications: retained notification already closed") }
+    try {
+      if (ref && ref.tracked)
+        ref.dismiss()
+    } catch (e) {
+      console.warn("foamy.notifications: retained notification already closed")
+    }
   }
 
   function releaseHistoryKeys(keys) {
     cancelPendingWrites(keys)
-    keys.forEach(function(key) { service.releaseHistoryAction(key) })
+    keys.forEach(function (key) {
+      service.releaseHistoryAction(key)
+    })
     // Removing history while a popup is visible must not retain its callback later.
     removeKeys(keys, "historyDismissed")
-    deleteDeferredArchives(function(key) { return keys.indexOf(key) >= 0 })
+    deleteDeferredArchives(function (key) {
+      return keys.indexOf(key) >= 0
+    })
     // The center removed these durably; Foamy drops its own copies (the center never deletes them).
     // The helper takes at most 100 keys per job. False when the queue refused
     // one: the IPC answers "busy" and the center retries.
     var accepted = true
     for (var i = 0; i < keys.length; i += 100)
-      if (!enqueueHelperJob("drop", {keys: keys.slice(i, i + 100)})) accepted = false
+      if (!enqueueHelperJob("drop", {
+        keys: keys.slice(i, i + 100)
+      }))
+        accepted = false
     return accepted
   }
 
   function releaseHistoryBefore(timestamp) {
     // Include silenced notifications whose history write is still queued.
-    var keys = Object.keys(liveKeys).map(function(id) { return liveKeys[id] }).filter(function(key) {
+    var keys = Object.keys(liveKeys).map(function (id) {
+      return liveKeys[id]
+    }).filter(function (key) {
       return Number(key.split("-")[0]) <= timestamp
     })
     // Every eligible key: a retained callback left behind could rewrite the history dropped below.
     var accepted = releaseHistoryKeys(keys)
-    deleteDeferredArchives(function(key) { return Number(key.split("-")[0]) <= timestamp })
-    return enqueueHelperJob("drop", {before: Math.floor(timestamp)}) && accepted
+    deleteDeferredArchives(function (key) {
+      return Number(key.split("-")[0]) <= timestamp
+    })
+    return enqueueHelperJob("drop", {
+      before: Math.floor(timestamp)
+    }) && accepted
   }
 
   // A restored row carries an id from the previous server generation, and
@@ -736,16 +880,30 @@ Item {
     var place = null
     for (var i = popupModel.count - 1; i >= 0; i--) {
       var row = popupModel.get(i)
-      if (!row || row.originalId !== originalId) continue
+      if (!row || row.originalId !== originalId)
+        continue
       // Not a replaces_id match — see isRestoredRow. Removing it here
       // would silently kill a restored critical alert on an unrelated ping.
-      if (isRestoredRow(row)) continue
+      if (isRestoredRow(row))
+        continue
       var key = NotificationLogic.imageStem(row)
-      if (shownKeys[key]) place = {shown: true, rank: displayRanks[key], since: shownSince[key]}
-      else if (!place && waitingKeys[key]) place = {shown: false, arrival: arrivals[key] !== undefined ? arrivals[key] : Number(row.timestamp),
-                                                    waitingSince: waitingSince[key], held: !!heldKeys[key], released: !!releasedKeys[key]}
+      if (shownKeys[key])
+        place = {
+          shown: true,
+          rank: displayRanks[key],
+          since: shownSince[key]
+        }
+      else if (!place && waitingKeys[key])
+        place = {
+          shown: false,
+          arrival: arrivals[key] !== undefined ? arrivals[key] : Number(row.timestamp),
+          waitingSince: waitingSince[key],
+          held: !!heldKeys[key],
+          released: !!releasedKeys[key]
+        }
       forgetPlacement(key)
-      if (NotificationLogic.popupFileName(row) !== keepFileName) deletePopupFileFor(row)
+      if (NotificationLogic.popupFileName(row) !== keepFileName)
+        deletePopupFileFor(row)
       forgetNormalizedImages(row, NotificationLogic.popupFileName(row) === keepFileName)
       popupModel.remove(i)
     }
@@ -755,19 +913,25 @@ Item {
   // A replacement updates the card it replaces in place: it keeps that card's
   // spot on screen, or its turn in the overflow queue (held while hovered too).
   function inheritPlace(snapshot, place) {
-    if (!place) return
+    if (!place)
+      return
     var key = NotificationLogic.imageStem(snapshot)
     if (place.shown) {
       shownKeys[key] = true
-      if (place.rank !== undefined) displayRanks[key] = place.rank
-      if (place.since !== undefined) shownSince[key] = place.since
+      if (place.rank !== undefined)
+        displayRanks[key] = place.rank
+      if (place.since !== undefined)
+        shownSince[key] = place.since
       return
     }
     waitingKeys[key] = true
     arrivals[key] = place.arrival
-    if (place.waitingSince !== undefined) waitingSince[key] = place.waitingSince
-    if (place.held) heldKeys[key] = true
-    if (place.released) releasedKeys[key] = true
+    if (place.waitingSince !== undefined)
+      waitingSince[key] = place.waitingSince
+    if (place.held)
+      heldKeys[key] = true
+    if (place.released)
+      releasedKeys[key] = true
     persistPopupFile(snapshot)
   }
 
@@ -790,7 +954,8 @@ Item {
   }
 
   function dismissGroup(group, fromCloseButton) {
-    if (busyKeys[group.key]) return
+    if (busyKeys[group.key])
+      return
     // Empty-history feedback is not a persisted notification.
     if (group.originalId < 0 || !fromCloseButton || !preferences.closeButtonRemovesHistory) {
       removeKeys(group.keys, "dismiss")
@@ -798,7 +963,9 @@ Item {
     }
     var row = Object.assign({}, group)
     var keys = group.keys.slice()
-    var busy = Object.assign({}, busyKeys); busy[row.key] = true; busyKeys = busy
+    var busy = Object.assign({}, busyKeys)
+    busy[row.key] = true
+    busyKeys = busy
     actionErrors = ({})
     lastError = ""
     // Commit removal before closing so queued writes cannot restore the group.
@@ -811,7 +978,8 @@ Item {
   }
 
   function removePopup(index, reason) {
-    if (index < 0 || index >= popupModel.count) return
+    if (index < 0 || index >= popupModel.count)
+      return
     var entry = popupModel.get(index)
     forgetNormalizedImages(entry)
     var originalId = entry ? entry.originalId : -1
@@ -827,22 +995,28 @@ Item {
     if (entry) {
       var key = NotificationLogic.imageStem(entry)
       // A history replay row came from history and has no popup file to move.
-      if (reason !== "handled" && !handledKeys[key] && !replayKeys[key]) archivePopupFileFor(entry)
+      if (reason !== "handled" && !handledKeys[key] && !replayKeys[key])
+        archivePopupFileFor(entry)
       delete lifetimes[key]
-      if (restored) delete restoredPopups[NotificationLogic.popupFileName(entry)]
+      if (restored)
+        delete restoredPopups[NotificationLogic.popupFileName(entry)]
       // A card leaving the screen frees room: let the screen-space limit try one more.
-      if (shownKeys[key]) fitRetry = true
+      if (shownKeys[key])
+        fitRetry = true
       forgetPlacement(key)
     }
     var retained = ref && (reason === "expire" || reason === "dismiss") && retainHistoryAction(entry, ref)
     popupModel.remove(index)
     scheduleRebuild()
-    if (retained) return
+    if (retained)
+      return
     if (ref) {
       try {
         if (ref.tracked) {
-          if (reason === "expire" && typeof ref.expire === "function") ref.expire()
-          else ref.dismiss()
+          if (reason === "expire" && typeof ref.expire === "function")
+            ref.expire()
+          else
+            ref.dismiss()
         }
       } catch (e) {
         // Object already torn down by the server — nothing to dismiss.
@@ -851,7 +1025,8 @@ Item {
   }
 
   function clearPopups() {
-    while (popupModel.count > 0) dismissPopup(0)
+    while (popupModel.count > 0)
+      dismissPopup(0)
   }
 
   function invokeLiveAction(row, identifier) {
@@ -861,54 +1036,79 @@ Item {
     try {
       if (ref && ref.actions) {
         for (var i = 0; i < ref.actions.length; i++) {
-          if (ref.actions[i].identifier === identifier) { ref.actions[i].invoke(); return true }
+          if (ref.actions[i].identifier === identifier) {
+            ref.actions[i].invoke()
+            return true
+          }
         }
       }
-    } catch(e) { console.warn("foamy.notifications: notification action is no longer available") }
+    } catch (e) {
+      console.warn("foamy.notifications: notification action is no longer available")
+    }
     return false
   }
 
   function invokeCenterDefault(key) {
-    if (!/^[0-9]+-[0-9]+$/.test(key)) return "invalid"
-    if (busyKeys[key]) return "busy"
+    if (!/^[0-9]+-[0-9]+$/.test(key))
+      return "invalid"
+    if (busyKeys[key])
+      return "busy"
     // The center may use live actions only within centerActionLifetime of
     // arrival, a card still on screen included (centerRow, centerActions).
-    if (!(actionNow() - Number(key.split("-")[0]) < centerActionLifetime)) return "unavailable"
+    if (!(actionNow() - Number(key.split("-")[0]) < centerActionLifetime))
+      return "unavailable"
     // Resolve only current live rows by full identity; archived IDs can be reused.
     for (var i = 0; i < popupModel.count; i++) {
       var row = Object.assign({}, popupModel.get(i))
-      if (NotificationLogic.imageStem(row) !== key || isRestoredRow(row)) continue
+      if (NotificationLogic.imageStem(row) !== key || isRestoredRow(row))
+        continue
       // Only the current native identity may delegate its command. Restored
       // and archived command vectors never cross the center's click boundary.
       var ref = liveKeys[row.originalId] === key ? liveRefs[row.originalId] : null
       var argv = ref && ref.tracked ? NotificationLogic.parseExecArgv(row.execArgv) : null
       if (argv) {
         row.key = key
-        var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
-        commitHandled(row, [key], function() { Util.execArgv(argv) })
+        var busy = Object.assign({}, busyKeys)
+        busy[key] = true
+        busyKeys = busy
+        commitHandled(row, [key], function () {
+          Util.execArgv(argv)
+        })
         return "invoked"
       }
       row.key = key
-      if (siteRowFocus(row, key)) return "invoked"
-      if (!invokeLiveAction(row, "default")) return "unavailable"
-      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+      if (siteRowFocus(row, key))
+        return "invoked"
+      if (!invokeLiveAction(row, "default"))
+        return "unavailable"
+      var busy = Object.assign({}, busyKeys)
+      busy[key] = true
+      busyKeys = busy
       // Use normal handling to remove the popup and its persisted copy as well.
       commitHandled(row, [key])
       return "invoked"
     }
     var retained = centerRow(key)
-    if (!retained) return "unavailable"
+    if (!retained)
+      return "unavailable"
     retained.key = key
     // A retained click command came from this live notification, not a file.
     var retainedArgv = NotificationLogic.parseExecArgv(retained.execArgv)
     if (retainedArgv) {
-      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
-      commitHandled(retained, [key], function() { Util.execArgv(retainedArgv) })
+      var busy = Object.assign({}, busyKeys)
+      busy[key] = true
+      busyKeys = busy
+      commitHandled(retained, [key], function () {
+        Util.execArgv(retainedArgv)
+      })
       return "invoked"
     }
-    if (siteRowFocus(retained, key)) return "invoked"
+    if (siteRowFocus(retained, key))
+      return "invoked"
     if (invokeLiveAction(retained, "default")) {
-      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
+      var busy = Object.assign({}, busyKeys)
+      busy[key] = true
+      busyKeys = busy
       commitHandled(retained, [key])
       return "invoked"
     }
@@ -922,10 +1122,15 @@ Item {
   // `handled`, or clears busy (with the popup's error) so the row can be
   // clicked again.
   function siteRowFocus(row, key) {
-    if (!siteFocusCandidate(row)) return false
+    if (!siteFocusCandidate(row))
+      return false
     // Busy first: every completion below clears it, and must not be overwritten.
-    var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
-    focusSiteWindow(row, function() { service.commitHandled(row, [key]) }, function() {
+    var busy = Object.assign({}, busyKeys)
+    busy[key] = true
+    busyKeys = busy
+    focusSiteWindow(row, function () {
+      service.commitHandled(row, [key])
+    }, function () {
       service.activateSender(row, [key], "default")
     })
     return true
@@ -936,16 +1141,20 @@ Item {
   // centerActionLifetime of its arrival. Restored and archived rows never
   // qualify. A copy, so the caller can add `key`.
   function centerRow(key) {
-    if (!/^[0-9]+-[0-9]+$/.test(key) || !(actionNow() - Number(key.split("-")[0]) < centerActionLifetime)) return null
+    if (!/^[0-9]+-[0-9]+$/.test(key) || !(actionNow() - Number(key.split("-")[0]) < centerActionLifetime))
+      return null
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
-      if (NotificationLogic.imageStem(row) !== key) continue
-      if (isRestoredRow(row) || liveKeys[row.originalId] !== key) return null
+      if (NotificationLogic.imageStem(row) !== key)
+        continue
+      if (isRestoredRow(row) || liveKeys[row.originalId] !== key)
+        return null
       var ref = liveRefs[row.originalId]
       return ref && ref.tracked ? Object.assign({}, row) : null
     }
     var retained = retainedHistory[key]
-    if (!retained || liveKeys[retained.originalId] !== key) return null
+    if (!retained || liveKeys[retained.originalId] !== key)
+      return null
     var live = liveRefs[retained.originalId]
     return live && live.tracked ? Object.assign({}, retained) : null
   }
@@ -953,7 +1162,9 @@ Item {
   // The buttons a card draws, minus what only the card can do (codes, links):
   // --action buttons, then the sender's actions (settings last).
   function centerButtons(row) {
-    return NotificationLogic.deeds(row, null).filter(function(deed) { return deed.kind === "exec" || deed.kind === "action" })
+    return NotificationLogic.deeds(row, null).filter(function (deed) {
+      return deed.kind === "exec" || deed.kind === "action"
+    })
   }
 
   // `centerActions`: { key: [label, …] } for every notification whose buttons
@@ -962,14 +1173,19 @@ Item {
     expireCenterActions()
     var out = {}
     var keys = []
-    for (var i = 0; i < popupModel.count; i++) keys.push(NotificationLogic.imageStem(popupModel.get(i)))
+    for (var i = 0; i < popupModel.count; i++)
+      keys.push(NotificationLogic.imageStem(popupModel.get(i)))
     keys = keys.concat(Object.keys(retainedHistory))
     for (var k = 0; k < keys.length; k++) {
       var key = keys[k]
-      if (out[key] || busyKeys[key] || handledKeys[key]) continue
+      if (out[key] || busyKeys[key] || handledKeys[key])
+        continue
       var row = centerRow(key)
       var buttons = row ? centerButtons(row) : []
-      if (buttons.length) out[key] = buttons.map(function(deed) { return String(deed.text).slice(0, 80) })
+      if (buttons.length)
+        out[key] = buttons.map(function (deed) {
+          return String(deed.text).slice(0, 80)
+        })
     }
     return out
   }
@@ -977,22 +1193,33 @@ Item {
   // A center button: its index in `centerActions`. Runs like the card's button,
   // with handling persisted before a command launches.
   function invokeCenterAction(key, index) {
-    if (!/^[0-9]+-[0-9]+$/.test(key) || !/^[0-9]{1,2}$/.test(index)) return "invalid"
-    if (busyKeys[key]) return "busy"
+    if (!/^[0-9]+-[0-9]+$/.test(key) || !/^[0-9]{1,2}$/.test(index))
+      return "invalid"
+    if (busyKeys[key])
+      return "busy"
     var row = centerRow(key)
     var deed = row ? centerButtons(row)[Number(index)] : null
-    if (!deed) return "unavailable"
+    if (!deed)
+      return "unavailable"
     row.key = key
     if (deed.kind === "exec") {
       var actions = NotificationLogic.parseExecActions(row.execActions)
       var argv = actions && actions[Number(deed.value)] ? actions[Number(deed.value)].argv : null
-      if (!argv) return "unavailable"
-      var busy = Object.assign({}, busyKeys); busy[key] = true; busyKeys = busy
-      commitHandled(row, [key], function() { Util.execArgv(argv) })
+      if (!argv)
+        return "unavailable"
+      var busy = Object.assign({}, busyKeys)
+      busy[key] = true
+      busyKeys = busy
+      commitHandled(row, [key], function () {
+        Util.execArgv(argv)
+      })
       return "invoked"
     }
-    if (!invokeLiveAction(row, deed.value)) return "unavailable"
-    var busyAction = Object.assign({}, busyKeys); busyAction[key] = true; busyKeys = busyAction
+    if (!invokeLiveAction(row, deed.value))
+      return "unavailable"
+    var busyAction = Object.assign({}, busyKeys)
+    busyAction[key] = true
+    busyKeys = busyAction
     commitHandled(row, [key])
     return "invoked"
   }
@@ -1000,17 +1227,22 @@ Item {
   // Releases retained actions older than centerActionLifetime.
   function expireCenterActions() {
     var now = actionNow()
-    Object.keys(retainedHistory).forEach(function(key) {
-      if (!(now - Number(key.split("-")[0]) < service.centerActionLifetime)) service.releaseHistoryAction(key)
+    Object.keys(retainedHistory).forEach(function (key) {
+      if (!(now - Number(key.split("-")[0]) < service.centerActionLifetime))
+        service.releaseHistoryAction(key)
     })
   }
 
   // The center re-reads `centerActions` when told; one poke per batch.
   property bool centerActionsPoke: false
   function centerActionsChanged() {
-    if (!centerEnabled || centerActionsPoke) return
+    if (!centerEnabled || centerActionsPoke)
+      return
     centerActionsPoke = true
-    Qt.callLater(function() { service.centerActionsPoke = false; service.pokeCenter("actions") })
+    Qt.callLater(function () {
+      service.centerActionsPoke = false
+      service.pokeCenter("actions")
+    })
   }
   Timer {
     interval: 600000
@@ -1025,42 +1257,61 @@ Item {
   // Third-party clients register a libnotify action under the canonical
   // identifier "default" instead; that one only works while the sender is live.
   function activateGroup(group, identifier) {
-    if (busyKeys[group.key]) return
-    if (group.originalId < 0) { dismissGroup(group, false); return }
+    if (busyKeys[group.key])
+      return
+    if (group.originalId < 0) {
+      dismissGroup(group, false)
+      return
+    }
     var row = Object.assign({}, group)
     var keys = group.keys.slice()
-    var busy = Object.assign({}, busyKeys); busy[row.key] = true; busyKeys = busy
+    var busy = Object.assign({}, busyKeys)
+    busy[row.key] = true
+    busyKeys = busy
     actionErrors = ({})
     lastError = ""
     var argv = identifier === "default" ? NotificationLogic.parseExecArgv(row.execArgv) : null
     if (argv) {
       // Shell commands can restart Quickshell. Persist handling before launching them.
-      commitHandled(row, keys, function() { Util.execArgv(argv) })
+      commitHandled(row, keys, function () {
+        Util.execArgv(argv)
+      })
       return
     }
-    if (identifier === "default" && focusSiteWindow(row, function() { service.commitHandled(row, keys) },
-                                                    function() { service.activateSender(row, keys, identifier) })) return
+    if (identifier === "default" && focusSiteWindow(row, function () {
+      service.commitHandled(row, keys)
+    }, function () {
+      service.activateSender(row, keys, identifier)
+    }))
+      return
     activateSender(row, keys, identifier)
   }
 
   // The sender's own action, else app focus. activateGroup has set the card busy.
   function activateSender(row, keys, identifier) {
     var invoked = invokeLiveAction(row, identifier)
-    if (invoked) commitHandled(row, keys)
+    if (invoked)
+      commitHandled(row, keys)
     else if (identifier === "default") {
-      enqueueHelperJob("focus", {app:row.app, desktopEntry:row.desktopEntry, body:row.body, mappings:preferences.browserMappings}, function(ok, out, reason) {
+      enqueueHelperJob("focus", {
+        app: row.app,
+        desktopEntry: row.desktopEntry,
+        body: row.body,
+        mappings: preferences.browserMappings
+      }, function (ok, out, reason) {
         if (ok && String(out).trim() === "none") {
           // A sender without a window (a screenshot tool, a script) has nothing to open.
           // The click closes the card like X, so the center still keeps it.
           service.finishAction(row.key, "")
           service.removeKeys(keys, "dismiss")
-        } else if (ok) service.commitHandled(row, keys)
-        // Failed focus must leave both popup persistence and center history retryable.
-        else service.finishAction(row.key, service.helperUnavailable ? FoamyNative.UNAVAILABLE_TEXT : reason === "browser"
-          ? "Could not identify the window. Configure browserMappings or dismiss this popup."
-          : "Could not focus the sending app. Open it yourself or dismiss this popup.")
+        } else if (ok)
+          service.commitHandled(row, keys)
+        else
+          // Failed focus must leave both popup persistence and center history retryable.
+          service.finishAction(row.key, service.helperUnavailable ? FoamyNative.UNAVAILABLE_TEXT : reason === "browser" ? "Could not identify the window. Configure browserMappings or dismiss this popup." : "Could not focus the sending app. Open it yourself or dismiss this popup.")
       })
-    } else finishAction(row.key, "This action is no longer available.")
+    } else
+      finishAction(row.key, "This action is no longer available.")
   }
 
   // Chromium-family browsers can't raise an installed web app when they get the
@@ -1075,17 +1326,27 @@ Item {
   // focus-app that is missing (older Omarchy: `timeout` exits 127), hangs
   // (`timeout` ends its group: SIGTERM at 5 s, SIGKILL 1 s later) or can't
   // start at all: the card never stays busy.
-  readonly property var appWindowBrowsers: ({"vivaldi": true, "chromium": true, "google-chrome": true, "chrome": true,
-                                             "brave": true, "microsoft-edge": true, "msedge": true})
+  readonly property var appWindowBrowsers: ({
+      "vivaldi": true,
+      "chromium": true,
+      "google-chrome": true,
+      "chrome": true,
+      "brave": true,
+      "microsoft-edge": true,
+      "msedge": true
+    })
   function siteFocusCandidate(row) {
     return !!omarchyPath && !!appWindowBrowsers[BrowserIdentity.browser(row)] && !!BrowserIdentity.hostname(row)
   }
   // A literal for omarchy-hyprland-focus-app's (jq) regex.
-  function regexLiteral(text) { return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
+  function regexLiteral(text) {
+    return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  }
   // Each pattern is one argv entry, never shell text. False (nothing started)
   // for any other sender.
   function focusSiteWindow(row, onFocused, onMiss) {
-    if (!siteFocusCandidate(row)) return false
+    if (!siteFocusCandidate(row))
+      return false
     var host = BrowserIdentity.hostname(row)
     var patterns = []
     var mappings = Array.isArray(preferences.browserMappings) ? preferences.browserMappings : []
@@ -1098,11 +1359,23 @@ Item {
     }
     patterns.push("^(chrome|vivaldi|msedge|brave)-" + regexLiteral(host) + "__")
     function attempt(index) {
-      if (index >= patterns.length) { onMiss(); return }
-      var proc = siteFocusProcess.createObject(service, {command: ["timeout", "--kill-after=1s", "5s",
-                                                                  service.omarchyPath + "/bin/omarchy-hyprland-focus-app", patterns[index]]})
-      if (!proc) { onMiss(); return }
-      proc.done = function(focused) { if (focused) onFocused(); else attempt(index + 1) }
+      if (index >= patterns.length) {
+        onMiss()
+        return
+      }
+      var proc = siteFocusProcess.createObject(service, {
+        command: ["timeout", "--kill-after=1s", "5s", service.omarchyPath + "/bin/omarchy-hyprland-focus-app", patterns[index]]
+      })
+      if (!proc) {
+        onMiss()
+        return
+      }
+      proc.done = function (focused) {
+        if (focused)
+          onFocused()
+        else
+          attempt(index + 1)
+      }
       proc.running = true
     }
     attempt(0)
@@ -1114,9 +1387,12 @@ Item {
   // Process is destroyed afterwards either way.
   function finishSiteFocus(proc, focused) {
     var callback = proc.done
-    if (!callback) return
+    if (!callback)
+      return
     proc.done = null
-    Qt.callLater(function() { proc.destroy() })
+    Qt.callLater(function () {
+      proc.destroy()
+    })
     callback(focused)
   }
   // Live site-focus Processes (for the runtime test: none may outlive its attempt).
@@ -1128,22 +1404,35 @@ Item {
       property var done: null
       Component.onCompleted: service.siteFocusProcesses++
       Component.onDestruction: service.siteFocusProcesses--
-      onExited: function(code, status) { service.finishSiteFocus(siteFocusProc, code === 0 && status === 0) }
-      onRunningChanged: if (!running) service.finishSiteFocus(siteFocusProc, false)
+      onExited: function (code, status) {
+        service.finishSiteFocus(siteFocusProc, code === 0 && status === 0)
+      }
+      onRunningChanged: if (!running)
+        service.finishSiteFocus(siteFocusProc, false)
     }
   }
 
   function commitHandled(row, keys, beforeDismiss) {
-    enqueueHelperJob("forget", {keys: keys}, function(ok) {
-      if (!ok) { service.finishAction(row.key, "Could not remove this notification from history. Try again."); return }
+    enqueueHelperJob("forget", {
+      keys: keys
+    }, function (ok) {
+      if (!ok) {
+        service.finishAction(row.key, "Could not remove this notification from history. Try again.")
+        return
+      }
       // Keep prior writes on failure; only durable handling may cancel later snapshots.
       service.cancelPendingWrites(keys)
-      keys.forEach(function(key) { service.handledKeys[key] = true })
+      keys.forEach(function (key) {
+        service.handledKeys[key] = true
+      })
       service.pruneHandledKeys()
       service.notifyCenter(keys)
-      if (beforeDismiss) beforeDismiss()
+      if (beforeDismiss)
+        beforeDismiss()
       service.removeKeys(keys, "handled")
-      keys.forEach(function(key) { service.releaseHistoryAction(key) })
+      keys.forEach(function (key) {
+        service.releaseHistoryAction(key)
+      })
       service.finishAction(row.key, "")
     })
   }
@@ -1151,30 +1440,44 @@ Item {
   // handledKeys guards late refreshes of handled rows; keep the newest only.
   function pruneHandledKeys() {
     var keys = Object.keys(handledKeys)
-    if (keys.length <= 512) return
-    keys.sort(function(a, b) { return Number(a.split("-")[0]) - Number(b.split("-")[0]) })
+    if (keys.length <= 512)
+      return
+    keys.sort(function (a, b) {
+      return Number(a.split("-")[0]) - Number(b.split("-")[0])
+    })
     var next = ({})
-    keys.slice(-256).forEach(function(key) { next[key] = true })
+    keys.slice(-256).forEach(function (key) {
+      next[key] = true
+    })
     handledKeys = next
   }
 
   // The handled journal is already durable (helper `forget`); this only updates
   // the center's list now. Contract: README "Notification Center contract".
   function notifyCenter(keys) {
-    if (!centerEnabled) return
+    if (!centerEnabled)
+      return
     peer.call("foamy.notification-center.store", "handled", [keys.join(",")])
   }
 
   function pokeCenter(what) {
-    if (centerEnabled) peer.call("foamy.notification-center.store", "peerChanged", [what])
+    if (centerEnabled)
+      peer.call("foamy.notification-center.store", "peerChanged", [what])
   }
 
-  FoamyPeerIpc { id: peer }
+  FoamyPeerIpc {
+    id: peer
+  }
 
   function finishAction(key, error) {
-    var busy = Object.assign({}, busyKeys); delete busy[key]; busyKeys = busy
+    var busy = Object.assign({}, busyKeys)
+    delete busy[key]
+    busyKeys = busy
     var errors = Object.assign({}, actionErrors)
-    if (error) errors[key] = error; else delete errors[key]
+    if (error)
+      errors[key] = error
+    else
+      delete errors[key]
     actionErrors = errors
     // A busy card kept its slot (planStack pins it); a waiting critical may take it now.
     scheduleRebuild()
@@ -1182,7 +1485,8 @@ Item {
 
   function removeKeys(keys, reason) {
     for (var i = popupModel.count - 1; i >= 0; i--)
-      if (keys.indexOf(NotificationLogic.imageStem(popupModel.get(i))) >= 0) removePopup(i, reason)
+      if (keys.indexOf(NotificationLogic.imageStem(popupModel.get(i))) >= 0)
+        removePopup(i, reason)
   }
 
   // ---------------------------------------------------- popup persistence
@@ -1216,12 +1520,14 @@ Item {
 
   function rejectPopupFileJob(job, message) {
     reportPersistenceError(message)
-    if (job.done) job.done(false, "")
+    if (job.done)
+      job.done(false, "")
     return false
   }
 
   function enqueuePopupJob(job) {
-    if (helperUnavailable) return rejectPopupFileJob(job, FoamyNative.UNAVAILABLE_TEXT)
+    if (helperUnavailable)
+      return rejectPopupFileJob(job, FoamyNative.UNAVAILABLE_TEXT)
     var payload = job.payload || "{}"
     // Bound before copying the queue. UTF-8 accounts for escaped and non-ASCII sender data.
     if (payload.length > popupPayloadLimit || NotificationLogic.utf8Bytes(payload) > popupPayloadLimit)
@@ -1230,17 +1536,19 @@ Item {
     var queue = popupFileQueue.slice()
     var last = queue.length ? queue[queue.length - 1] : null
     // Callback-bearing writes, reads, actions and cleanup remain ordering barriers.
-    var replace = job.replaceKey && last && last.replaceKey === job.replaceKey
-      && last.historyWrite === job.historyWrite && !last.done && !job.done
-    if (replace) queue.pop()
+    var replace = job.replaceKey && last && last.replaceKey === job.replaceKey && last.historyWrite === job.historyWrite && !last.done && !job.done
+    if (replace)
+      queue.pop()
     var bytes = job.bytes, writes = job.writeKey ? 1 : 0, writeBytes = job.writeKey ? job.bytes : 0
     for (var i = 0; i < queue.length; i++) {
       bytes += queue[i].bytes
-      if (queue[i].writeKey) { writes++; writeBytes += queue[i].bytes }
+      if (queue[i].writeKey) {
+        writes++
+        writeBytes += queue[i].bytes
+      }
     }
     // Reserve half the slots and 256 KiB for cleanup/actions during sender floods.
-    if (queue.length >= popupQueueLimit || bytes > popupQueueByteLimit
-        || (job.writeKey && (writes > popupWriteLimit || writeBytes > popupWriteByteLimit)))
+    if (queue.length >= popupQueueLimit || bytes > popupQueueByteLimit || (job.writeKey && (writes > popupWriteLimit || writeBytes > popupWriteByteLimit)))
       return rejectPopupFileJob(job, "Notification persistence queue is full; new work was rejected")
     queue.push(job)
     popupFileQueue = queue
@@ -1249,20 +1557,30 @@ Item {
   }
 
   function enqueueHelperJob(op, data, done, replaceKey, historyWrite) {
-    return enqueuePopupJob({op:op, payload:JSON.stringify(data || {}), done:done || null,
-      replaceKey:replaceKey || "", historyWrite:!!historyWrite, writeKey:op === "write" ? (replaceKey || "") : ""})
+    return enqueuePopupJob({
+      op: op,
+      payload: JSON.stringify(data || {}),
+      done: done || null,
+      replaceKey: replaceKey || "",
+      historyWrite: !!historyWrite,
+      writeKey: op === "write" ? (replaceKey || "") : ""
+    })
   }
 
   function cancelPendingWrites(keys, historyOnly) {
     var kept = [], cancelled = []
     for (var i = 0; i < popupFileQueue.length; i++) {
       var job = popupFileQueue[i]
-      if (job.writeKey && (!historyOnly || job.historyWrite) && keys.indexOf(job.writeKey) >= 0) cancelled.push(job)
-      else kept.push(job)
+      if (job.writeKey && (!historyOnly || job.historyWrite) && keys.indexOf(job.writeKey) >= 0)
+        cancelled.push(job)
+      else
+        kept.push(job)
     }
     // Remove references before callbacks run, so release/re-entrancy cannot revisit a cancelled job.
     popupFileQueue = kept
-    for (var c = 0; c < cancelled.length; c++) if (cancelled[c].done) cancelled[c].done(false, "")
+    for (var c = 0; c < cancelled.length; c++)
+      if (cancelled[c].done)
+        cancelled[c].done(false, "")
     runNextPopupFileJob()
   }
 
@@ -1270,14 +1588,34 @@ Item {
     if (!runningJob && popupFileQueue.length === 0 && Object.keys(deferredMoves).length) {
       var moves = deferredMoves, archive = [], remove = []
       deferredMoves = ({})
-      for (var key in moves) (moves[key] === "delete" ? remove : archive).push(key)
+      for (var key in moves)
+        (moves[key] === "delete" ? remove : archive).push(key)
       var batch = []
-      if (archive.length) batch.push({op:"archive", payload:JSON.stringify({keys:archive}), bytes:0})
-      if (remove.length) batch.push({op:"delete", payload:JSON.stringify({keys:remove}), bytes:0})
+      if (archive.length)
+        batch.push({
+          op: "archive",
+          payload: JSON.stringify({
+            keys: archive
+          }),
+          bytes: 0
+        })
+      if (remove.length)
+        batch.push({
+          op: "delete",
+          payload: JSON.stringify({
+            keys: remove
+          }),
+          bytes: 0
+        })
       popupFileQueue = batch
     }
-    if (runningJob || popupFileQueue.length === 0 || helperUnavailable) return
-    if (!helperProc.running) { if (!helperRestart.running) helperRestart.start(); return }
+    if (runningJob || popupFileQueue.length === 0 || helperUnavailable)
+      return
+    if (!helperProc.running) {
+      if (!helperRestart.running)
+        helperRestart.start()
+      return
+    }
     var job = popupFileQueue[0]
     popupFileQueue = popupFileQueue.slice(1)
     job.id = ++nextJobId
@@ -1288,20 +1626,37 @@ Item {
 
   function helperReplied(line) {
     var reply
-    try { reply = JSON.parse(line) } catch (e) { console.warn("foamy.notifications: invalid helper reply"); return }
+    try {
+      reply = JSON.parse(line)
+    } catch (e) {
+      console.warn("foamy.notifications: invalid helper reply")
+      return
+    }
     var job = runningJob
-    if (!job || reply.id !== job.id) return
+    if (!job || reply.id !== job.id)
+      return
     runningJob = null
     var ok = reply.ok === true
     var out = String(reply.out || "")
-    if (!ok) { lastError = "Notification operation failed: " + String(reply.error || ""); console.warn(lastError) }
+    if (!ok) {
+      lastError = "Notification operation failed: " + String(reply.error || "")
+      console.warn(lastError)
+    }
     if (ok && runningImageWrite) {
-      try { acceptNormalizedImages(JSON.parse(out)) }
-      catch (e) { lastError = "Invalid notification image result"; console.warn(lastError) }
+      try {
+        acceptNormalizedImages(JSON.parse(out))
+      } catch (e) {
+        lastError = "Invalid notification image result"
+        console.warn(lastError)
+      }
     }
     runningImageWrite = false
     if (job.done) {
-      try { job.done(ok, out, String(reply.reason || "")) } catch (e) { console.warn("notifications: file job callback failed:", e) }
+      try {
+        job.done(ok, out, String(reply.reason || ""))
+      } catch (e) {
+        console.warn("notifications: file job callback failed:", e)
+      }
     }
     runNextPopupFileJob()
   }
@@ -1314,7 +1669,8 @@ Item {
   readonly property int helperStableMs: 30000
   property double helperStartedAt: 0
   function nextHelperRestartDelay(now) {
-    if (helperStartedAt > 0 && now - helperStartedAt >= helperStableMs) helperBackoffMs = 1000
+    if (helperStartedAt > 0 && now - helperStartedAt >= helperStableMs)
+      helperBackoffMs = 1000
     var delay = helperBackoffMs
     helperBackoffMs = Math.min(helperBackoffMs * 2, helperBackoffMaxMs)
     return delay
@@ -1325,23 +1681,47 @@ Item {
     command: FoamyNative.command(service.pluginDir, service.helper, ["serve"])
     running: false
     stdinEnabled: true
-    stdout: SplitParser { onRead: function(line) { service.helperReplied(line) } }
-    stderr: SplitParser { onRead: function(line) { if (String(line).trim()) console.warn(String(line).trim()) } }
-    onRunningChanged: if (running) { service.helperStartedAt = Date.now(); service.runNextPopupFileJob() }
-    onExited: function(exitCode, exitStatus) {
+    stdout: SplitParser {
+      onRead: function (line) {
+        service.helperReplied(line)
+      }
+    }
+    stderr: SplitParser {
+      onRead: function (line) {
+        if (String(line).trim())
+          console.warn(String(line).trim())
+      }
+    }
+    onRunningChanged: if (running) {
+      service.helperStartedAt = Date.now()
+      service.runNextPopupFileJob()
+    }
+    onExited: function (exitCode, exitStatus) {
       // Before any callback below can queue work (and start the restart timer).
       helperRestart.interval = service.nextHelperRestartDelay(Date.now())
       var job = service.runningJob
       service.runningJob = null
       service.runningImageWrite = false
       var unavailable = FoamyNative.unavailable(exitCode)
-      if (unavailable) service.markHelperUnavailable()
-      else service.reportPersistenceError("Notification helper stopped; restarting it")
-      if (job && job.done) { try { job.done(false, "") } catch (e) {} }
-      if (!unavailable) helperRestart.start()
+      if (unavailable)
+        service.markHelperUnavailable()
+      else
+        service.reportPersistenceError("Notification helper stopped; restarting it")
+      if (job && job.done) {
+        try {
+          job.done(false, "")
+        } catch (e) {}
+      }
+      if (!unavailable)
+        helperRestart.start()
     }
   }
-  Timer { id: helperRestart; interval: 1000; onTriggered: if (!helperProc.running && !service.helperUnavailable) helperProc.running = true }
+  Timer {
+    id: helperRestart
+    interval: 1000
+    onTriggered: if (!helperProc.running && !service.helperUnavailable)
+      helperProc.running = true
+  }
 
   function persistPopupFile(snapshot) {
     var key = NotificationLogic.imageStem(snapshot)
@@ -1354,23 +1734,38 @@ Item {
     // and one that showed after waiting is judged by its own display clock.
     if (waitingKeys[key]) {
       placed.queued = true
-      if (waitingSince[key] > 0) placed.waitingSince = waitingSince[key]
-    } else if (shownDeadlines[key] > 0) placed.deadline = shownDeadlines[key]
+      if (waitingSince[key] > 0)
+        placed.waitingSince = waitingSince[key]
+    } else if (shownDeadlines[key] > 0)
+      placed.deadline = shownDeadlines[key]
     var safeSnapshot = Features.redact(placed)
     var persistable = NotificationLogic.persistablePopup(safeSnapshot, imagesDir)
     var version = ++nextImageWriteVersion
     imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
-    var accepted = enqueueHelperJob("write", {entry:persistable.entry, copies:persistable.copies, imageVersion:version, sources:{appIcon:String(safeSnapshot.appIcon || ""), image:String(safeSnapshot.image || "")}}, null, NotificationLogic.imageStem(snapshot))
-    if (!accepted) delete imageWriteVersions[NotificationLogic.imageStem(snapshot)]
+    var accepted = enqueueHelperJob("write", {
+      entry: persistable.entry,
+      copies: persistable.copies,
+      imageVersion: version,
+      sources: {
+        appIcon: String(safeSnapshot.appIcon || ""),
+        image: String(safeSnapshot.image || "")
+      }
+    }, null, NotificationLogic.imageStem(snapshot))
+    if (!accepted)
+      delete imageWriteVersions[NotificationLogic.imageStem(snapshot)]
     return accepted
   }
 
   function deletePopupFileFor(row) {
-    if (!row || row.originalId < 0) return
+    if (!row || row.originalId < 0)
+      return
     cancelPendingWrites([NotificationLogic.imageStem(row)])
     // History replays have no popup file; deleting a missing file is harmless.
     var key = NotificationLogic.imageStem(row)
-    if (!enqueueHelperJob("delete", {key: key})) deferMove(key, "delete")
+    if (!enqueueHelperJob("delete", {
+      key: key
+    }))
+      deferMove(key, "delete")
   }
 
   // Moves and deletes refused by a full queue (a sender flood) are not lost:
@@ -1378,7 +1773,8 @@ Item {
   // the bound is archived by the restore age check on the next start.
   property var deferredMoves: ({})
   function deferMove(key, op) {
-    if (!deferredMoves[key] && Object.keys(deferredMoves).length >= 2048) return
+    if (!deferredMoves[key] && Object.keys(deferredMoves).length >= 2048)
+      return
     var next = Object.assign({}, deferredMoves)
     next[key] = op
     deferredMoves = next
@@ -1394,7 +1790,8 @@ Item {
   readonly property var historyBarrierOps: ["clear", "drop", "forget", "read", "migrate"]
   function archivePopupFileFor(row) {
     // The empty-history placeholder has no valid persistence key.
-    if (!row || row.originalId < 0) return
+    if (!row || row.originalId < 0)
+      return
     var key = NotificationLogic.imageStem(row)
     // Its popup write has not run yet: write it straight into history instead,
     // so a flood never leaves a popup file behind and needs no second job.
@@ -1406,8 +1803,10 @@ Item {
     var converted = false
     for (var i = popupFileQueue.length - 1; i >= 0; i--) {
       var job = popupFileQueue[i]
-      if (historyBarrierOps.indexOf(job.op) >= 0) break
-      if (job.op !== "write" || job.writeKey !== key || job.historyWrite) continue
+      if (historyBarrierOps.indexOf(job.op) >= 0)
+        break
+      if (job.op !== "write" || job.writeKey !== key || job.historyWrite)
+        continue
       var data = JSON.parse(job.payload)
       data.history = true
       delete data.sources
@@ -1416,9 +1815,13 @@ Item {
       job.historyWrite = true
       converted = true
     }
-    if (converted) return
+    if (converted)
+      return
     // A replay has no popup file to move; the helper tolerates that.
-    if (!enqueueHelperJob("archive", {key: key})) deferMove(key, "archive")
+    if (!enqueueHelperJob("archive", {
+      key: key
+    }))
+      deferMove(key, "archive")
   }
 
   // Record a notification that never made it to the screen (DND silenced it),
@@ -1428,17 +1831,31 @@ Item {
   // With the center enabled, live default actions remain tracked after writing.
   // Other silenced notifications are released once their latest content is saved.
   function writeHistoryFile(entry, done) {
-    if (!entry) { if (done) done(true); return }
+    if (!entry) {
+      if (done)
+        done(true)
+      return
+    }
     var persistable = NotificationLogic.persistablePopup(Features.redact(entry), imagesDir)
-    return enqueueHelperJob("write", {entry:persistable.entry, copies:persistable.copies, history:true}, done, NotificationLogic.imageStem(entry), true)
+    return enqueueHelperJob("write", {
+      entry: persistable.entry,
+      copies: persistable.copies,
+      history: true
+    }, done, NotificationLogic.imageStem(entry), true)
   }
 
   function clearHistory() {
-    var keys = Object.keys(liveKeys).map(function(id) { return liveKeys[id] })
-    Object.keys(retainedHistory).forEach(function(key) { service.releaseHistoryAction(key) })
+    var keys = Object.keys(liveKeys).map(function (id) {
+      return liveKeys[id]
+    })
+    Object.keys(retainedHistory).forEach(function (key) {
+      service.releaseHistoryAction(key)
+    })
     cancelPendingWrites(keys, true)
     // A deferred archive would run after the clear and refill history.
-    deleteDeferredArchives(function() { return true })
+    deleteDeferredArchives(function () {
+      return true
+    })
     return enqueueHelperJob("clear", {})
   }
 
@@ -1447,8 +1864,13 @@ Item {
   // into plain deletes: the popup is gone and its history was just removed.
   function deleteDeferredArchives(matches) {
     var next = Object.assign({}, deferredMoves), changed = false
-    for (var key in next) if (next[key] === "archive" && matches(key)) { next[key] = "delete"; changed = true }
-    if (changed) deferredMoves = next
+    for (var key in next)
+      if (next[key] === "archive" && matches(key)) {
+        next[key] = "delete"
+        changed = true
+      }
+    if (changed)
+      deferredMoves = next
   }
 
   // A restart can kill a job between its image copy and its JSON write.
@@ -1470,10 +1892,13 @@ Item {
   // queue and its own subprocess, so the replay lands in replayHistory once
   // the work queued ahead of it has finished.
   function showRecentHistory() {
-    if (service.historyReadQueued) return "ok"
+    if (service.historyReadQueued)
+      return "ok"
     service.replayCarryOver = liveRowsForReplay()
     service.historyReadQueued = true
-    var queued = enqueueHelperJob("read", {history: true}, function(ok, out) {
+    var queued = enqueueHelperJob("read", {
+      history: true
+    }, function (ok, out) {
       service.historyReadQueued = false
       // A refused (full queue, called synchronously), cancelled or failed read
       // replays nothing: the popups on screen keep their live action buttons.
@@ -1501,7 +1926,8 @@ Item {
     var rows = []
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
-      if (!row || row.originalId < 0) continue
+      if (!row || row.originalId < 0)
+        continue
       rows.push({
         id: row.id,
         originalId: row.originalId,
@@ -1521,8 +1947,7 @@ Item {
   }
 
   function replayHistory(raw) {
-    var rows = NotificationLogic.historyRows(
-      raw, service.replayCarryOver, NotificationUrgency.Normal, service.historyLimit)
+    var rows = NotificationLogic.historyRows(raw, service.replayCarryOver, NotificationUrgency.Normal, service.historyLimit)
     service.replayCarryOver = []
 
     // Replaying nothing at all looks like a dead keybinding, so say so.
@@ -1583,21 +2008,23 @@ Item {
       delete entry.queued
       delete entry.waitingSince
       // Files from before waitingSince was saved: it waited since it arrived.
-      if (queued) waiting[key] = waitStart
+      if (queued)
+        waiting[key] = waitStart
+      else
       // Survivors restart with a full lifetime on purpose: shell restarts
       // are rare, and a full look after the restart flicker beats resuming
       // a toast with a second left on its clock. The reset is persisted as
       // an absolute deadline so a second restart while the toast is still
       // on screen judges it by the reset clock, not the original timestamp.
-      else if (duration > 0) {
+      if (duration > 0) {
         shownDeadlines[key] = now + duration
         persistPopupFile(entry)
       }
       live.push(entry)
     }
-    if (live.length === 0) return
-
-    Qt.callLater(function() {
+    if (live.length === 0)
+      return
+    Qt.callLater(function () {
       for (var j = 0; j < live.length; j++) {
         var restored = live[j]
         // A notification received while the restore was reading the dir can
@@ -1615,7 +2042,8 @@ Item {
             break
           }
         }
-        if (duplicate) continue
+        if (duplicate)
+          continue
         // Append (entries are newest-first) so restored toasts stack in
         // their original order below anything that just arrived. Restored
         // popups have no liveRefs entry — the server object died with the
@@ -1626,7 +2054,8 @@ Item {
         if (waiting[restoredKey]) {
           service.waitingKeys[restoredKey] = true
           service.waitingSince[restoredKey] = waiting[restoredKey]
-        } else service.shownKeys[restoredKey] = true
+        } else
+          service.shownKeys[restoredKey] = true
         popupModel.append(restored)
       }
     })
@@ -1657,7 +2086,8 @@ Item {
   }
 
   function scheduleSettingsSave() {
-    if (!service.settingsLoaded) return
+    if (!service.settingsLoaded)
+      return
     settingsSaveTimer.restart()
   }
 
@@ -1667,10 +2097,11 @@ Item {
     // FileView can fire onLoaded more than once during startup — the implicit
     // preload when `path` resolves, plus the explicit `settingsFile.reload()`
     // in Component.onCompleted can both end up calling here.
-    if (service.settingsLoaded || !service.stateMigrated) return
-
+    if (service.settingsLoaded || !service.stateMigrated)
+      return
     var parsed = NotificationLogic.parseSettings(raw)
-    if (parsed.error) console.warn("notifications: settings parse failed:", parsed.errorMessage || "")
+    if (parsed.error)
+      console.warn("notifications: settings parse failed:", parsed.errorMessage || "")
 
     if (parsed.dnd !== null) {
       service._hydrating = true
@@ -1678,16 +2109,25 @@ Item {
       service._hydrating = false
     }
 
-    try { service.snoozes = Features.quietState(JSON.parse(raw).snoozes, Date.now()) } catch (e) { service.snoozes = ({}) }
+    try {
+      service.snoozes = Features.quietState(JSON.parse(raw).snoozes, Date.now())
+    } catch (e) {
+      service.snoozes = ({})
+    }
     service.settingsLoaded = true
     // Versions before the history moved into its own directory kept every
     // notification in here. Rewrite once so that dead payload doesn't sit in
     // the file until the next DND toggle happens to clear it.
-    if (parsed.legacy) service.scheduleSettingsSave()
+    if (parsed.legacy)
+      service.scheduleSettingsSave()
   }
 
   function flushSettings() {
-    settingsFile.setText(JSON.stringify({ version: 5, dnd: persisted.doNotDisturb, snoozes: snoozes }, null, 2) + "\n")
+    settingsFile.setText(JSON.stringify({
+      version: 5,
+      dnd: persisted.doNotDisturb,
+      snoozes: snoozes
+    }, null, 2) + "\n")
   }
 
   Component.onCompleted: {
@@ -1696,25 +2136,29 @@ Item {
     helperProc.running = true
     // Ordering: migrate the 4.0 layout first, then load DND, sweep orphans and
     // restore popups, all through the one queue, then tell the center.
-    enqueueHelperJob("migrate", {}, function(ok) {
-      if (!ok) service.reportPersistenceError("Could not prepare the notification state directory")
+    enqueueHelperJob("migrate", {}, function (ok) {
+      if (!ok)
+        service.reportPersistenceError("Could not prepare the notification state directory")
       service.stateMigrated = true
       service.sweepOrphanImages()
-      service.enqueueHelperJob("read", {}, function(readOk, out) {
-        if (readOk) service.restorePopups(out)
+      service.enqueueHelperJob("read", {}, function (readOk, out) {
+        if (readOk)
+          service.restorePopups(out)
         service.storeReady = true
         service.pokeCenter("store")
       })
     })
   }
 
-  Component.onDestruction: if (settingsLoaded) flushSettings()
+  Component.onDestruction: if (settingsLoaded)
+    flushSettings()
 
   // ---------------------------------------------------- IPC
 
   // Keybindings run these directly when the shell resolves a service for them.
   function runShortcut(method) {
-    if (typeof ipcHandler[method] !== "function" || ipcHandler[method].length !== 0) return false
+    if (typeof ipcHandler[method] !== "function" || ipcHandler[method].length !== 0)
+      return false
     ipcHandler[method]()
     return true
   }
@@ -1725,16 +2169,21 @@ Item {
     id: ipcHandler
     target: "notifications"
 
-    function snoozeAll(minutes: string): string { return service.snoozeSource("*", minutes) }
+    function snoozeAll(minutes: string): string {
+      return service.snoozeSource("*", minutes)
+    }
     function unsnooze(key: string): string {
-      if (!key) return service.resumeSnoozes()
+      if (!key)
+        return service.resumeSnoozes()
       var next = Object.assign({}, service.snoozes)
       delete next[key]
       service.snoozes = next
       service.scheduleSettingsSave()
       return "ok"
     }
-    function snoozes(): string { return JSON.stringify(service.snoozes) }
+    function snoozes(): string {
+      return JSON.stringify(service.snoozes)
+    }
 
     function dndState(): string {
       return service.doNotDisturb ? "on" : "off"
@@ -1758,11 +2207,16 @@ Item {
 
     // Dismiss, press the one button on, or click the newest card; with more
     // than one choice it hands the keyboard to the notifications.
-    function act(): string { return service.actOnNewest() ? "ok" : "none" }
+    function act(): string {
+      return service.actOnNewest() ? "ok" : "none"
+    }
 
     // Arrows/j/k/Tab move, Enter clicks, Delete dismisses, 1-9 press a button, Escape gives the keyboard back.
     function keyboard(): string {
-      if (service.keyboardMode) { service.stopKeyboard(); return "off" }
+      if (service.keyboardMode) {
+        service.stopKeyboard()
+        return "off"
+      }
       return service.startKeyboard("") ? "on" : "none"
     }
 
@@ -1772,7 +2226,9 @@ Item {
       return group && service.runDeed(group, n - 1) ? "ok" : "none"
     }
 
-    function count(): string { return String(service.displayGroups.length) }
+    function count(): string {
+      return String(service.displayGroups.length)
+    }
 
     // Hold every card as hovering would (timers pause), or release them.
     function expand(): string {
@@ -1780,7 +2236,9 @@ Item {
       return service.expanded ? "expanded" : "collapsed"
     }
 
-    function probe(): string { return JSON.stringify(service.probeState()) }
+    function probe(): string {
+      return JSON.stringify(service.probeState())
+    }
 
     // Replay the notifications that have been moved into the history dir.
     function showHistory(): string {
@@ -1801,18 +2259,22 @@ Item {
     // Hide the newest visible card, including every duplicate, preserving history.
     function dismissOne(): string {
       // A preceding dismiss can leave the deferred display snapshot stale.
-      if (service.rebuildPending) service.rebuildGroups()
+      if (service.rebuildPending)
+        service.rebuildGroups()
       var group = service.newestGroup()
-      if (!group || service.busyKeys[group.key]) return "none"
+      if (!group || service.busyKeys[group.key])
+        return "none"
       service.dismissGroup(group, false)
       return "ok"
     }
 
     // Fire the default action on the newest card, then dismiss it.
     function invokeLast(): string {
-      if (service.rebuildPending) service.rebuildGroups()
+      if (service.rebuildPending)
+        service.rebuildGroups()
       var group = service.newestGroup()
-      if (!group) return "none"
+      if (!group)
+        return "none"
       service.activateGroup(group, "default")
       return "ok"
     }
@@ -1821,7 +2283,8 @@ Item {
     // first-run notifications once their action has been clicked.
     function dismiss(summary: string): string {
       var needle = String(summary || "")
-      if (!needle) return "none"
+      if (!needle)
+        return "none"
       var hit = false
       for (var i = popupModel.count - 1; i >= 0; i--) {
         var row = popupModel.get(i)
@@ -1833,7 +2296,9 @@ Item {
       return hit ? "ok" : "none"
     }
 
-    function ping(): string { return "ok" }
+    function ping(): string {
+      return "ok"
+    }
   }
 
   // ---------------------------------------------------- server
@@ -1847,7 +2312,7 @@ Item {
     bodyHyperlinksSupported: false
     persistenceSupported: true
 
-    onNotification: function(notification) {
+    onNotification: function (notification) {
       service.receiveNotification(notification)
     }
   }
@@ -1861,24 +2326,37 @@ Item {
   property var handledKeys: ({})
   property bool centerEnabled: false
   onCenterEnabledChanged: {
-    if (!centerEnabled) Object.keys(retainedHistory).forEach(function(key) { service.releaseHistoryAction(key) })
+    if (!centerEnabled)
+      Object.keys(retainedHistory).forEach(function (key) {
+        service.releaseHistoryAction(key)
+      })
   }
   property bool rebuildPending: false
   property var pendingNotifications: []
   property var fullscreenMonitors: []
   property string pointerMonitor: ""
   readonly property string focusedMonitor: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
-  readonly property var screenNames: Quickshell.screens.map(function(s) { return s.name })
+  readonly property var screenNames: Quickshell.screens.map(function (s) {
+    return s.name
+  })
   readonly property var targetMonitors: Preferences.targetNames(preferences, screenNames, focusedMonitor, pointerMonitor)
   onTargetMonitorsChanged: scheduleRebuild()
 
   function scheduleRebuild() {
-    if (rebuildPending) return
+    if (rebuildPending)
+      return
     rebuildPending = true
-    Qt.callLater(function() { service.rebuildPending = false; service.rebuildGroups() })
+    Qt.callLater(function () {
+      service.rebuildPending = false
+      service.rebuildGroups()
+    })
   }
 
-  BrowserIcons { id: browserIcons; helper: service.helper; onUpdated: service.scheduleRebuild() }
+  BrowserIcons {
+    id: browserIcons
+    helper: service.helper
+    onUpdated: service.scheduleRebuild()
+  }
 
   // ---------------------------------------------------- overflow queue
   //
@@ -1910,7 +2388,11 @@ Item {
   property var waitingSince: ({})
   // Rebuilds when the next waiting card reaches its maximum wait; stopped
   // while no non-critical card waits.
-  Timer { id: waitAging; repeat: false; onTriggered: service.scheduleRebuild() }
+  Timer {
+    id: waitAging
+    repeat: false
+    onTriggered: service.scheduleRebuild()
+  }
   // Stack order of the cards on screen (planStack ranks); higher is higher up.
   property var displayRanks: ({})
   property double rankTop: 0
@@ -1953,16 +2435,23 @@ Item {
 
   // A stack window reports whether the pointer is over it.
   function holdArrivals(stack, over) {
-    var next = pointerStacks.filter(function(item) { return item !== stack })
-    if (over) next.push(stack)
-    if (next.length === pointerStacks.length && (!over || pointerStacks.indexOf(stack) >= 0)) return
+    var next = pointerStacks.filter(function (item) {
+      return item !== stack
+    })
+    if (over)
+      next.push(stack)
+    if (next.length === pointerStacks.length && (!over || pointerStacks.indexOf(stack) >= 0))
+      return
     pointerStacks = next
-    if (!pointerHolds) releaseHeld()
+    if (!pointerHolds)
+      releaseHeld()
   }
 
   function releaseHeld() {
-    if (!heldCount) return
-    for (var key in heldKeys) releasedKeys[key] = true
+    if (!heldCount)
+      return
+    for (var key in heldKeys)
+      releasedKeys[key] = true
     heldKeys = ({})
     heldCount = 0
     scheduleRebuild()
@@ -1970,24 +2459,31 @@ Item {
 
   // Cards that must keep their slot: under the pointer, acting or keyboard-selected.
   function pinnedGroup(group, hovered) {
-    if (busyKeys[group.key] || (keyboardMode && keyboardKey === group.key)) return true
-    return group.keys.some(function(key) { return !!hovered[key] })
+    if (busyKeys[group.key] || (keyboardMode && keyboardKey === group.key))
+      return true
+    return group.keys.some(function (key) {
+      return !!hovered[key]
+    })
   }
 
   // A history replay and the empty-history message show now or not at all.
   function canWait(group) {
-    return group.originalId >= 0 && !group.keys.every(function(key) { return !!service.replayKeys[key] })
+    return group.originalId >= 0 && !group.keys.every(function (key) {
+      return !!service.replayKeys[key]
+    })
   }
 
   // The window's stack does not fit the screen: show at most `count` cards.
   function limitToFit(count) {
-    if (count < 1 || count >= visibleLimit) return
+    if (count < 1 || count >= visibleLimit)
+      return
     fitLimit = count
     scheduleRebuild()
   }
 
   function resetFit() {
-    if (fitLimit === maxFitLimit) return
+    if (fitLimit === maxFitLimit)
+      return
     fitLimit = maxFitLimit
     scheduleRebuild()
   }
@@ -2003,7 +2499,9 @@ Item {
     var candidates = []
     for (var g = 0; g < groups.length; g++) {
       var group = groups[g]
-      var onScreen = group.keys.some(function(key) { return !!service.shownKeys[key] })
+      var onScreen = group.keys.some(function (key) {
+        return !!service.shownKeys[key]
+      })
       // Fullscreen suppression archives any card. DND and snoozes archive a
       // card that has not shown yet, as they do a new arrival.
       if (suppressForFullscreen(group.urgency) || (!onScreen && canWait(group) && isQuiet(group))) {
@@ -2012,33 +2510,62 @@ Item {
       }
       if (group.keys.length > 100) {
         removeKeys(group.keys.slice(100), "dismiss")
-        group.keys = group.keys.slice(0,100)
+        group.keys = group.keys.slice(0, 100)
       }
       candidates.push(group)
     }
     if (fitRetry) {
       fitRetry = false
-      if (fitLimit < maxFitLimit) fitLimit++
+      if (fitLimit < maxFitLimit)
+        fitLimit++
     }
     var hovered = {}
-    for (var hoverKey in hoveredKeys) if (hoveredKeys[hoverKey]) hovered[hoverKey.slice(hoverKey.indexOf("|") + 1)] = true
-    var held = NotificationLogic.heldArrivals(candidates, {holding: pointerHolds, shown: shownKeys, waiting: waitingKeys,
-      held: heldKeys, released: releasedKeys, canWait: canWait})
+    for (var hoverKey in hoveredKeys)
+      if (hoveredKeys[hoverKey])
+        hovered[hoverKey.slice(hoverKey.indexOf("|") + 1)] = true
+    var held = NotificationLogic.heldArrivals(candidates, {
+      holding: pointerHolds,
+      shown: shownKeys,
+      waiting: waitingKeys,
+      held: heldKeys,
+      released: releasedKeys,
+      canWait: canWait
+    })
     // Released cards plan as new arrivals, so they show on top.
     var planWaiting = waitingKeys
     if (Object.keys(releasedKeys).length) {
       planWaiting = Object.assign({}, waitingKeys)
-      for (var releasedKey in releasedKeys) delete planWaiting[releasedKey]
+      for (var releasedKey in releasedKeys)
+        delete planWaiting[releasedKey]
       releasedKeys = ({})
     }
     heldKeys = held
     heldCount = Object.keys(held).length
     var planNow = Date.now()
-    var plan = NotificationLogic.planStack(candidates, {limit: visibleLimit, shown: shownKeys, waiting: planWaiting,
-      ranks: displayRanks, since: shownSince, seq: sinceSeq, arrivals: arrivals, top: rankTop, bottom: rankBottom, queueLimit: queueLimit,
-      now: planNow, maxWait: preferences.maxWaitSec * 1000, waitingSince: waitingSince,
-      pinned: function(group) { return service.pinnedGroup(group, hovered) }, canWait: canWait,
-      held: function(group) { return group.keys.every(function(key) { return !!held[key] }) }})
+    var plan = NotificationLogic.planStack(candidates, {
+      limit: visibleLimit,
+      shown: shownKeys,
+      waiting: planWaiting,
+      ranks: displayRanks,
+      since: shownSince,
+      seq: sinceSeq,
+      arrivals: arrivals,
+      top: rankTop,
+      bottom: rankBottom,
+      queueLimit: queueLimit,
+      now: planNow,
+      maxWait: preferences.maxWaitSec * 1000,
+      waitingSince: waitingSince,
+      pinned: function (group) {
+        return service.pinnedGroup(group, hovered)
+      },
+      canWait: canWait,
+      held: function (group) {
+        return group.keys.every(function (key) {
+          return !!held[key]
+        })
+      }
+    })
     rankTop = plan.top
     rankBottom = plan.bottom
     sinceSeq = plan.seq
@@ -2046,13 +2573,18 @@ Item {
     if (plan.nextAging > 0) {
       waitAging.interval = Math.max(50, Math.ceil(plan.nextAging - planNow) + 10)
       waitAging.restart()
-    } else waitAging.stop()
+    } else
+      waitAging.stop()
     // Replays that did not fit leave; past the queue bound the oldest
     // non-critical waiting card goes to history, and so does one that waited
     // too long (it expired without showing).
-    plan.dropped.forEach(function(group) { service.removeKeys(group.keys, "dismiss") })
-    if (plan.evicted.length) removeKeys(plan.evicted, "dismiss")
-    if (plan.aged.length) removeKeys(plan.aged, "expire")
+    plan.dropped.forEach(function (group) {
+      service.removeKeys(group.keys, "dismiss")
+    })
+    if (plan.evicted.length)
+      removeKeys(plan.evicted, "dismiss")
+    if (plan.aged.length)
+      removeKeys(plan.aged, "expire")
 
     var now = Date.now(), nextShown = {}, nextWaiting = {}, changed = []
     for (var v = 0; v < plan.visible.length; v++) {
@@ -2064,10 +2596,12 @@ Item {
         nextShown[key] = true
         displayRanks[key] = plan.ranks[v]
         shownSince[key] = plan.since[v]
-        if (lifetimes[key] === undefined) lifetimes[key] = duration
+        if (lifetimes[key] === undefined)
+          lifetimes[key] = duration
         // It shows after waiting: its full display time starts now.
         if (waitingKeys[key]) {
-          if (duration > 0) shownDeadlines[key] = now + duration
+          if (duration > 0)
+            shownDeadlines[key] = now + duration
           changed.push(key)
         }
       }
@@ -2081,7 +2615,8 @@ Item {
         delete displayRanks[waitingKey]
         delete shownSince[waitingKey]
         delete shownDeadlines[waitingKey]
-        if (!waitingKeys[waitingKey]) changed.push(waitingKey)
+        if (!waitingKeys[waitingKey])
+          changed.push(waitingKey)
       }
     }
     shownKeys = nextShown
@@ -2092,25 +2627,34 @@ Item {
       if (changedRow && changedRow.originalId >= 0 && !replayKeys[changed[c]] && !handledKeys[changed[c]] && !busyKeys[changed[c]])
         persistPopupFile(changedRow)
     }
-    if (!plan.visible.length) fitLimit = maxFitLimit
-    var queue = plan.waiting.map(function(group) { return group.key })
-    if (JSON.stringify(queue) !== JSON.stringify(waitingGroups)) waitingGroups = queue
+    if (!plan.visible.length)
+      fitLimit = maxFitLimit
+    var queue = plan.waiting.map(function (group) {
+      return group.key
+    })
+    if (JSON.stringify(queue) !== JSON.stringify(waitingGroups))
+      waitingGroups = queue
     displayGroups = plan.visible
-    if (preferences.useBrowserFavicons) browserIcons.warm(plan.visible)
+    if (preferences.useBrowserFavicons)
+      browserIcons.warm(plan.visible)
   }
 
   function remainingFor(group) {
-    if (!group) return 0
+    if (!group)
+      return 0
     // A duplicate stack stays visible until its last member expires.
-    return group.keys.reduce(function(remaining, key) {
+    return group.keys.reduce(function (remaining, key) {
       return Math.max(remaining, Number(service.lifetimes[key]) || 0)
     }, 0)
   }
 
   function suppressForFullscreen(urgency) {
-    if (!preferences.suppressFullscreen || (urgency === 2 && preferences.fullscreenCritical)) return false
+    if (!preferences.suppressFullscreen || (urgency === 2 && preferences.fullscreenCritical))
+      return false
     // In all-monitor mode, a fullscreen output is hidden independently; other outputs remain usable.
-    return targetMonitors.length > 0 && targetMonitors.every(function(name) { return fullscreenMonitors.indexOf(name) >= 0 })
+    return targetMonitors.length > 0 && targetMonitors.every(function (name) {
+      return fullscreenMonitors.indexOf(name) >= 0
+    })
   }
 
   function receiveNotification(notification) {
@@ -2118,39 +2662,57 @@ Item {
       rejectNotification(notification, "Notification exceeds sender limits")
       return
     }
-    if (NotificationLogic.hasRawImage(notification)) { detachRawNotification(notification); return }
+    if (NotificationLogic.hasRawImage(notification)) {
+      detachRawNotification(notification)
+      return
+    }
     // Watch immediately, including DND writes and native objects awaiting monitor context.
-    notification.imageChanged.connect(function() {
+    notification.imageChanged.connect(function () {
       // Another property signal may have already detached this grouped replacement.
-      if (!notification.tracked || !NotificationLogic.hasRawImage(notification)) return
+      if (!notification.tracked || !NotificationLogic.hasRawImage(notification))
+        return
       if (!NotificationLogic.notificationWithinLimits(notification)) {
         service.rejectNotification(notification, "Notification update exceeds sender limits")
         return
       }
       service.detachRawNotification(notification)
     })
-    if (!preferences.suppressFullscreen && preferences.monitor !== "pointer") { handleNotification(notification); return }
+    if (!preferences.suppressFullscreen && preferences.monitor !== "pointer") {
+      handleNotification(notification)
+      return
+    }
     notification.tracked = true
     // Retain live objects only briefly while the compositor snapshot is in flight.
     if (pendingNotifications.length >= 100) {
       rejectNotification(notification, "Notification monitor-context backlog is full")
       return
     }
-    pendingNotifications = pendingNotifications.concat([{notification:notification}])
+    pendingNotifications = pendingNotifications.concat([
+      {
+        notification: notification
+      }
+    ])
     refreshContext()
   }
 
   function refreshContext() {
-    if (preferences.suppressFullscreen || preferences.monitor === "pointer") contextRefresh.restart()
+    if (preferences.suppressFullscreen || preferences.monitor === "pointer")
+      contextRefresh.restart()
   }
 
   Timer {
     id: contextRefresh
     interval: 50
     onTriggered: {
-      if (contextProc.running) { restart(); return }
+      if (contextProc.running) {
+        restart()
+        return
+      }
       // Without the helper there is no monitor context: deliver on the last known monitor.
-      if (service.helperUnavailable) { service.deliverPending(); return }
+      if (service.helperUnavailable) {
+        service.deliverPending()
+        return
+      }
       contextProc.stdinEnabled = true
       contextProc.running = true
     }
@@ -2159,28 +2721,47 @@ Item {
     id: contextProc
     command: FoamyNative.command(service.pluginDir, service.helper, ["context"])
     stdinEnabled: true
-    onStarted: { write(JSON.stringify({fullscreen:service.preferences.suppressFullscreen,pointer:service.preferences.monitor === "pointer"})); stdinEnabled = false }
-    stdout: StdioCollector { id: contextOutput }
+    onStarted: {
+      write(JSON.stringify({
+        fullscreen: service.preferences.suppressFullscreen,
+        pointer: service.preferences.monitor === "pointer"
+      }))
+      stdinEnabled = false
+    }
+    stdout: StdioCollector {
+      id: contextOutput
+    }
     stderr: StdioCollector {}
-    onExited: function(exitCode, exitStatus) {
+    onExited: function (exitCode, exitStatus) {
       if (exitCode === 0 && exitStatus === 0) {
         try {
           var data = JSON.parse(contextOutput.text)
           service.fullscreenMonitors = data.fullscreen
           service.pointerMonitor = data.pointer
-        } catch(e) { service.lastError = "Cannot read monitor state" }
-      } else if (FoamyNative.unavailable(exitCode)) service.markHelperUnavailable()
-      else { service.lastError = "Cannot query monitor state; notifications use the last known monitor"; console.warn(service.lastError) }
+        } catch (e) {
+          service.lastError = "Cannot read monitor state"
+        }
+      } else if (FoamyNative.unavailable(exitCode))
+        service.markHelperUnavailable()
+      else {
+        service.lastError = "Cannot query monitor state; notifications use the last known monitor"
+        console.warn(service.lastError)
+      }
       service.deliverPending()
     }
   }
   function deliverPending() {
-    var pending = service.pendingNotifications; service.pendingNotifications = []
+    var pending = service.pendingNotifications
+    service.pendingNotifications = []
     for (var i = 0; i < pending.length; i++) {
       try {
-        if (pending[i].snapshot) service.handleDetachedSnapshot(pending[i].snapshot, false)
-        else service.handleNotification(pending[i].notification)
-      } catch(e) { console.warn("foamy.notifications: sender closed before delivery") }
+        if (pending[i].snapshot)
+          service.handleDetachedSnapshot(pending[i].snapshot, false)
+        else
+          service.handleNotification(pending[i].notification)
+      } catch (e) {
+        console.warn("foamy.notifications: sender closed before delivery")
+      }
     }
     service.scheduleRebuild()
   }
@@ -2188,15 +2769,15 @@ Item {
     target: Hyprland
     function onRawEvent(event) {
       // Monitor context matters only while something is shown or waiting; arrivals refresh it themselves.
-      if ((service.pendingNotifications.length || service.displayGroups.length)
-          && ["fullscreen","activewindowv2","workspacev2","focusedmon","monitoradded","monitorremoved","activespecial"].indexOf(event.name) >= 0) service.refreshContext()
+      if ((service.pendingNotifications.length || service.displayGroups.length) && ["fullscreen", "activewindowv2", "workspacev2", "focusedmon", "monitoradded", "monitorremoved", "activespecial"].indexOf(event.name) >= 0)
+        service.refreshContext()
     }
   }
 
   // One clock keeps expiry and the line in sync without per-card timers. It
   // runs per frame only while the timeout line is drawn and motion is allowed;
   // otherwise a 200 ms tick is enough for expiry.
-  readonly property bool anyTimed: displayGroups.some(function(group) {
+  readonly property bool anyTimed: displayGroups.some(function (group) {
     return service.durationFor(group.urgency, group.expireTimeout) > 0
   })
   readonly property bool smoothClock: anyTimed && preferences.showTimeoutIndicator && !FoamyMotion.reduceMotion
@@ -2210,28 +2791,40 @@ Item {
     running: service.anyTimed && !service.smoothClock
     property double last: 0
     onRunningChanged: last = Date.now()
-    onTriggered: { var now = Date.now(); service.advanceLifetimes(now - last); last = now }
+    onTriggered: {
+      var now = Date.now()
+      service.advanceLifetimes(now - last)
+      last = now
+    }
   }
 
   function advanceLifetimes(elapsedMs) {
-    if (elapsedMs <= 0 || keyboardMode || expanded) return
+    if (elapsedMs <= 0 || keyboardMode || expanded)
+      return
     var expired = [], advanced = false
     var hoverKeys = Object.keys(hoveredKeys)
     for (var i = 0; i < displayGroups.length; i++) {
       var group = displayGroups[i]
-      var hovered = hoverKeys.some(function(k) { return k.endsWith("|" + group.key) && service.hoveredKeys[k] })
-      if (hovered || busyKeys[group.key]) continue
-      if (durationFor(group.urgency, group.expireTimeout) <= 0) continue
+      var hovered = hoverKeys.some(function (k) {
+        return k.endsWith("|" + group.key) && service.hoveredKeys[k]
+      })
+      if (hovered || busyKeys[group.key])
+        continue
+      if (durationFor(group.urgency, group.expireTimeout) <= 0)
+        continue
       for (var j = 0; j < group.keys.length; j++) {
         var key = group.keys[j]
         lifetimes[key] -= elapsedMs
         advanced = true
-        if (lifetimes[key] <= 0) expired.push(key)
+        if (lifetimes[key] <= 0)
+          expired.push(key)
       }
     }
     // In-place map updates need one signal per tick for the card bindings.
-    if (advanced) lifetimesChanged()
-    if (expired.length) removeKeys(expired, "expire")
+    if (advanced)
+      lifetimesChanged()
+    if (expired.length)
+      removeKeys(expired, "expire")
   }
 
   // ---------------------------------------------------- keyboard, act, probe
@@ -2247,19 +2840,30 @@ Item {
   onKeyboardKeyChanged: scheduleRebuild()
   property bool expanded: false
   onDisplayGroupsChanged: {
-    if (!displayGroups.length) expanded = false
+    if (!displayGroups.length)
+      expanded = false
     if (keyboardMode && !groupFor(keyboardKey)) {
-      if (displayGroups.length) keyboardKey = displayGroups[0].key
-      else stopKeyboard()
+      if (displayGroups.length)
+        keyboardKey = displayGroups[0].key
+      else
+        stopKeyboard()
     }
   }
-  Timer { id: keyboardIdle; interval: 10000; onTriggered: service.stopKeyboard() }
+  Timer {
+    id: keyboardIdle
+    interval: 10000
+    onTriggered: service.stopKeyboard()
+  }
 
   function groupFor(key) {
-    for (var i = 0; i < displayGroups.length; i++) if (displayGroups[i].key === key) return displayGroups[i]
+    for (var i = 0; i < displayGroups.length; i++)
+      if (displayGroups[i].key === key)
+        return displayGroups[i]
     return null
   }
-  function newestGroup() { return displayGroups.length ? displayGroups[0] : null }
+  function newestGroup() {
+    return displayGroups.length ? displayGroups[0] : null
+  }
 
   // The card's buttons in the order it draws and numbers them.
   function deedsFor(group) {
@@ -2268,51 +2872,72 @@ Item {
 
   // Whether a click does something of the card's own (not just app focus).
   function clickable(group) {
-    if (!group) return false
-    if (NotificationLogic.parseExecArgv(group.execArgv)) return true
+    if (!group)
+      return false
+    if (NotificationLogic.parseExecArgv(group.execArgv))
+      return true
     var ref = !isRestoredRow(group) ? liveRefs[group.originalId] : null
     try {
-      return !!(ref && ref.tracked && ref.actions && ref.actions.some(function(a) { return a.identifier === "default" }))
-    } catch (e) { return false }
+      return !!(ref && ref.tracked && ref.actions && ref.actions.some(function (a) {
+          return a.identifier === "default"
+        }))
+    } catch (e) {
+      return false
+    }
   }
 
   function runDeed(group, index) {
     var deed = deedsFor(group)[index]
-    if (!deed || busyKeys[group.key]) return false
-    if (deed.kind === "action") activateGroup(group, deed.value)
-    else featureAction(group, deed.kind, deed.value)
+    if (!deed || busyKeys[group.key])
+      return false
+    if (deed.kind === "action")
+      activateGroup(group, deed.value)
+    else
+      featureAction(group, deed.kind, deed.value)
     return true
   }
 
   function actOnNewest() {
     var group = newestGroup()
-    if (!group) return false
+    if (!group)
+      return false
     var deeds = deedsFor(group).length
     var click = clickable(group)
-    if (deeds + (click ? 1 : 0) > 1) startKeyboard(group.key)
-    else if (click) activateGroup(group, "default")
-    else if (deeds) runDeed(group, 0)
-    else dismissGroup(group, false)
+    if (deeds + (click ? 1 : 0) > 1)
+      startKeyboard(group.key)
+    else if (click)
+      activateGroup(group, "default")
+    else if (deeds)
+      runDeed(group, 0)
+    else
+      dismissGroup(group, false)
     return true
   }
 
   // Whether an output draws this card: a fullscreen output (with fullscreen
   // suppression) only shows critical cards when those are allowed through.
   function showsGroupOn(name, group) {
-    if (targetMonitors.indexOf(name) < 0) return false
+    if (targetMonitors.indexOf(name) < 0)
+      return false
     var fullscreen = preferences.suppressFullscreen && fullscreenMonitors.indexOf(name) >= 0
     return !fullscreen || (group.urgency === 2 && preferences.fullscreenCritical)
   }
   function screenShowing(group) {
-    if (!group) return ""
-    for (var i = 0; i < targetMonitors.length; i++) if (showsGroupOn(targetMonitors[i], group)) return targetMonitors[i]
+    if (!group)
+      return ""
+    for (var i = 0; i < targetMonitors.length; i++)
+      if (showsGroupOn(targetMonitors[i], group))
+        return targetMonitors[i]
     return ""
   }
   readonly property string keyboardScreen: keyboardMode ? screenShowing(groupFor(keyboardKey)) : ""
 
   function startKeyboard(key) {
-    var shown = displayGroups.filter(function(group) { return service.screenShowing(group) !== "" })
-    if (!shown.length) return false
+    var shown = displayGroups.filter(function (group) {
+      return service.screenShowing(group) !== ""
+    })
+    if (!shown.length)
+      return false
     keyboardMode = true
     keyboardKey = groupFor(key) && screenShowing(groupFor(key)) ? key : shown[0].key
     keyboardIdle.restart()
@@ -2327,50 +2952,88 @@ Item {
 
   function moveSelection(step) {
     // Only cards some output draws: the keyboard never lands on a hidden one.
-    for (var index = displayGroups.findIndex(function(group) { return group.key === service.keyboardKey }) + step;
-         index >= 0 && index < displayGroups.length; index += step) {
-      if (screenShowing(displayGroups[index])) { keyboardKey = displayGroups[index].key; return }
+    for (var index = displayGroups.findIndex(function (group) {
+      return group.key === service.keyboardKey
+    }) + step; index >= 0 && index < displayGroups.length; index += step) {
+      if (screenShowing(displayGroups[index])) {
+        keyboardKey = displayGroups[index].key
+        return
+      }
     }
   }
 
   // True when the key was ours.
   function keyboardPressed(key, text) {
-    if (!keyboardMode) return false
+    if (!keyboardMode)
+      return false
     keyboardIdle.restart()
     var group = groupFor(keyboardKey)
-    if (key === Qt.Key_Escape) stopKeyboard()
-    else if (key === Qt.Key_Down || key === Qt.Key_J || key === Qt.Key_Tab) moveSelection(1)
-    else if (key === Qt.Key_Up || key === Qt.Key_K || key === Qt.Key_Backtab) moveSelection(-1)
-    else if (key === Qt.Key_Return || key === Qt.Key_Enter || key === Qt.Key_Space) { stopKeyboard(); if (group) activateGroup(group, "default") }
-    else if (key === Qt.Key_Delete || key === Qt.Key_Backspace) { if (group) dismissGroup(group, true) }
-    else if (/^[1-9]$/.test(text)) {
-      if (group && Number(text) <= deedsFor(group).length) { stopKeyboard(); runDeed(group, Number(text) - 1) }
-    } else return false
+    if (key === Qt.Key_Escape)
+      stopKeyboard()
+    else if (key === Qt.Key_Down || key === Qt.Key_J || key === Qt.Key_Tab)
+      moveSelection(1)
+    else if (key === Qt.Key_Up || key === Qt.Key_K || key === Qt.Key_Backtab)
+      moveSelection(-1)
+    else if (key === Qt.Key_Return || key === Qt.Key_Enter || key === Qt.Key_Space) {
+      stopKeyboard()
+      if (group)
+        activateGroup(group, "default")
+    } else if (key === Qt.Key_Delete || key === Qt.Key_Backspace) {
+      if (group)
+        dismissGroup(group, true)
+    } else if (/^[1-9]$/.test(text)) {
+      if (group && Number(text) <= deedsFor(group).length) {
+        stopKeyboard()
+        runDeed(group, Number(text) - 1)
+      }
+    } else
+      return false
     return true
   }
 
   function probeState() {
-    return { toasts: displayGroups.length, waiting: waitingGroups.length, popups: popupModel.count, doNotDisturb: doNotDisturb, expanded: expanded,
-      keyboardMode: keyboardMode, keyboardKey: keyboardKey, displays: screenNames, focusedDisplay: focusedMonitor,
-      targetDisplay: targetMonitors.length ? targetMonitors[0] : "", notificationDisplays: targetMonitors,
-      fullscreenMonitors: fullscreenMonitors, storeReady: storeReady }
+    return {
+      toasts: displayGroups.length,
+      waiting: waitingGroups.length,
+      popups: popupModel.count,
+      doNotDisturb: doNotDisturb,
+      expanded: expanded,
+      keyboardMode: keyboardMode,
+      keyboardKey: keyboardKey,
+      displays: screenNames,
+      focusedDisplay: focusedMonitor,
+      targetDisplay: targetMonitors.length ? targetMonitors[0] : "",
+      notificationDisplays: targetMonitors,
+      fullscreenMonitors: fullscreenMonitors,
+      storeReady: storeReady
+    }
   }
 
   // ---------------------------------------------------- preferences (owned here)
   //
   // The center's settings page asks over IPC; Foamy writes its own entry
   // through the host (shell.updateEntryInline), never shell.json directly.
-  readonly property var centerPreferenceKeys: ["offerSnoozeWhenSharing", "dndSilenceCritical", "groupDuplicates", "useBrowserFavicons",
-    "compact", "showImages", "closeButtonRemovesHistory", "normalTimeoutSec"]
+  readonly property var centerPreferenceKeys: ["offerSnoozeWhenSharing", "dndSilenceCritical", "groupDuplicates", "useBrowserFavicons", "compact", "showImages", "closeButtonRemovesHistory", "normalTimeoutSec"]
   property string preferenceError: ""
   property bool preferenceSaving: false
   function savePreference(key, valueJson) {
-    if (centerPreferenceKeys.indexOf(key) < 0) return "error: unknown setting"
+    if (centerPreferenceKeys.indexOf(key) < 0)
+      return "error: unknown setting"
     var value
-    try { value = JSON.parse(String(valueJson || "").trim()) } catch (e) { return "error: invalid value" }
-    var probe = {}; probe[key] = value; probe.id = "foamy.notifications"
-    if (Preferences.parse(JSON.stringify({plugins: [probe]})).error) return "error: invalid value"
-    if (preferenceSaving) return "error: busy"
+    try {
+      value = JSON.parse(String(valueJson || "").trim())
+    } catch (e) {
+      return "error: invalid value"
+    }
+    var probe = {}
+    probe[key] = value
+    probe.id = "foamy.notifications"
+    if (Preferences.parse(JSON.stringify({
+      plugins: [probe]
+    })).error)
+      return "error: invalid value"
+    if (preferenceSaving)
+      return "error: busy"
     preferenceError = writePreference(key, value)
     preferenceSaving = true
     preferenceSaved.restart()
@@ -2379,23 +3042,34 @@ Item {
   // Replaces the whole raw plugins[] entry (the host stores exactly what it is
   // given), so unrelated and unknown keys survive. Returns "" or the error.
   function writePreference(key, value) {
-    if (!shell || typeof shell.updateEntryInline !== "function") return "Omarchy cannot save plugin settings"
+    if (!shell || typeof shell.updateEntryInline !== "function")
+      return "Omarchy cannot save plugin settings"
     var config = null
-    try { config = JSON.parse(configFile.text()) } catch (e) {}
+    try {
+      config = JSON.parse(configFile.text())
+    } catch (e) {}
     if (!config || typeof config !== "object" || Array.isArray(config) || (config.plugins !== undefined && !Array.isArray(config.plugins)))
       return "Invalid notification configuration"
-    var entries = (config.plugins || []).filter(function(e) { return e && typeof e === "object" && e.id === "foamy.notifications" })
-    if (entries.length > 1) return "Duplicate Foamy Notifications entries"
+    var entries = (config.plugins || []).filter(function (e) {
+      return e && typeof e === "object" && e.id === "foamy.notifications"
+    })
+    if (entries.length > 1)
+      return "Duplicate Foamy Notifications entries"
     // Omarchy accepts configs that omit plugins; saving never adds or enables the entry.
     if (!entries.length || (Array.isArray(config.disabledPlugins) && config.disabledPlugins.indexOf("foamy.notifications") >= 0))
       return "Foamy Notifications is not enabled"
     var entry = JSON.parse(JSON.stringify(entries[0]))
     entry[key] = value
     // The legacy browser override would keep grouping off after the toggle.
-    if (key === "groupDuplicates" && value && entry.browserGrouping === "none") entry.browserGrouping = "browser"
-    var parsed = Preferences.parse(JSON.stringify({plugins: [entry]}))
-    if (parsed.error) return parsed.error
-    if (shell.updateEntryInline("foamy.notifications", entry)) return ""
+    if (key === "groupDuplicates" && value && entry.browserGrouping === "none")
+      entry.browserGrouping = "browser"
+    var parsed = Preferences.parse(JSON.stringify({
+      plugins: [entry]
+    }))
+    if (parsed.error)
+      return parsed.error
+    if (shell.updateEntryInline("foamy.notifications", entry))
+      return ""
     // false: nothing changed (already stored) or the host refused.
     return JSON.stringify(entry) === JSON.stringify(entries[0]) ? "" : "Could not save the setting"
   }
@@ -2404,64 +3078,129 @@ Item {
   Timer {
     id: preferenceSaved
     interval: 150
-    onTriggered: { service.preferenceSaving = false; service.pokeCenter("preferences") }
+    onTriggered: {
+      service.preferenceSaving = false
+      service.pokeCenter("preferences")
+    }
   }
 
   FoamyIpc {
     target: "foamy.notifications"
     // Where the center reads Foamy's files (read-only). See README contract.
     function storeInfo(): string {
-      return JSON.stringify({layout:"foamy-files", version:2, ready:service.storeReady,
-        popups:service.popupStateDir.replace(/\/$/, ""), history:service.historyDir.replace(/\/$/, ""),
-        handled:service.handledPath, state:service.settingsPath})
+      return JSON.stringify({
+        layout: "foamy-files",
+        version: 2,
+        ready: service.storeReady,
+        popups: service.popupStateDir.replace(/\/$/, ""),
+        history: service.historyDir.replace(/\/$/, ""),
+        handled: service.handledPath,
+        state: service.settingsPath
+      })
     }
     function preferences(): string {
-      return JSON.stringify({settings:service.preferences, error:service.configError,
-        saving:service.preferenceSaving, saveError:service.preferenceError})
+      return JSON.stringify({
+        settings: service.preferences,
+        error: service.configError,
+        saving: service.preferenceSaving,
+        saveError: service.preferenceError
+      })
     }
     // Foamy writes its own shell.json entry; the center only asks.
-    function setPreference(key: string, valueJson: string): string { return service.savePreference(key, valueJson) }
-    function invokeDefault(key: string): string { return service.invokeCenterDefault(key) }
+    function setPreference(key: string, valueJson: string): string {
+      return service.savePreference(key, valueJson)
+    }
+    function invokeDefault(key: string): string {
+      return service.invokeCenterDefault(key)
+    }
     // Labels of the buttons the center may press, by key (JSON); see README.
-    function centerActions(): string { return JSON.stringify(service.centerActionList()) }
-    function invokeCenterAction(key: string, index: string): string { return service.invokeCenterAction(key, index) }
+    function centerActions(): string {
+      return JSON.stringify(service.centerActionList())
+    }
+    function invokeCenterAction(key: string, index: string): string {
+      return service.invokeCenterAction(key, index)
+    }
     function releaseHistory(keysCsv: string): string {
       var keys = keysCsv.split(",")
-      if (keys.length > 100 || keys.some(function(key) { return !/^[0-9]+-[0-9]+$/.test(key) })) return "invalid"
+      if (keys.length > 100 || keys.some(function (key) {
+        return !/^[0-9]+-[0-9]+$/.test(key)
+      }))
+        return "invalid"
       // "busy": a drop was refused by a full queue; the center retries the batch.
       return service.releaseHistoryKeys(keys) ? "ok" : "busy"
     }
     function releaseHistoryBefore(timestamp: string): string {
-      if (!/^[0-9]{1,16}$/.test(timestamp)) return "invalid"
+      if (!/^[0-9]{1,16}$/.test(timestamp))
+        return "invalid"
       return service.releaseHistoryBefore(Number(timestamp)) ? "ok" : "busy"
     }
     function invokeAction(key: string, identifier: string): string {
-      var group = service.displayGroups.filter(function(g) { return g.key === key })[0]
-      if (!group) return "none"
+      var group = service.displayGroups.filter(function (g) {
+        return g.key === key
+      })[0]
+      if (!group)
+        return "none"
       service.activateGroup(group, identifier)
       return "ok"
     }
     function state(): string {
-      return JSON.stringify({groups:service.displayGroups.map(function(g){return {key:g.key,count:g.keys.length,actions:JSON.parse(g.actionsJson || "[]").length}}),
-        queue:service.waitingGroups, held:Object.keys(service.heldKeys), pointerHolds:service.pointerHolds, visibleLimit:service.visibleLimit,
-        retainedActions:Object.keys(service.retainedHistory).length, pending:pendingNotifications.length, contextBusy:contextProc.running, popups:popupModel.count, doNotDisturb:service.doNotDisturb, monitors:service.targetMonitors,
-        fullscreenMonitors:service.fullscreenMonitors, settings:service.preferences,
-        snoozes:service.snoozes, sharingActive:service.sharingActive, sharingOfferPending:service.sharingOfferPending,
-        centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,helperUnavailable:service.helperUnavailable,
-        queuedJobs:service.popupFileQueue.length, queuedBytes:service.popupFileQueue.reduce(function(total,job){return total+job.bytes},0),
-        tracked:Object.keys(service.liveRefs).length, busy:service.runningJob !== null || service.popupFileQueue.length>0,
-        keyboardMode:service.keyboardMode, expanded:service.expanded, storeReady:service.storeReady,
-        cardsBusy:Object.keys(service.busyKeys).length, siteFocusProcesses:service.siteFocusProcesses})
+      return JSON.stringify({
+        groups: service.displayGroups.map(function (g) {
+          return {
+            key: g.key,
+            count: g.keys.length,
+            actions: JSON.parse(g.actionsJson || "[]").length
+          }
+        }),
+        queue: service.waitingGroups,
+        held: Object.keys(service.heldKeys),
+        pointerHolds: service.pointerHolds,
+        visibleLimit: service.visibleLimit,
+        retainedActions: Object.keys(service.retainedHistory).length,
+        pending: pendingNotifications.length,
+        contextBusy: contextProc.running,
+        popups: popupModel.count,
+        doNotDisturb: service.doNotDisturb,
+        monitors: service.targetMonitors,
+        fullscreenMonitors: service.fullscreenMonitors,
+        settings: service.preferences,
+        snoozes: service.snoozes,
+        sharingActive: service.sharingActive,
+        sharingOfferPending: service.sharingOfferPending,
+        centerEnabled: service.centerEnabled,
+        configError: service.configError,
+        lastError: service.lastError,
+        helperUnavailable: service.helperUnavailable,
+        queuedJobs: service.popupFileQueue.length,
+        queuedBytes: service.popupFileQueue.reduce(function (total, job) {
+          return total + job.bytes
+        }, 0),
+        tracked: Object.keys(service.liveRefs).length,
+        busy: service.runningJob !== null || service.popupFileQueue.length > 0,
+        keyboardMode: service.keyboardMode,
+        expanded: service.expanded,
+        storeReady: service.storeReady,
+        cardsBusy: Object.keys(service.busyKeys).length,
+        siteFocusProcesses: service.siteFocusProcesses
+      })
     }
   }
 
   Variants {
-    model: service.sharingOfferPending ? Quickshell.screens.filter(function(screen) { return screen.name === service.sharingPromptScreen }).slice(0, 1) : []
+    model: service.sharingOfferPending ? Quickshell.screens.filter(function (screen) {
+      return screen.name === service.sharingPromptScreen
+    }).slice(0, 1) : []
     PanelWindow {
       required property var modelData
       screen: modelData
-      anchors { top: true; right: true }
-      margins { top: service.barClearance + Style.space(8); right: Style.space(8) }
+      anchors {
+        top: true
+        right: true
+      }
+      margins {
+        top: service.barClearance + Style.space(8)
+        right: Style.space(8)
+      }
       implicitWidth: Style.space(390)
       implicitHeight: sharingCard.implicitHeight
       color: "transparent"
@@ -2477,13 +3216,25 @@ Item {
         app: FoamyI18n.t("Notifications")
         summary: FoamyI18n.t("Screen sharing is active")
         body: FoamyI18n.t("Snooze notifications while you share?")
-        deeds: [{kind:"action", value:"snooze", text:FoamyI18n.t("Snooze for 30 minutes")}, {kind:"action", value:"keep", text:FoamyI18n.t("Keep notifications")}]
+        deeds: [
+          {
+            kind: "action",
+            value: "snooze",
+            text: FoamyI18n.t("Snooze for 30 minutes")
+          },
+          {
+            kind: "action",
+            value: "keep",
+            text: FoamyI18n.t("Keep notifications")
+          }
+        ]
         onCloseRequested: service.sharingOfferHandled = true
         onHideRequested: service.sharingOfferHandled = true
         onCardClicked: service.sharingOfferHandled = true
-        onActionRequested: function(identifier) {
+        onActionRequested: function (identifier) {
           service.sharingOfferHandled = true
-          if (identifier === "snooze") service.snoozeSource("*", 30)
+          if (identifier === "snooze")
+            service.snoozeSource("*", 30)
         }
       }
     }
@@ -2505,21 +3256,35 @@ Item {
       WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
-      anchors { top: true; bottom: true; left: true; right: true }
-      mask: Region { item: popupColumn }
-      readonly property var placement: NotificationLogic.popupPlacement(service.barPosition,service.barClearance,Style.gapsOut)
+      anchors {
+        top: true
+        bottom: true
+        left: true
+        right: true
+      }
+      mask: Region {
+        item: popupColumn
+      }
+      readonly property var placement: NotificationLogic.popupPlacement(service.barPosition, service.barClearance, Style.gapsOut)
       // Cards that do not fit the screen height wait in the overflow queue, like
       // those past maxVisible. Not while the pointer holds the stack: nothing
       // moves under it, and this runs again when the pointer leaves. Counted
       // from the cards this stack holds, which may lag displayGroups by a frame.
       function fitCards() {
-        if (!selected || popupColumn.holdPositions || popupColumn.count < 2) return
-        if (popupColumn.settledHeight() > height - popupColumn.y - Style.space(8)) service.limitToFit(popupColumn.count - 1)
+        if (!selected || popupColumn.holdPositions || popupColumn.count < 2)
+          return
+        if (popupColumn.settledHeight() > height - popupColumn.y - Style.space(8))
+          service.limitToFit(popupColumn.count - 1)
       }
-      onHeightChanged: { service.resetFit(); Qt.callLater(fitCards) }
+      onHeightChanged: {
+        service.resetFit()
+        Qt.callLater(fitCards)
+      }
       Item {
         focus: popupWindow.takesKeyboard
-        Keys.onPressed: function(event) { event.accepted = service.keyboardPressed(event.key, event.text) }
+        Keys.onPressed: function (event) {
+          event.accepted = service.keyboardPressed(event.key, event.text)
+        }
       }
       NotificationStack {
         id: popupColumn
@@ -2527,87 +3292,137 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen ? service.sharingPromptHeight + Style.space(8) : 0)
         anchors.rightMargin: popupWindow.placement.margins.right + Style.space(8)
-        width: Math.max(1,Math.min(Style.space(service.preferences.width),popupWindow.width - anchors.rightMargin - Style.space(8)))
+        width: Math.max(1, Math.min(Style.space(service.preferences.width), popupWindow.width - anchors.rightMargin - Style.space(8)))
         spacing: Style.space(8)
-        groups: service.displayGroups.filter(function(group) { return service.showsGroupOn(popupWindow.screen.name, group) })
+        groups: service.displayGroups.filter(function (group) {
+          return service.showsGroupOn(popupWindow.screen.name, group)
+        })
         waiting: service.waitingGroups.length
         onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)
         // A card the pointer kept in its slot may give it up now (planStack pins it).
         // While the pointer is over the stack, new cards are held (holdArrivals).
-        onHoldPositionsChanged: { service.holdArrivals(popupColumn, holdPositions); if (!holdPositions) service.scheduleRebuild(); Qt.callLater(popupWindow.fitCards) }
+        onHoldPositionsChanged: {
+          service.holdArrivals(popupColumn, holdPositions)
+          if (!holdPositions)
+            service.scheduleRebuild()
+          Qt.callLater(popupWindow.fitCards)
+        }
         Component.onDestruction: service.holdArrivals(popupColumn, false)
-        delegate:
-          NotificationCard {
-            id: card
-            required property string entryJson
-            readonly property var modelData: JSON.parse(entryJson)
-            property bool retired: false
-            property real entranceOffset: 0
-            transform: Translate { y: card.entranceOffset }
-            ListView.delayRemove: exitFade.running || popupColumn.holdsRemoval(card)
-            ListView.onRemove: {
-              // Stop an unfinished entrance before fading; both must not own opacity.
-              entrance.stop()
-              retired = true
-              exitFade.start()
-              publishHover()
-            }
-            ParallelAnimation {
-              id: entrance
-              NumberAnimation { target: card; property: "opacity"; from: 0; to: 1; duration: FoamyMotion.fadeIn; easing.type: Easing.OutCubic }
-              NumberAnimation { target: card; property: "entranceOffset"; from: Style.space(8); to: 0; duration: FoamyMotion.fadeIn; easing.type: Easing.OutCubic }
-            }
-            NumberAnimation { id: exitFade; target: card; property: "opacity"; to: 0; duration: FoamyMotion.fadeOut; easing.type: Easing.OutCubic }
-            enabled: !retired
-            width: popupColumn.width
-            app: modelData.app
-            appIcon: service.popupImageFor(modelData, "appIcon")
-            favicon: modelData.favicon || ""
-            image: service.popupImageFor(modelData, "image")
-            compact: service.preferences.compact
-            showTimeoutIndicator: service.preferences.showTimeoutIndicator
-            timeoutMs: service.durationFor(modelData.urgency, modelData.expireTimeout)
-            remainingMs: showTimeoutIndicator ? service.remainingFor(modelData) : 0
-            showImages: service.preferences.showImages
-            imageSize: service.preferences.imageSize
-            // Negative IDs identify the plugin-owned empty-history message.
-            summary: modelData.originalId < 0 ? FoamyI18n.t(modelData.summary) : modelData.summary
-            body: modelData.body
-            glyph: modelData.glyph
-            urgency: modelData.urgency
-            timestamp: modelData.timestamp
-            count: modelData.keys.length
-            actions: JSON.parse(modelData.actionsJson || "[]")
-            offers: service.offersFor(modelData)
-            copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
-            snoozeAvailable: true
-            onFeatureRequested: function(kind, value) { service.stopKeyboard(); service.featureAction(modelData, kind, value) }
-            busy: !!service.busyKeys[modelData.key]
-            error: service.actionErrors[modelData.key] || ""
-            selected: service.keyboardMode && service.keyboardKey === modelData.key
-            deeds: service.deedsFor(modelData)
-            property string registeredHoverKey: ""
-            function publishHover() {
-              if (!modelData) return
-              var next = popupWindow.screen.name + "|" + modelData.key
-              // A duplicate can change the representative key without replacing this card.
-              if (registeredHoverKey && registeredHoverKey !== next) delete service.hoveredKeys[registeredHoverKey]
-              registeredHoverKey = next
-              if (retired) delete service.hoveredKeys[next]
-              else service.hoveredKeys[next] = hovered
-            }
-            onHoveredChanged: publishHover()
-            onModelDataChanged: publishHover()
-            Component.onCompleted: { publishHover(); entrance.start() }
-            Component.onDestruction: delete service.hoveredKeys[registeredHoverKey]
-            // A click is the pointer taking over: it ends keyboard mode.
-            onCloseRequested: { service.stopKeyboard(); service.dismissGroup(modelData, true) }
-            onHideRequested: { service.stopKeyboard(); service.dismissGroup(modelData, false) }
-            onCardClicked: { service.stopKeyboard(); service.activateGroup(modelData,"default") }
-            onActionRequested: function(identifier) { service.stopKeyboard(); service.activateGroup(modelData,identifier) }
+        delegate: NotificationCard {
+          id: card
+          required property string entryJson
+          readonly property var modelData: JSON.parse(entryJson)
+          property bool retired: false
+          property real entranceOffset: 0
+          transform: Translate {
+            y: card.entranceOffset
           }
+          ListView.delayRemove: exitFade.running || popupColumn.holdsRemoval(card)
+          ListView.onRemove: {
+            // Stop an unfinished entrance before fading; both must not own opacity.
+            entrance.stop()
+            retired = true
+            exitFade.start()
+            publishHover()
+          }
+          ParallelAnimation {
+            id: entrance
+            NumberAnimation {
+              target: card
+              property: "opacity"
+              from: 0
+              to: 1
+              duration: FoamyMotion.fadeIn
+              easing.type: Easing.OutCubic
+            }
+            NumberAnimation {
+              target: card
+              property: "entranceOffset"
+              from: Style.space(8)
+              to: 0
+              duration: FoamyMotion.fadeIn
+              easing.type: Easing.OutCubic
+            }
+          }
+          NumberAnimation {
+            id: exitFade
+            target: card
+            property: "opacity"
+            to: 0
+            duration: FoamyMotion.fadeOut
+            easing.type: Easing.OutCubic
+          }
+          enabled: !retired
+          width: popupColumn.width
+          app: modelData.app
+          appIcon: service.popupImageFor(modelData, "appIcon")
+          favicon: modelData.favicon || ""
+          image: service.popupImageFor(modelData, "image")
+          compact: service.preferences.compact
+          showTimeoutIndicator: service.preferences.showTimeoutIndicator
+          timeoutMs: service.durationFor(modelData.urgency, modelData.expireTimeout)
+          remainingMs: showTimeoutIndicator ? service.remainingFor(modelData) : 0
+          showImages: service.preferences.showImages
+          imageSize: service.preferences.imageSize
+          // Negative IDs identify the plugin-owned empty-history message.
+          summary: modelData.originalId < 0 ? FoamyI18n.t(modelData.summary) : modelData.summary
+          body: modelData.body
+          glyph: modelData.glyph
+          urgency: modelData.urgency
+          timestamp: modelData.timestamp
+          count: modelData.keys.length
+          actions: JSON.parse(modelData.actionsJson || "[]")
+          offers: service.offersFor(modelData)
+          copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
+          snoozeAvailable: true
+          onFeatureRequested: function (kind, value) {
+            service.stopKeyboard()
+            service.featureAction(modelData, kind, value)
+          }
+          busy: !!service.busyKeys[modelData.key]
+          error: service.actionErrors[modelData.key] || ""
+          selected: service.keyboardMode && service.keyboardKey === modelData.key
+          deeds: service.deedsFor(modelData)
+          property string registeredHoverKey: ""
+          function publishHover() {
+            if (!modelData)
+              return
+            var next = popupWindow.screen.name + "|" + modelData.key
+            // A duplicate can change the representative key without replacing this card.
+            if (registeredHoverKey && registeredHoverKey !== next)
+              delete service.hoveredKeys[registeredHoverKey]
+            registeredHoverKey = next
+            if (retired)
+              delete service.hoveredKeys[next]
+            else
+              service.hoveredKeys[next] = hovered
+          }
+          onHoveredChanged: publishHover()
+          onModelDataChanged: publishHover()
+          Component.onCompleted: {
+            publishHover()
+            entrance.start()
+          }
+          Component.onDestruction: delete service.hoveredKeys[registeredHoverKey]
+          // A click is the pointer taking over: it ends keyboard mode.
+          onCloseRequested: {
+            service.stopKeyboard()
+            service.dismissGroup(modelData, true)
+          }
+          onHideRequested: {
+            service.stopKeyboard()
+            service.dismissGroup(modelData, false)
+          }
+          onCardClicked: {
+            service.stopKeyboard()
+            service.activateGroup(modelData, "default")
+          }
+          onActionRequested: function (identifier) {
+            service.stopKeyboard()
+            service.activateGroup(modelData, identifier)
+          }
+        }
       }
     }
   }
-
 }

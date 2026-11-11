@@ -21,7 +21,7 @@ for name in ("Commons", "Ui"):
     (app / name).symlink_to(hostenv.root() / "shell" / name, target_is_directory=True)
 shutil.copytree(SOURCE, app / "plugin", ignore=shutil.ignore_patterns(".git", "__pycache__"))
 service = (SOURCE / "Service.qml").read_text()
-start = service.index("          NotificationCard {", service.index("  Variants {"))
+start = service.index("NotificationCard {", service.index("delegate: NotificationCard {", service.index("  Variants {")))
 end = service.index("\n      }\n    }\n  }", start)
 delegate = (
     service[start:end]

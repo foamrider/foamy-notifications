@@ -21,8 +21,12 @@ ListView {
   interactive: false
   currentIndex: -1
   model: entries
-  HoverHandler { id: pointer }
-  ListModel { id: entries }
+  HoverHandler {
+    id: pointer
+  }
+  ListModel {
+    id: entries
+  }
   // Under the last card, so it never moves a card; the card colours of the theme.
   footer: Item {
     width: root.width
@@ -53,20 +57,35 @@ ListView {
   }
   // Cards below a removed card slide up into its place.
   removeDisplaced: Transition {
-    NumberAnimation { properties: "y"; duration: FoamyMotion.slider; easing.type: Easing.OutCubic }
+    NumberAnimation {
+      properties: "y"
+      duration: FoamyMotion.slider
+      easing.type: Easing.OutCubic
+    }
   }
   // Removing the top card moves the view's origin instead of the cards, which
   // removeDisplaced never sees: the whole stack jumps up. Slide it there too.
   // With animations off the duration is 0 and the stack moves at once.
   property real slide: 0
   property real settledContentY: 0
-  Translate { id: slideShift; y: root.slide }
-  NumberAnimation { id: slideBack; target: root; property: "slide"; to: 0; duration: FoamyMotion.slider; easing.type: Easing.OutCubic }
+  Translate {
+    id: slideShift
+    y: root.slide
+  }
+  NumberAnimation {
+    id: slideBack
+    target: root
+    property: "slide"
+    to: 0
+    duration: FoamyMotion.slider
+    easing.type: Easing.OutCubic
+  }
   onContentYChanged: {
     var rise = contentY - settledContentY
     settledContentY = contentY
     // Only upward moves: a card arriving at the top pushes the stack down as before.
-    if (rise <= 0 || FoamyMotion.slider <= 0) return
+    if (rise <= 0 || FoamyMotion.slider <= 0)
+      return
     slideBack.stop()
     slide += rise
     slideBack.start()
@@ -92,14 +111,17 @@ ListView {
     var total = 0
     for (var i = 0; i < count; i++) {
       var item = itemAtIndex(i)
-      if (item) total += item.height + (i > 0 ? spacing : 0)
+      if (item)
+        total += item.height + (i > 0 ? spacing : 0)
     }
     return total + (footerItem ? footerItem.height : 0)
   }
 
   function sameGroup(serialized, group) {
     var previous = JSON.parse(serialized)
-    return previous.key === group.key || previous.keys.some(function(key) { return group.keys.indexOf(key) >= 0 })
+    return previous.key === group.key || previous.keys.some(function (key) {
+      return group.keys.indexOf(key) >= 0
+    })
   }
 
   function reconcile() {
@@ -107,21 +129,33 @@ ListView {
     // Resetting the model would discard both hover state and removal transitions.
     for (var i = entries.count - 1; i >= 0; i--) {
       var serialized = entries.get(i).entryJson
-      if (!groups.some(function(group) { return sameGroup(serialized, group) })) entries.remove(i)
+      if (!groups.some(function (group) {
+        return sameGroup(serialized, group)
+      }))
+        entries.remove(i)
     }
     for (var target = 0; target < groups.length; target++) {
       var group = groups[target], found = -1
       for (var j = target; j < entries.count; j++) {
-        if (sameGroup(entries.get(j).entryJson, group)) { found = j; break }
+        if (sameGroup(entries.get(j).entryJson, group)) {
+          found = j
+          break
+        }
       }
       var next = JSON.stringify(group)
-      if (found < 0) entries.insert(target, {entryJson: next})
+      if (found < 0)
+        entries.insert(target, {
+          entryJson: next
+        })
       else {
-        if (found !== target) entries.move(found, target, 1)
-        if (entries.get(target).entryJson !== next) entries.setProperty(target, "entryJson", next)
+        if (found !== target)
+          entries.move(found, target, 1)
+        if (entries.get(target).entryJson !== next)
+          entries.setProperty(target, "entryJson", next)
       }
     }
     // Merging groups can match several old rows to one survivor.
-    if (entries.count > groups.length) entries.remove(groups.length, entries.count - groups.length)
+    if (entries.count > groups.length)
+      entries.remove(groups.length, entries.count - groups.length)
   }
 }

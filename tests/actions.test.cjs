@@ -385,8 +385,8 @@ test('a site focus that never starts leaves no card busy and falls back to the b
 })
 test('site focus Processes complete on running -> false and run focus-app under timeout',()=>{
  const component=source.slice(source.indexOf('    id: siteFocusProcess'),source.indexOf('\n  }',source.indexOf('    id: siteFocusProcess')))
- assert.match(component,/onExited: function\(code, status\) \{ service\.finishSiteFocus\(siteFocusProc, code === 0 && status === 0\) \}/)
- assert.match(component,/onRunningChanged: if \(!running\) service\.finishSiteFocus\(siteFocusProc, false\)/)
+ assert.match(component,/onExited: function \(code, status\) \{\s*service\.finishSiteFocus\(siteFocusProc, code === 0 && status === 0\)\s*\}/)
+ assert.match(component,/onRunningChanged: if \(!running\)\s*service\.finishSiteFocus\(siteFocusProc, false\)/)
  assert.match(component,/Component\.onDestruction: service\.siteFocusProcesses--/)
 })
 

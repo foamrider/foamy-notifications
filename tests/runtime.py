@@ -31,7 +31,9 @@ app.mkdir()
 shutil.copytree(SOURCE, app / "plugin", ignore=shutil.ignore_patterns("__pycache__"))
 service = (SOURCE / "Service.qml").read_text()
 service = service[: service.index("  Variants {")] + "}\n"
-service = service.replace("Quickshell.screens.map(function(s) { return s.name })", '["TEST-1"]')
+screens = "Quickshell.screens.map(function (s) {\n    return s.name\n  })"
+assert screens in service, "Service.qml no longer lists its screens this way"
+service = service.replace(screens, '["TEST-1"]')
 (app / "plugin/Service.qml").write_text(service)
 home = base / "home"
 home.mkdir()
@@ -105,7 +107,7 @@ if CENTER:
 (bin_dir / "omarchy-shell").chmod(0o755)
 # Exercise the installed stack delegate rather than a second copy of its bindings.
 full_service = (SOURCE / "Service.qml").read_text()
-card_start = full_service.index("          NotificationCard {", full_service.index("  Variants {"))
+card_start = full_service.index("NotificationCard {", full_service.index("delegate: NotificationCard {", full_service.index("  Variants {")))
 card_end = full_service.index("\n      }\n    }\n  }", card_start)
 card_delegate = (
     full_service[card_start:card_end]

@@ -28,19 +28,19 @@ shutil.copytree(SOURCE, app / "plugin", ignore=shutil.ignore_patterns(".git", "_
 full = (SOURCE / "Service.qml").read_text()
 # Keep the real service and server; the layer-shell windows are replaced below.
 (app / "plugin/Service.qml").write_text(
-    full[: full.index("  Variants {")].replace("Quickshell.screens.map(function(s) { return s.name })", '["TEST-1"]')
+    full[: full.index("  Variants {")].replace("Quickshell.screens.map(function (s) {\n    return s.name\n  })", '["TEST-1"]')
     + "}\n"
 )
 # The shipped delegate, fitCards and stack handlers, in a window of a chosen height.
 windows = full[full.index("  Variants {") :]
 
 
-def extract(start, end):
-    first = windows.index(start)
+def extract(start, end, after=0):
+    first = windows.index(start, after)
     return windows[first : windows.index(end, first)]
 
 
-delegate = extract("          NotificationCard {", "\n      }\n    }\n  }")
+delegate = extract("NotificationCard {", "\n      }\n    }\n  }", windows.index("delegate: NotificationCard {"))
 fit = extract("      function fitCards() {", "      Item {")
 handlers = extract("        onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)", "        delegate:")
 

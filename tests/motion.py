@@ -24,7 +24,7 @@ for name in ("Markup.js", "BrowserIdentity.js"):
 (app / "components").symlink_to(source / "components", target_is_directory=True)
 (app / "NotificationLogic.js").symlink_to(source / "NotificationLogic.js")
 s = (source / "Service.qml").read_text()
-start = s.index("          NotificationCard {", s.index("  Variants {"))
+start = s.index("NotificationCard {", s.index("delegate: NotificationCard {", s.index("  Variants {")))
 end = s.index("\n      }\n    }\n  }", start)
 delegate = s[start:end].replace("service.", "fixture.").replace("popupWindow.screen.name", '"TEST-1"')
 (app / "shell.qml").write_text(

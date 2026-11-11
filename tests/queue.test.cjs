@@ -314,7 +314,8 @@ test('helper restarts back off from 1 s to 60 s and reset after a stable run', (
   assert.equal(s.nextHelperRestartDelay(now), 1000)
   s.helperStartedAt = now + 1000; assert.equal(s.nextHelperRestartDelay(now + 1010), 2000, 'a quick death after it doubles again')
   // The exit handler sets the delay before callbacks can queue work.
-  const exit = source.slice(source.indexOf('onExited:', source.indexOf('    id: helperProc')), source.indexOf('\n    }', source.indexOf('    id: helperProc')))
-  assert.match(exit, /^onExited: function\(exitCode, exitStatus\) \{\n.*\n      helperRestart\.interval = service\.nextHelperRestartDelay\(Date\.now\(\)\)\n      var job/)
-  assert.match(source, /onRunningChanged: if \(running\) \{ service\.helperStartedAt = Date\.now\(\); service\.runNextPopupFileJob\(\) \}/)
+  const exitStart = source.indexOf('onExited:', source.indexOf('    id: helperProc'))
+  const exit = source.slice(exitStart, source.indexOf('\n    }', exitStart))
+  assert.match(exit, /^onExited: function \(exitCode, exitStatus\) \{\n.*\n      helperRestart\.interval = service\.nextHelperRestartDelay\(Date\.now\(\)\)\n      var job/)
+  assert.match(source, /onRunningChanged: if \(running\) \{\s*service\.helperStartedAt = Date\.now\(\)\s*service\.runNextPopupFileJob\(\)\s*\}/)
 })
