@@ -107,7 +107,9 @@ if CENTER:
 (bin_dir / "omarchy-shell").chmod(0o755)
 # Exercise the installed stack delegate rather than a second copy of its bindings.
 full_service = (SOURCE / "Service.qml").read_text()
-card_start = full_service.index("NotificationCard {", full_service.index("delegate: NotificationCard {", full_service.index("  Variants {")))
+card_start = full_service.index(
+    "NotificationCard {", full_service.index("delegate: NotificationCard {", full_service.index("  Variants {"))
+)
 card_end = full_service.index("\n      }\n    }\n  }", card_start)
 card_delegate = (
     full_service[card_start:card_end]
@@ -245,7 +247,10 @@ def send(summary, extra=(), body="Sample body"):
 def omarchy_send(app_name, summary, body, image, argv):
     """What `omarchy notification send -u critical --image … --exec …` sends, over the test's
     private bus, without running a host script (the same hints: image-path, omarchy-exec-argv)."""
-    quote = lambda text: "'" + str(text).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+    def quote(text):
+        return "'" + str(text).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
     hints = (
         "{'urgency': <byte 2>, 'image-path': <"
         + quote(image)
@@ -694,7 +699,7 @@ try:
             )
             # Omarchy's focus-app picks the site's app window through its literal class
             # pattern (the newest of one per browser profile), never a browser tab.
-            asked = [l for l in omarchy_calls()[len(calls) :] if l.startswith("omarchy-hyprland-focus-app ^")]
+            asked = [line for line in omarchy_calls()[len(calls) :] if line.startswith("omarchy-hyprland-focus-app ^")]
             assert asked == (
                 ["omarchy-hyprland-focus-app ^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__"]
                 if target == "popup"
@@ -733,7 +738,9 @@ try:
                 ipc("countdown-test", "clickFirst")
                 wait_for(lambda: len(dispatches()) == before + 1, "mapped Teams focus dispatched once")
                 assert json.loads(dispatches()[-1]) == ['hl.dsp.focus({ window = "address:0x102" })'], "mapping ignored"
-                asked = [l for l in omarchy_calls()[len(calls) :] if l.startswith("omarchy-hyprland-focus-app ^")]
+                asked = [
+                    line for line in omarchy_calls()[len(calls) :] if line.startswith("omarchy-hyprland-focus-app ^")
+                ]
                 assert asked == ["omarchy-hyprland-focus-app ^vivaldi-teams\\.microsoft\\.com__-Profile_2$"], asked
                 wait_for(lambda: state()["popups"] == 0 and not state()["busy"], "mapped Teams popup handled")
                 if CENTER:
@@ -938,7 +945,7 @@ try:
             lambda: state()["cardsBusy"] == 0 and state()["siteFocusProcesses"] == 0 and not state()["busy"],
             "center click settles " + title,
         )
-        asked = [l for l in omarchy_calls()[len(calls) :] if l.startswith("omarchy-hyprland-focus-app ")]
+        asked = [line for line in omarchy_calls()[len(calls) :] if line.startswith("omarchy-hyprland-focus-app ")]
         result = {
             "dispatches": [json.loads(d) for d in dispatches()[before:]],
             "asked": asked,
@@ -1241,7 +1248,10 @@ try:
         ),
         "the normal one and two criticals show, the oldest critical waits",
     )
-    archived = lambda: ids(path.stem for path in (home / ".local/state/foamy-notifications/history").glob("*.json"))
+
+    def archived():
+        return ids(path.stem for path in (home / ".local/state/foamy-notifications/history").glob("*.json"))
+
     assert normal not in archived() and criticals[0] not in archived(), (
         "a shown or waiting notification went to history"
     )
@@ -1665,7 +1675,9 @@ try:
         assert (app / (name + ".png")).exists(), "missing stack render: " + name
     # The copied delegate must bind: a missing import only logs a ReferenceError.
     unbound = [
-        l for l in (base / "runtime.log").read_text().splitlines() if "ReferenceError" in l and "center/" not in l
+        line
+        for line in (base / "runtime.log").read_text().splitlines()
+        if "ReferenceError" in line and "center/" not in line
     ]
     assert not unbound, unbound[:3]
     print(

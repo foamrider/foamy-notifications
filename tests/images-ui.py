@@ -6,7 +6,6 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 import testhost
@@ -21,7 +20,9 @@ for name in ("Commons", "Ui"):
     (app / name).symlink_to(hostenv.root() / "shell" / name, target_is_directory=True)
 shutil.copytree(SOURCE, app / "plugin", ignore=shutil.ignore_patterns(".git", "__pycache__"))
 service = (SOURCE / "Service.qml").read_text()
-start = service.index("NotificationCard {", service.index("delegate: NotificationCard {", service.index("  Variants {")))
+start = service.index(
+    "NotificationCard {", service.index("delegate: NotificationCard {", service.index("  Variants {"))
+)
 end = service.index("\n      }\n    }\n  }", start)
 delegate = (
     service[start:end]
@@ -311,7 +312,7 @@ try:
     assert process.poll() is None
     assert not state()["error"], state()
     # The copied delegate must bind: a missing import only logs a ReferenceError.
-    unbound = [l for l in (base / "runtime.log").read_text().splitlines() if "ReferenceError" in l]
+    unbound = [line for line in (base / "runtime.log").read_text().splitlines() if "ReferenceError" in line]
     assert not unbound, unbound[:3]
     print(
         "PASS: actual popup file normalization, progressive JPEG icon, wide/narrow dark/light rendering, all raw-data aliases, truncated-buffer rejection, local-file fallback, replacements, rejected-image fallback"

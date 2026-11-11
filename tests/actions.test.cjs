@@ -140,7 +140,7 @@ test('history callback survives the popup and is released after successful handl
  assert.equal(state.liveRefs[1],undefined)
 })
 test('retention is bounded and cannot release a reused notification ID',()=>{
- const {state,row,ref,events}=retainedFixture();state.historyLimit=1
+ const {state,row,ref}=retainedFixture();state.historyLimit=1
  state.retainHistoryAction(row,ref)
  const next={...row,timestamp:11,originalId:2},other={...ref}
  state.liveRefs[2]=other;state.liveKeys[2]='11-2';state.retainHistoryAction(next,other)

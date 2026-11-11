@@ -1,6 +1,12 @@
 """Check the real Wayland popup surface on a private bus with temporary history."""
 
-import os, json, shutil, tempfile, subprocess, sys, time, signal
+import json
+import os
+import shutil
+import signal
+import subprocess
+import tempfile
+import time
 from pathlib import Path
 import testhost
 from testhost import hostenv

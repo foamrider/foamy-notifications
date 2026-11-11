@@ -1,0 +1,5 @@
+# Dynamic entry points Vulture can't see: <name>  # reason
+Images  # unittest.TestCase subclass, run by `unittest discover` (images_test.py)
+SharedFiles  # unittest.TestCase subclass, run by `unittest discover` (shared_files_test.py)
+connection  # Gio signal_subscribe callback parameter (runtime.py raw_signal); the signature is Gio's
+interface  # Gio signal_subscribe callback parameter (runtime.py raw_signal); the signature is Gio's

@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons
-import "../kit"
 import "../components"
 import "../NotificationLogic.js" as Logic
 

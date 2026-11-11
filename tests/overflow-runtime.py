@@ -11,7 +11,6 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 import testhost
@@ -28,7 +27,9 @@ shutil.copytree(SOURCE, app / "plugin", ignore=shutil.ignore_patterns(".git", "_
 full = (SOURCE / "Service.qml").read_text()
 # Keep the real service and server; the layer-shell windows are replaced below.
 (app / "plugin/Service.qml").write_text(
-    full[: full.index("  Variants {")].replace("Quickshell.screens.map(function (s) {\n    return s.name\n  })", '["TEST-1"]')
+    full[: full.index("  Variants {")].replace(
+        "Quickshell.screens.map(function (s) {\n    return s.name\n  })", '["TEST-1"]'
+    )
     + "}\n"
 )
 # The shipped delegate, fitCards and stack handlers, in a window of a chosen height.
