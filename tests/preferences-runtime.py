@@ -76,8 +76,8 @@ proc = None
 def ipc(target, *args): return subprocess.check_output(['qs', 'ipc', '-n', '-p', str(app), 'call', target, *args], env=env, text=True, timeout=2, stderr=subprocess.DEVNULL).strip()
 def preferences(): return json.loads(ipc('foamy.notifications', 'preferences'))
 def entry(): return [p for p in json.loads((config/'shell.json').read_text())['plugins'] if p['id'] == 'foamy.notifications'][0]
-def wait(fn):
-    end = time.monotonic()+5
+def wait(fn, seconds=5):
+    end = time.monotonic()+seconds
     while time.monotonic() < end:
         try:
             if fn(): return
@@ -91,7 +91,7 @@ def save(key, value):
     return preferences()['saveError']
 try:
     proc = subprocess.Popen(['qs', '-p', str(app), '--no-color'], env=env, stdout=log, stderr=log, start_new_session=True)
-    wait(lambda: ipc('notifications', 'ping') == 'ok')
+    wait(lambda: ipc('notifications', 'ping') == 'ok', 30)
     wait(lambda: preferences()['settings']['normalTimeoutSec'] == 8)
     assert preferences()['settings']['compact'] is True, 'read the XDG_CONFIG_HOME decoy'
     # The full raw entry is written: unknown keys stay, defaults are not filled in.

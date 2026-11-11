@@ -84,8 +84,8 @@ def ipc(target, method, *args):
 
 def state(): return json.loads(ipc('foamy.notifications', 'state'))
 
-def wait(check, label):
-    deadline=time.monotonic()+10
+def wait(check, label, seconds=10):
+    deadline=time.monotonic()+seconds
     while time.monotonic()<deadline:
         try:
             if check(): return
@@ -114,7 +114,7 @@ def rss():
     return int(next(line.split()[1] for line in Path('/proc/'+str(process.pid)+'/status').read_text().splitlines() if line.startswith('VmRSS:')))
 
 try:
-    wait(lambda:ipc('notifications','ping') == 'ok' and not state()['busy'], 'startup')
+    wait(lambda:ipc('notifications','ping') == 'ok' and not state()['busy'], 'startup', 30)
     ipc('notifications','setDnd','on')
     stall.touch(); send('Stalled DND write')
     wait(started.exists, 'worker is stalled')

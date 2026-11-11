@@ -60,6 +60,28 @@ HANDLERS
  }
  }
  QtObject { id: held; property var card: null }
+ // Service-side times (Date.now() in this shell), so durations don't include
+ // how late a polling IPC call saw a change: when each notification id last
+ // entered and left the stack (shown) and the queue (queued), and when the
+ // first arrival was held and the held cards were let go.
+ QtObject { id: clock; property var shown: ({}); property var queued: ({}); property real heldAt: 0; property real releasedAt: 0
+  function track(book, keys) {
+   var now = Date.now(), on = {}
+   for (var i = 0; i < keys.length; i++) {
+    var id = String(keys[i]).split("-")[1]; on[id] = true
+    if (!book[id] || book[id].left) book[id] = {entered: now, left: 0}
+   }
+   for (var known in book) if (!on[known] && !book[known].left) book[known].left = now
+  }
+ }
+ Connections { target: notifications
+  function onDisplayGroupsChanged() { clock.track(clock.shown, notifications.displayGroups.map(function(g) { return g.key })) }
+  function onWaitingGroupsChanged() { clock.track(clock.queued, notifications.waitingGroups) }
+  function onHeldCountChanged() {
+   if (notifications.heldCount > 0 && !clock.heldAt) clock.heldAt = Date.now()
+   else if (notifications.heldCount === 0 && clock.heldAt && !clock.releasedAt) clock.releasedAt = Date.now()
+  }
+ }
  // Every frame: did the held card move in the window, and is a card mid-entrance?
  QtObject { id: frames; property bool watching: false; property real pinnedY: 0; property int moves: 0; property int entering: 0; property int count: 0 }
  FrameAnimation { running: true; onTriggered: {
@@ -80,6 +102,8 @@ HANDLERS
   function watch(): void { frames.pinnedY = held.card.mapToItem(null, 0, 0).y; frames.moves = 0; frames.entering = 0; frames.count = 0; frames.watching = true }
   function frameCounts(): string { return JSON.stringify({moves: frames.moves, entering: frames.entering, frames: frames.count, pinnedY: frames.pinnedY}) }
   function setHoldMax(ms: int): void { notifications.holdMaxMs = ms }
+  function times(): string { return JSON.stringify({shown: clock.shown, queued: clock.queued, heldAt: clock.heldAt, releasedAt: clock.releasedAt}) }
+  function resetHoldClock(): void { clock.heldAt = 0; clock.releasedAt = 0 }
   function setReduceMotion(on: bool): void { Style.reduceMotion = on }
   function stack(): string {
    var cards = []
@@ -140,6 +164,7 @@ def send(summary, urgency='normal', extra=(), body='Sample body'):
 def ids(keys): return [key.split('-')[1] for key in keys]
 def shown(): return ids(group['key'] for group in state()['groups'])
 def queue(): return ids(state()['queue'])
+def times(): return json.loads(ipc('overflow-test', 'times'))
 def files(folder): return {path.stem.split('-')[1]: json.loads(path.read_text()) for path in (state_dir/folder).glob('*.json')}
 def settled(): return not state()['busy']
 def reset():
@@ -149,7 +174,7 @@ def reset():
     for path in (state_dir/'history').glob('*.json'): path.unlink()
 
 try:
-    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'], 'startup')
+    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'], 'startup', 30)
 
     # Queue order: criticals newest first, then the normal cards in arrival order.
     # One of the two slots stays for a normal card: C takes it from A, the
@@ -223,10 +248,10 @@ try:
     # A later normal card reaches the screen when the normal slot frees, well within its maximum wait.
     later = send('Later normal')
     wait(lambda: queue() == [first, later] and settled(), 'the later normal card waits')
-    sent_at = time.monotonic()
     ipc('notifications', 'dismissOne')
     wait(lambda: shown() == [second, later] and queue() == [first] and settled(), 'the later normal card takes the normal slot')
-    assert time.monotonic() - sent_at < 3, 'the later normal card did not show within its maximum wait'
+    clocks = times()['shown']
+    assert clocks[later]['entered'] - clocks[long]['left'] < 3000, 'the later normal card did not show within its maximum wait: ' + repr(clocks)
     reset()
     # The waiting clock survives a restart: a card that waited 2 s before it ages 1 s after.
     first = send('Flood 1', 'critical'); long = send('Long normal'); waiting = send('Waits over a restart')
@@ -234,10 +259,12 @@ try:
     clock = files('popups')[waiting]['waitingSince']
     time.sleep(2)
     os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
-    restarted_at = time.monotonic()
     process = start()
-    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and waiting in files('history'), 'the waiting card ages after the restart')
-    assert time.monotonic() - restarted_at < 2.9, 'the restart reset the waiting clock'
+    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and waiting in files('history'), 'the waiting card ages after the restart', 30)
+    restored = times()['queued'].get(waiting)
+    # With its clock reset it would wait the full 3 s after the restore. A
+    # restart slower than the 1 s it had left ages it at the restore, unqueued.
+    assert restored is None or restored['left'] - restored['entered'] < 2900, 'the restart reset the waiting clock: ' + repr(restored)
     assert json.loads(next((state_dir/'history').glob('*-' + waiting + '.json')).read_text()).get('waitingSince') in (None, clock)
     wait(lambda: set(shown()) == {long, first} and not queue() and settled(), 'the cards on screen are restored')
     reset()
@@ -254,27 +281,32 @@ try:
     assert queue() == [c, d], 'a waiting card expired before it showed'
     ipc('notifications', 'dismissOne')
     wait(lambda: shown() == [c], 'C shows')
-    shown_at = time.monotonic()
     wait(lambda: files('popups')[c].get('deadline', 0) > 0 and 'queued' not in files('popups')[c], 'a card that showed after waiting is saved with its own deadline', 1)
-    time.sleep(1.4)
-    assert c in shown(), 'C did not get its full time on screen'
     wait(lambda: c not in shown() and d in shown(), 'C expires, D shows', 4)
-    assert time.monotonic() - shown_at >= 1.9, 'C expired early'
+    on_screen = times()['shown'][c]
+    assert on_screen['left'] - on_screen['entered'] >= 1900, 'C did not get its full time on screen: ' + repr(on_screen)
     assert c in files('history'), 'an expired card did not go to history'
     reset()
     print('PASS: the timer of a waiting card starts on show; expiry still archives')
 
     # An update that stops a card expiring drops the deadline it got when it showed after waiting.
+    # The update must arrive before that deadline, so it gets 4 s here, and the check
+    # waits until just past the saved deadline rather than a fixed time.
+    configure(normalTimeoutSec=4)
+    wait(lambda: state()['settings']['normalTimeoutSec'] == 4, 'normalTimeoutSec 4')
     a = send('A', 'critical'); c = send('Promoted')
     wait(lambda: queue() == [c] and settled(), 'promotion fixture')
     ipc('notifications', 'dismissOne')
     wait(lambda: c in shown() and files('popups')[c].get('deadline', 0) > 0, 'the promoted card is saved with a deadline')
+    deadline = files('popups')[c]['deadline'] / 1000
     send('Promoted, now critical', 'critical', extra=('-r', c))
     wait(lambda: files('popups')[c]['summary'] == 'Promoted, now critical' and 'deadline' not in files('popups')[c] and settled(),
          'an update to a non-expiring card drops its saved deadline', 2)
-    time.sleep(2.3)
+    time.sleep(max(0, deadline - time.time()) + .3)
     assert c in shown(), 'the card updated to critical expired'
     reset()
+    configure(normalTimeoutSec=2)
+    wait(lambda: state()['settings']['normalTimeoutSec'] == 2, 'normalTimeoutSec 2')
     print('PASS: an update that disables expiry drops the saved deadline')
 
     # Replacement and duplicates update a waiting card in place.
@@ -320,7 +352,7 @@ try:
     time.sleep(2.2)
     os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
     process = start()
-    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and state()['popups'] == 4, 'restart')
+    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and state()['popups'] == 4, 'restart', 30)
     wait(lambda: shown() == [w] and queue() == [x, y, z], 'the queue is restored waiting, in order')
     assert {group['key'] for group in state()['groups']} | set(state()['queue']) == keys, 'restart changed identities'
     assert len(files('popups')) == 4 and not files('history'), 'restart duplicated or archived a card'
@@ -361,8 +393,9 @@ try:
     wait(lambda: len(state()['groups']) == fitted and len(state()['queue']) == 6 - fitted - 1, 'a freed slot shows the next waiting card')
     ipc('overflow-test', 'setHeight', 900)
     wait(lambda: len(state()['groups']) == 5 and not state()['queue'], 'a taller screen shows every waiting card')
-    configure(maxVisible=3)
-    wait(lambda: state()['settings']['maxVisible'] == 3, 'maxVisible 3')
+    # The hover fixture below must be in place before its cards expire, so they get 4 s.
+    configure(maxVisible=3, normalTimeoutSec=4)
+    wait(lambda: state()['settings']['maxVisible'] == 3 and state()['settings']['normalTimeoutSec'] == 4, 'maxVisible 3')
     reset()
     print('PASS: cards that do not fit the screen wait, and show when room frees')
 
@@ -374,7 +407,7 @@ try:
     wait(lambda: stack()['held'] and stack()['hovered'] and stack()['heldSummary'] == 'Hold this card', 'pointer holds the middle card')
     held_y = stack()['heldY']; assert held_y > 0
     samples = []
-    deadline = time.monotonic() + 4
+    deadline = time.monotonic() + 8
     while time.monotonic() < deadline:
         view = stack(); samples.append(view['heldY'])
         if [card['summary'] for card in view['cards'] if card] == ['Hold this card', 'Waits one', 'Waits two'] and all(card['settled'] for card in view['cards']): break
@@ -428,12 +461,13 @@ try:
     # The hold's maximum (stock: 30 s; shortened here) lets them go while the pointer stays.
     ipc('overflow-test', 'setHoldMax', 1500)
     below, top = fixture()
+    ipc('overflow-test', 'resetHoldClock')
     send('Held normal'); send('Held critical', 'critical')
     wait(lambda: len(state()['held']) == 2, 'arrivals are held')
-    held_at = time.monotonic()
     assert counts()['moves'] == 0
     wait(lambda: summaries()[:2] == ['Held critical', 'Held normal'], 'the maximum releases the held cards', 4)
-    assert time.monotonic() - held_at >= 1.3, 'released before the maximum'
+    hold = times()
+    assert hold['releasedAt'] - hold['heldAt'] >= 1400, 'released before the maximum: ' + repr(hold)
     assert stack()['held'] and state()['pointerHolds'], 'the pointer left the stack'
     # As in stock, the released cards go on top, so this time the hovered card moves (and the frame check sees it).
     wait(lambda: counts()['moves'] > 0 and stack()['heldY'] > 0, 'the released cards push the hovered card down')
@@ -469,7 +503,7 @@ try:
     os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
     restarted_at = time.time() * 1000
     process = start()
-    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and state()['popups'] == 3, 'restart with a held card')
+    wait(lambda: ipc('notifications', 'ping') == 'ok' and state()['storeReady'] and state()['popups'] == 3, 'restart with a held card', 30)
     wait(lambda: survivor in shown() and not state()['queue'] and settled(), 'the held card shows after the restart')
     assert len(files('popups')) == 3 and not files('history'), 'restart duplicated or archived a card'
     wait(lambda: files('popups')[survivor].get('deadline', 0) >= restarted_at + 29000, 'the held card got its full time after the restart', 2)

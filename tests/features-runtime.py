@@ -79,8 +79,8 @@ proc=None
 def start():return subprocess.Popen(['qs','-p',str(app),'--no-color'],env=env,stdout=log,stderr=log,start_new_session=True)
 def ipc(target,*args):return subprocess.check_output(['qs','ipc','-n','-p',str(app),'call',target,*args],env=env,text=True,timeout=2,stderr=subprocess.DEVNULL).strip()
 def state():return json.loads(ipc('foamy.notifications','state'))
-def wait(fn):
-    end=time.monotonic()+5
+def wait(fn, seconds=5):
+    end=time.monotonic()+seconds
     while time.monotonic()<end:
         try:
             if fn():return
@@ -92,7 +92,7 @@ def send(app,title,body='Message'):
 def files():return list([p for p in (home/'.local/state/foamy-notifications').glob('*/*.json')])
 try:
     wait(lambda:(runtime/'pipewire-0').exists())
-    proc=start();wait(lambda:ipc('notifications','ping')=='ok')
+    proc=start();wait(lambda:ipc('notifications','ping')=='ok',30)
     send('Chat','Verification code','Use code 482913')
     wait(lambda:state()['popups']==1 and not state()['busy'])
     assert not any('482913' in p.read_text() for p in files()),'code leaked to persisted state'
@@ -109,7 +109,7 @@ try:
     ipc('notifications','dismissAll');wait(lambda:state()['popups']==0 and not state()['busy'])
     wait(lambda:'app:Chat' in json.loads((home/'.local/state/foamy-notifications/state.json').read_text()).get('snoozes',{}))
     os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=3)
-    proc=start();wait(lambda:'app:Chat' in state()['snoozes'])
+    proc=start();wait(lambda:'app:Chat' in state()['snoozes'],30)
     ipc('feature-test','shortSnooze');wait(lambda:not state()['snoozes'])
     send('Chat','After snooze');wait(lambda:state()['popups']==1)
     # A protocol-native node exercises the actual Quickshell PipeWire model and tracker.

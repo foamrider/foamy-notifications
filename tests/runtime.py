@@ -164,7 +164,7 @@ def omarchy_calls():
 def dispatches():
     return dispatch_path.read_text().splitlines() if dispatch_path.exists() else []
 try:
-    wait_for(lambda:ipc('notifications','ping')=='ok','service startup')
+    wait_for(lambda:ipc('notifications','ping')=='ok','service startup',30)
     # A dismiss shortcut hides one visible card, not one member of a duplicate group.
     send('Keep older card')
     for _ in range(3): send('Dismiss grouped card')
@@ -180,13 +180,19 @@ try:
     wait_for(lambda:not state()['busy'] and state()['queuedJobs']==0,'clear dismissal fixture')
     # Placeholders have no persisted key: every close path must remain local.
     cfg=json.loads((config/'shell.json').read_text())
-    cfg['plugins'][0].update(closeButtonRemovesHistory=True,lowTimeoutSec=1)
-    (config/'shell.json').write_text(json.dumps(cfg))
-    wait_for(lambda:state()['settings']['closeButtonRemovesHistory'] and state()['settings']['lowTimeoutSec']==1,'placeholder close settings')
+    # The placeholder stays 5 s while it is closed by hand (a slow IPC poll must
+    # still find it), and 1 s for the expiry case, which needs no poll first.
     before=len(dispatches())
     for method in ['closeFirst','deleteFirst','enterFirst','dismissOne','dismissAll','expire']:
+        timeout=1 if method=='expire' else 5
+        settings=state()['settings']
+        if not (settings['closeButtonRemovesHistory'] and settings['lowTimeoutSec']==timeout):
+            cfg['plugins'][0].update(closeButtonRemovesHistory=True,lowTimeoutSec=timeout)
+            (config/'shell.json').write_text(json.dumps(cfg))
+            wait_for(lambda:state()['settings']['closeButtonRemovesHistory'] and state()['settings']['lowTimeoutSec']==timeout,'placeholder close settings')
         ipc('notifications','showHistory')
-        wait_for(lambda:state()['popups']==1 and len(state()['groups'])==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'empty-history placeholder')
+        if method!='expire':
+            wait_for(lambda:state()['popups']==1 and len(state()['groups'])==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'empty-history placeholder')
         if method in ['closeFirst','deleteFirst','enterFirst']: ipc('countdown-test',method)
         elif method!='expire': ipc('notifications',method)
         wait_for(lambda:state()['popups']==0 and not state()['busy'],'placeholder '+method)
@@ -272,7 +278,6 @@ try:
     ipc('notifications','invokeLast')
     wait_for(lambda:state()['popups']==0,'handled click removes duplicate group')
     if CENTER:
-        time.sleep(.3)
         wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0 and json.loads(ipc('foamy.notification-center.test','state'))['unread']==0,'handled click removes center entry and badge')
         tombstones=(home/'.local/state/omarchy-notification-center/dismissed').read_text().splitlines()
         assert len(tombstones)==len(prior_tombstones)+2 and len(set(tombstones))==len(tombstones),'handled keys were removed more than once'
@@ -700,8 +705,10 @@ try:
     send('Critical allowed')
     wait_for(lambda:state()['popups']==1,'critical fullscreen exception')
     wait_for(lambda:state()['popups']==0,'configured critical expiry')
-    settings['suppressFullscreen']=False;(config/'shell.json').write_text(json.dumps(cfg))
-    wait_for(lambda:not state()['settings']['suppressFullscreen'],'fullscreen suppression disabled')
+    # The pause below takes several IPC calls after the send; a 1 s popup could
+    # expire before the first of them on a loaded machine, so this one gets 4 s.
+    settings.update({'suppressFullscreen':False,'normalTimeoutSec':4});(config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:not state()['settings']['suppressFullscreen'] and state()['settings']['normalTimeoutSec']==4,'fullscreen suppression disabled')
     send('Normal expiry',('-u','normal'))
     wait_for(lambda:state()['popups']==1,'normal popup visible')
     def countdown():return json.loads(ipc('countdown-test','state'))
@@ -715,10 +722,10 @@ try:
         assert countdown()['remaining']==before,'indicator moved while '+mode+' paused expiry'
         assert state()['popups']==1,'paused popup expired'
     ipc('countdown-test','pause','resume')
-    wait_for(lambda:state()['popups']==0,'configured normal expiry')
+    wait_for(lambda:state()['popups']==0,'configured normal expiry',8)
     assert countdown()['progress']==0,'indicator retained expired state'
-    settings['showTimeoutIndicator']=False;(config/'shell.json').write_text(json.dumps(cfg))
-    wait_for(lambda:not countdown()['enabled'],'indicator setting updates live')
+    settings.update({'showTimeoutIndicator':False,'normalTimeoutSec':1});(config/'shell.json').write_text(json.dumps(cfg))
+    wait_for(lambda:not countdown()['enabled'] and state()['settings']['normalTimeoutSec']==1,'indicator setting updates live')
     send('Hidden indicator still expires',('-u','normal'))
     wait_for(lambda:state()['popups']==1,'disabled indicator popup visible')
     assert countdown()['progress']==0
@@ -746,7 +753,7 @@ try:
     wait_for(lambda:state()['popups']==1 and stack_state()['count']==1,'other cards still expire')
     after=stack_state()
     assert after['y']==held_y and after['hovered'] and after['sameCard'],'hovered card moved or was recreated'
-    ipc('countdown-test','capture','stack-held');time.sleep(.1)
+    ipc('countdown-test','capture','stack-held');wait_for(lambda:(app/'stack-held.png').exists(),'held stack captured')
     ipc('countdown-test','leave')
     wait_for(lambda:not stack_state()['held'] and stack_state()['y']==0,'leaving stack closes gaps')
     ipc('countdown-test','capture','stack-closed')

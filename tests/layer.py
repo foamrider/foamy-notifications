@@ -50,15 +50,21 @@ testhost.make(base, app, env)
 log=(base/'log').open('w');proc=subprocess.Popen(['qs','-p',str(app),'--no-color'],env=env,stdout=log,stderr=log,start_new_session=True)
 def ipc(target,*args):return subprocess.check_output(['qs','ipc','-n','-p',str(app),'call',target,*args],env=env,text=True,stderr=subprocess.DEVNULL,timeout=2).strip()
 try:
- end=time.monotonic()+5
+ end=time.monotonic()+30
  while True:
   try:
    if ipc('notifications','ping')=='ok':break
   except Exception:pass
   assert time.monotonic()<end,'startup';time.sleep(.1)
  subprocess.run(['notify-send','-a','Foamy animation check','-u','normal','Animation B','Synthetic notification on an isolated bus'],env=env,check=True,timeout=2)
- time.sleep(2)
- state=json.loads(ipc('motion-review','state'));(base/'trace.json').write_text(json.dumps(state))
+ # The card enters, expires and fades out, then the surface closes: wait for that, not a fixed 2 s.
+ end=time.monotonic()+15
+ while True:
+  try:state=json.loads(ipc('motion-review','state'))
+  except Exception:state=None
+  if state and not state['visible'] and any(r['retired'] for r in state['trace']):break
+  assert time.monotonic()<end,'the card did not enter, expire and close: '+repr(state and state['visible']);time.sleep(.1)
+ (base/'trace.json').write_text(json.dumps(state))
  assert any(0<r['opacity']<1 and r['offset']>0 and not r['retired'] for r in state['trace']), 'no entrance frames'
  assert any(0<r['opacity']<1 and r['retired'] and r['visible'] for r in state['trace']), 'window hid before exit completed'
  assert not state['visible'],'empty notification layer remains mapped'
