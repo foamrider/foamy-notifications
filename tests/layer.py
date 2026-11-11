@@ -3,8 +3,7 @@ import os,json,shutil,tempfile,subprocess,sys,time,signal
 from pathlib import Path
 import testhost
 from testhost import hostenv
-if '--inside' not in sys.argv:
- raise SystemExit(subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=90).returncode)
+testhost.session(__file__, 90)
 base=Path(tempfile.mkdtemp(prefix='foamy-native-motion-'));app=base/'app';app.mkdir();home=base/'home';home.mkdir()
 for n in ['Commons','Ui']:(app/n).symlink_to(hostenv.root()/'shell'/n,target_is_directory=True)
 shutil.copytree(Path(__file__).resolve().parents[1],app/'plugin',ignore=shutil.ignore_patterns('.git','__pycache__'))

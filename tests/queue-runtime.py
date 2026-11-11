@@ -15,8 +15,7 @@ from testhost import hostenv
 from gi.repository import Gio, GLib
 
 SOURCE = Path(__file__).resolve().parents[1]
-if '--inside' not in sys.argv:
-    raise SystemExit(subprocess.run(['dbus-run-session', '--', sys.executable, __file__, '--inside'], timeout=60).returncode)
+testhost.session(__file__, 180)
 base = Path(tempfile.mkdtemp(prefix='foamy-popup-queue-'))
 app = base/'app'; app.mkdir()
 for name in ('Commons', 'Ui'):

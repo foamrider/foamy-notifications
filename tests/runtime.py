@@ -19,9 +19,7 @@ from gi.repository import Gio, GLib
 CENTER=os.environ.get('FOAMY_CENTER_SOURCE','')
 
 SOURCE=Path(__file__).resolve().parents[1]
-if '--inside' not in sys.argv:
-    result=subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=90)
-    raise SystemExit(result.returncode)
+testhost.session(__file__, 300)
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-runtime-'))
 app=base/'app';app.mkdir()
 (app/'Commons').symlink_to(hostenv.root()/'shell/Commons',target_is_directory=True)

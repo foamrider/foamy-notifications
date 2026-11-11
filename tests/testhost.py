@@ -7,6 +7,8 @@ harness, and apply its isolation and private Omarchy tree through make().
 """
 
 import os
+import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -43,3 +45,29 @@ def make(base, app, env):
 def calls(base):
     """The stubs' log as one string, for hostenv.check()."""
     return "\n".join(hostenv.calls(base))
+
+
+def session(script, timeout, *args):
+    """Run the test on a private session bus. Outside (no `--inside`): re-runs
+    `script --inside *args` under dbus-run-session and exits with its status;
+    after `timeout` seconds it stops the whole run with SIGTERM (SIGKILL 10 s
+    later). Inside: SIGTERM raises SystemExit, so the test's `finally` stops
+    the qs it started; a killed wrapper used to leave it running."""
+    if "--inside" in sys.argv:
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+        return
+    inner = subprocess.Popen(["dbus-run-session", "--", sys.executable, str(script), "--inside", *args], start_new_session=True)
+    try:
+        code = inner.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"{Path(script).name}: no result within {timeout} s, stopping it", file=sys.stderr, flush=True)
+        code = 124
+    finally:
+        if inner.poll() is None:
+            os.killpg(inner.pid, signal.SIGTERM)
+            try:
+                inner.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(inner.pid, signal.SIGKILL)
+                inner.wait()
+    raise SystemExit(code)

@@ -17,8 +17,7 @@ import testhost
 from testhost import hostenv
 
 SOURCE = Path(__file__).resolve().parents[1]
-if '--inside' not in sys.argv:
-    raise SystemExit(subprocess.run(['dbus-run-session', '--', sys.executable, __file__, '--inside'], timeout=90).returncode)
+testhost.session(__file__, 300)
 base = Path(tempfile.mkdtemp(prefix='foamy-notifications-overflow-'))
 app = base/'app'; app.mkdir()
 for name in ('Commons', 'Ui'):
