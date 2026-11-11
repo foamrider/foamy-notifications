@@ -74,6 +74,8 @@ import Quickshell
 import "plugin" as Plugin
 import Quickshell.Io
 import "plugin/components" as Cards
+// The copied delegate uses the kit singletons (FoamyMotion, FoamyI18n).
+import "plugin/kit"
 ShellRoot {
  Plugin.Service { id: notifications }
  FloatingWindow { id: testWindow; visible:true;implicitWidth:500;implicitHeight:600
@@ -760,6 +762,9 @@ try:
 
     for name in ['stack-before','stack-held','stack-closed']:
         assert (app/(name+'.png')).exists(),'missing stack render: '+name
+    # The copied delegate must bind: a missing import only logs a ReferenceError.
+    unbound=[l for l in (base/'runtime.log').read_text().splitlines() if 'ReferenceError' in l and 'center/' not in l]
+    assert not unbound,unbound[:3]
     print('PASS: stable third-card hover through real expiry and gap closure; timeout indicator progression, hover/busy pause, persistence and disabled expiry; center replacements, single removal, shared focus/retry, idle event-driven refresh; raw-image native closure and popup/visible/archived/DND center focus fallbacks; actual D-Bus delivery, duplicates, click handling, dismissal history, DND, overflow, native action callback, screenshot image delivery, structured action and center editor parity through expiry/reload with missing-file and launch-failure retries, configurable fullscreen/critical exceptions, expiry, invalid settings')
 finally:
     os.killpg(process.pid,signal.SIGTERM);process.wait(timeout=3);log.close()

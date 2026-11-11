@@ -30,6 +30,8 @@ import qs.Commons
 import qs.Commons as Commons
 import "plugin" as Plugin
 import "plugin/components" as Cards
+// The copied delegate uses the kit singletons (FoamyMotion, FoamyI18n).
+import "plugin/kit"
 ShellRoot {
  Plugin.Service { id:notifications }
  FloatingWindow {
@@ -138,6 +140,9 @@ try:
     capture('images-rejected-file',280)
     assert process.poll() is None
     assert not state()['error'],state()
+    # The copied delegate must bind: a missing import only logs a ReferenceError.
+    unbound=[l for l in (base/'runtime.log').read_text().splitlines() if 'ReferenceError' in l]
+    assert not unbound,unbound[:3]
     print('PASS: actual popup file normalization, progressive JPEG icon, wide/narrow dark/light rendering, all raw-data aliases, truncated-buffer rejection, local-file fallback, replacements, rejected-image fallback')
 finally:
     os.killpg(process.pid,signal.SIGTERM);process.wait(timeout=3);log.close()
