@@ -44,6 +44,9 @@ p.write_text(s)
 (app/'shell.qml').write_text('import QtQuick\nimport Quickshell\nimport "plugin" as Plugin\nShellRoot { Plugin.Service {} }\n')
 config=home/'.config/omarchy';config.mkdir(parents=True);(config/'shell.json').write_text(json.dumps({'plugins':[{'id':'foamy.notifications','normalTimeoutSec':1}]}))
 env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),QT_QPA_PLATFORM='wayland',QT_QPA_PLATFORMTHEME='basic',QT_QUICK_BACKEND='rhi')
+# Host scripts are stubs and an AppImage's bundled libraries are dropped (notify-send
+# exits 127 against them), as in the other runtime tests; hyprctl stays real.
+env.update(hostenv.make(base, app))
 log=(base/'log').open('w');proc=subprocess.Popen(['qs','-p',str(app),'--no-color'],env=env,stdout=log,stderr=log,start_new_session=True)
 def ipc(target,*args):return subprocess.check_output(['qs','ipc','-n','-p',str(app),'call',target,*args],env=env,text=True,stderr=subprocess.DEVNULL,timeout=2).strip()
 try:
@@ -81,6 +84,7 @@ try:
  end=time.monotonic()+5
  while not (len(service()['groups'])==shown and len(service()['queue'])==waiting-1):assert time.monotonic()<end,'a freed slot shows the next card';time.sleep(.1)
  ipc('notifications','dismissAll')
+ hostenv.check(env,(base/'log').read_text())
  print('PASS real layer-shell screen space: '+str(shown)+' of 20 cards fit '+json.dumps(fit)+', the rest wait (limit '+str(limit)+')')
 finally:
  os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=3);log.close();print('Native evidence:',base)
