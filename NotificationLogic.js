@@ -89,23 +89,6 @@ function sanitizeBody(body, app, appIcon) {
     .replace(/^\s*(?:https?:\/\/|www\.)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:\/\S*)?\s+/i, "")
 }
 
-function summaryStartsWithGlyph(summary) {
-  var text = String(summary || "").replace(/^\s+/, "")
-  if (!text) return false
-
-  var offset = 1
-  var first = text.charCodeAt(0)
-  if (first >= 0xd800 && first <= 0xdbff && text.length > 1) offset = 2
-
-  var spaces = 0
-  while (offset < text.length && text.charAt(offset) === " ") {
-    spaces++
-    offset++
-  }
-
-  return spaces >= 2
-}
-
 function shouldBypassDnd(notification, criticalUrgency, silenceCritical) {
   if (silenceCritical && notification && notification.urgency === criticalUrgency) return false
   var appName = String((notification && notification.appName) || "")
@@ -247,10 +230,6 @@ function deeds(row, offers) {
   for (var c = 0; c < codes.length; c++) out.push({ kind: "code", value: codes[c], text: "" })
   if (offers && offers.link) out.push({ kind: "link", value: offers.link, text: "", meeting: !!offers.meeting })
   return out.concat(settings)
-}
-
-function shouldRenderCompactGlyph(glyph, iconSource, singleLineToast) {
-  return String(glyph || "").length > 0 && String(iconSource || "").length === 0 && !!singleLineToast
 }
 
 function actionRows(notification) {
@@ -478,12 +457,6 @@ function persistablePopup(entry, imagesDir) {
     }
   }
   return { entry: out, copies: copies }
-}
-
-function serializePopup(entry, normalUrgency) {
-  // Compact (single-line) on purpose: restore cats every file together and
-  // parses line by line, which only works when each file is one line.
-  return JSON.stringify(popupEntry(entry, normalUrgency))
 }
 
 // Parse the concatenation of every persisted popup file into entries,
@@ -810,7 +783,6 @@ if (typeof module !== "undefined") {
   module.exports = {
     isChromiumDerived: isChromiumDerived,
     sanitizeBody: sanitizeBody,
-    summaryStartsWithGlyph: summaryStartsWithGlyph,
     shouldBypassDnd: shouldBypassDnd,
     isEphemeralApp: isEphemeralApp,
     stringHint: stringHint,
@@ -822,7 +794,6 @@ if (typeof module !== "undefined") {
     parseExecActions: parseExecActions,
     execActionsFromHints: execActionsFromHints,
     deeds: deeds,
-    shouldRenderCompactGlyph: shouldRenderCompactGlyph,
     snapshotOf: snapshotOf,
     themeIcon: themeIcon,
     normalizedImage: normalizedImage,
@@ -839,7 +810,6 @@ if (typeof module !== "undefined") {
     imageStem: imageStem,
     localImageFile: localImageFile,
     persistablePopup: persistablePopup,
-    serializePopup: serializePopup,
     parsePopupFiles: parsePopupFiles,
     popupExpired: popupExpired,
     planStack: planStack,
