@@ -31,8 +31,8 @@ ListView {
     Rectangle {
       id: waitingNote
       objectName: "waitingNote"
-      readonly property color surface: Commons.Color.notifications ? Commons.Color.notifications.background : Commons.Color.popups.background
-      readonly property color ink: Commons.Color.notifications ? Commons.Color.notifications.text : Commons.Color.popups.text
+      readonly property color surface: Commons.Color.notifications.background
+      readonly property color ink: Commons.Color.notifications.text
       anchors.right: parent.right
       anchors.bottom: parent.bottom
       width: waitingText.implicitWidth + Style.space(16)
