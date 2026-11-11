@@ -75,9 +75,9 @@ Item {
   property var retainedHistory: ({})
 
   // PersistentProperties handles in-process QML reloads. The on-disk
-  // notifications.json file is the cross-restart backstop — its `dnd` key
+  // state.json (settingsPath) is the cross-restart backstop — its `dnd` key
   // is hydrated into persisted.doNotDisturb on startup and written back via
-  // a debounced save timer.
+  // a debounced save timer, together with the snoozes.
   PersistentProperties {
     id: persisted
     reloadableId: "omarchy-notifications"
@@ -1198,7 +1198,7 @@ Item {
   property var restoredPopups: ({})
 
   // Jobs are { op, payload, done } for the long-lived helper (`serve`): one
-  // python process for the whole session, fed newline-delimited JSON, one job
+  // native helper process for the whole session, fed newline-delimited JSON, one job
   // in flight. Reads are jobs too, so a replay sees the history that existed
   // when it was asked for: everything queued after it waits for it.
   property var popupFileQueue: []
@@ -1385,10 +1385,10 @@ Item {
   // ---------------------------------------------------- history
   //
   // A popup that leaves the screen keeps its file — it just moves one level
-  // down, into historyDir. Trimming happens right there in the same shell
-  // job: the names sort numerically by their leading millisecond timestamp,
-  // so everything but the newest historyLimit files is the tail to drop,
-  // image copies included. Callers set $hist, $limit and $imgs first.
+  // down, into historyDir. The helper trims history in the same job: the
+  // names sort numerically by their leading millisecond timestamp, so
+  // everything but the newest historyLimit files is the tail to drop, image
+  // copies included.
   readonly property var historyBarrierOps: ["clear", "drop", "forget", "read", "migrate"]
   function archivePopupFileFor(row) {
     // The empty-history placeholder has no valid persistence key.

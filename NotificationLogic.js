@@ -371,10 +371,11 @@ function historyEntry(value, normalUrgency) {
   }
 }
 
-// notifications.json holds nothing but the last-set DND preference now that
-// history is a directory of files. Older versions kept `pending`/`past`
-// (and, older still, `entries`) arrays in there; their presence is reported
-// so the service can rewrite the file without the dead payload.
+// The settings file (state.json) holds the last-set DND preference and the
+// snoozes; history is a directory of files. Older versions kept
+// `pending`/`past` (and, older still, `entries`) arrays in their settings
+// file; their presence is reported so the service can rewrite the file
+// without the dead payload.
 function parseSettings(raw) {
   var text = String(raw || "").trim()
   if (!text) return { error: false, dnd: null, legacy: false }
