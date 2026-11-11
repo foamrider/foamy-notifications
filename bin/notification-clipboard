@@ -10,8 +10,8 @@ case ${1:-} in
     current=$(timeout --kill-after=1 2 wl-paste --no-newline | head -c 65) || status=$?
     # More than 8 characters is not the code, whatever wl-paste reports: a clipboard
     # longer than 65 bytes makes it fail writing to the closed pipe (SIGPIPE or EPIPE).
-    if (( ${#current} > 8 )); then exit 0; fi
-    (( status == 0 )) || exit 1
+    if ((${#current} > 8)); then exit 0; fi
+    ((status == 0)) || exit 1
     if [[ $current == "$code" ]]; then timeout --kill-after=1 2 wl-copy --clear; fi
     ;;
   *) exit 2 ;;
