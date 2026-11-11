@@ -5,7 +5,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import hostenv
+import testhost
+from testhost import hostenv
 
 source = Path(__file__).resolve().parents[1]
 # The host tree (hostenv.root(): the installed 4.5 by default; OMARCHY_TEST_ROOT,
@@ -104,7 +105,7 @@ ShellRoot {
                XDG_RUNTIME_DIR=str(runtime), QT_QPA_PLATFORM='offscreen',
                QT_QPA_PLATFORMTHEME='generic', QT_QUICK_BACKEND='software')
     env.pop('WAYLAND_DISPLAY', None)
-    env.update(hostenv.make(base, app))
+    testhost.make(base, app, env)
     result = subprocess.run(['quickshell', '-p', str(app), '--no-color'], env=env,
                             capture_output=True, text=True, timeout=10)
     output = result.stdout + result.stderr

@@ -5,7 +5,8 @@ import signal
 import subprocess
 import sys
 import tempfile
-import hostenv
+import testhost
+from testhost import hostenv
 
 source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-motion-'));app=base/'app';app.mkdir()
@@ -257,7 +258,7 @@ env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE
 if not desktop:
  env['XDG_RUNTIME_DIR']=str(runtime)
  for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
-env.update(hostenv.make(base, app))
+testhost.make(base, app, env)
 process=subprocess.Popen(['dbus-run-session','--','quickshell','-p',str(app),'--no-color'],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
 try:output=process.communicate(timeout=15)[0]
 except subprocess.TimeoutExpired:

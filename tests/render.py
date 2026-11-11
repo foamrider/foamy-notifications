@@ -5,7 +5,8 @@ from pathlib import Path
 import sys
 import subprocess
 import tempfile
-import hostenv
+import testhost
+from testhost import hostenv
 
 source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-render-'))
@@ -86,6 +87,7 @@ if not desktop:
     env['XDG_RUNTIME_DIR']=str(runtime)
     for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
     command=['dbus-run-session','--',*command]
+testhost.make(base, app, env)
 # Desktop rendering uses the GPU for rounded image masks; it owns only this test window.
 process=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
 try:

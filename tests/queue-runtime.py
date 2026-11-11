@@ -9,7 +9,8 @@ import subprocess
 import sys
 import tempfile
 import time
-import hostenv
+import testhost
+from testhost import hostenv
 
 from gi.repository import Gio, GLib
 
@@ -74,7 +75,7 @@ env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home/'.config'), XDG_
            QT_QUICK_BACKEND='software', QT_QPA_PLATFORMTHEME='basic', QT_STYLE_OVERRIDE='Fusion')
 for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']: env.pop(key, None)
 cli_path = env['PATH'].split(':')[0]
-env.update(hostenv.make(base, app))
+testhost.make(base, app, env)
 env['PATH'] = cli_path + ':' + env['PATH']
 log = (base/'runtime.log').open('w')
 process = subprocess.Popen(['quickshell','-p',str(app),'--no-color'], env=env, stdout=log, stderr=log, start_new_session=True)
@@ -236,5 +237,5 @@ finally:
     context_stall.unlink(missing_ok=True)
     if process.poll() is None: os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3)
     log.close()
-    hostenv.check(env, (base/'runtime.log').read_text(), (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')
+    hostenv.check(env, (base/'runtime.log').read_text(), testhost.calls(base))
     print('Runtime log:', base/'runtime.log')

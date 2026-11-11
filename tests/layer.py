@@ -1,7 +1,8 @@
 """Check the real Wayland popup surface on a private bus with temporary history."""
 import os,json,shutil,tempfile,subprocess,sys,time,signal
 from pathlib import Path
-import hostenv
+import testhost
+from testhost import hostenv
 if '--inside' not in sys.argv:
  raise SystemExit(subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=90).returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-native-motion-'));app=base/'app';app.mkdir();home=base/'home';home.mkdir()
@@ -46,7 +47,7 @@ config=home/'.config/omarchy';config.mkdir(parents=True);(config/'shell.json').w
 env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),QT_QPA_PLATFORM='wayland',QT_QPA_PLATFORMTHEME='basic',QT_QUICK_BACKEND='rhi')
 # Host scripts are stubs and an AppImage's bundled libraries are dropped (notify-send
 # exits 127 against them), as in the other runtime tests; hyprctl stays real.
-env.update(hostenv.make(base, app))
+testhost.make(base, app, env)
 log=(base/'log').open('w');proc=subprocess.Popen(['qs','-p',str(app),'--no-color'],env=env,stdout=log,stderr=log,start_new_session=True)
 def ipc(target,*args):return subprocess.check_output(['qs','ipc','-n','-p',str(app),'call',target,*args],env=env,text=True,stderr=subprocess.DEVNULL,timeout=2).strip()
 try:

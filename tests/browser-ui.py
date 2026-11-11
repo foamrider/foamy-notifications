@@ -10,7 +10,8 @@ import sys
 import tempfile
 
 from favicon_test import png
-import hostenv
+import testhost
+from testhost import hostenv
 
 source = Path(__file__).resolve().parents[1]
 # By manifest id, not folder name: a worktree or clone may be named anything.
@@ -124,6 +125,7 @@ runtime.mkdir(mode=0o700)
 env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'), XDG_CACHE_HOME=str(home / '.cache'), XDG_STATE_HOME=str(home / '.local/state'), XDG_RUNTIME_DIR=str(runtime), QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', QT_QPA_PLATFORMTHEME='basic', QT_STYLE_OVERRIDE='Fusion')
 for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']:
     env.pop(key, None)
+testhost.make(base, app, env)
 process = subprocess.Popen(['dbus-run-session', '--', 'quickshell', '-p', str(app), '--no-color'], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
 try:
     output = process.communicate(timeout=15)[0]

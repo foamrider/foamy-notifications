@@ -4,7 +4,8 @@ from pathlib import Path
 import signal
 import subprocess
 import tempfile
-import hostenv
+import testhost
+from testhost import hostenv
 
 source=Path(__file__).resolve().parents[1]
 base=Path(tempfile.mkdtemp(prefix='foamy-notifications-ui-'))
@@ -36,12 +37,12 @@ with (app / 'qmldir').open('a') as registry:
 # A private config: on 4.5 the shell language is $XDG_CONFIG_HOME/omarchy/language.
 env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),XDG_RUNTIME_DIR=str(runtime),QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion')
 for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
-env.update(hostenv.make(base, app))
+testhost.make(base, app, env)
 process=subprocess.Popen(['dbus-run-session','--','quickshell','-p',str(app),'--no-color'],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,start_new_session=True)
 try:output=process.communicate(timeout=15)[0]
 except subprocess.TimeoutExpired:
     os.killpg(process.pid,signal.SIGTERM);output=process.communicate(timeout=3)[0]
 print(output)
-hostenv.check(env, output, (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')
+hostenv.check(env, output, testhost.calls(base))
 # completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
 assert process.returncode==0 and 'UI_RESULT 24 passed 0 failed' in output

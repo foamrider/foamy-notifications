@@ -8,7 +8,8 @@ import subprocess
 import sys
 import tempfile
 import time
-import hostenv
+import testhost
+from testhost import hostenv
 
 SOURCE = Path(__file__).resolve().parents[1]
 if '--inside' not in sys.argv:
@@ -74,6 +75,9 @@ runtime = base/'runtime';runtime.mkdir(mode=0o700)
 env = dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CACHE_HOME=str(base/'cache'),XDG_STATE_HOME=str(base/'state'),XDG_RUNTIME_DIR=str(runtime),PATH=str(cli)+':'+os.environ['PATH'],QT_QPA_PLATFORM='wayland',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion')
 env['WAYLAND_DISPLAY']=str(Path(os.environ['XDG_RUNTIME_DIR'])/os.environ['WAYLAND_DISPLAY'])
 for k in ['QT_QUICK_BACKEND','DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(k,None)
+testhost.make(base, app, env)
+# This test's own hyprctl and omarchy-shell come before the logging stubs.
+env['PATH']=str(cli)+':'+env['PATH']
 picture=base/'picture.png';icon=base/'progressive.jpg'
 subprocess.run(['magick','-size','1440x900','gradient:#8aadf4-#a6da95',str(picture)],check=True,timeout=5)
 subprocess.run(['magick','-size','64x64','xc:none','-fill','steelblue','-draw','circle 32,32 32,12','-interlace','Plane',str(icon)],check=True,timeout=5)

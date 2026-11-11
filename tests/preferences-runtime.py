@@ -13,7 +13,8 @@ import subprocess
 import sys
 import tempfile
 import time
-import hostenv
+import testhost
+from testhost import hostenv
 
 if '--inside' not in sys.argv:
     raise SystemExit(subprocess.run(['dbus-run-session', '--', sys.executable, __file__, '--inside'], timeout=30).returncode)
@@ -69,7 +70,7 @@ env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(base/'xdg'), XDG_STAT
            QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', QT_QPA_PLATFORMTHEME='basic')
 for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']: env.pop(key, None)
 # Host QML/data only: OMARCHY_PATH exposes shell/ and default/; omarchy-* are stubs.
-env.update(hostenv.make(base, app))
+testhost.make(base, app, env)
 log = (base/'runtime.log').open('w')
 proc = None
 
@@ -123,4 +124,4 @@ try:
 finally:
     if proc and proc.poll() is None: os.killpg(proc.pid, signal.SIGTERM); proc.wait(timeout=3)
     log.close(); print('Evidence:', base)
-    hostenv.check(env, (base/'runtime.log').read_text(), (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')
+    hostenv.check(env, (base/'runtime.log').read_text(), testhost.calls(base))

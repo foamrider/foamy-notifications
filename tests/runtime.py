@@ -10,7 +10,8 @@ import tempfile
 import time
 import struct
 import zlib
-import hostenv
+import testhost
+from testhost import hostenv
 
 from gi.repository import Gio, GLib
 
@@ -127,7 +128,7 @@ ShellRoot {
 '''.replace('STACK_DELEGATE',card_delegate).replace('ShellRoot {', 'import \"center\" as Center\nimport qs.Ui as Ui\nShellRoot { Center.Service {} Ui.Panel { ipcTarget: "foamy.notification-center" }' if CENTER else 'ShellRoot {'))
 env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),XDG_RUNTIME_DIR=str(runtime),QT_QPA_PLATFORM='offscreen',QT_QUICK_BACKEND='software',QT_QPA_PLATFORMTHEME='basic',QT_STYLE_OVERRIDE='Fusion')
 # Host QML only: omarchy-* are stubs, omarchy-shell reaches this test shell, no host script runs.
-env.update(hostenv.make(base, app))
+testhost.make(base, app, env)
 env['PATH']=str(bin_dir)+':'+env['PATH']
 for key in ['DISPLAY','WAYLAND_DISPLAY','HYPRLAND_INSTANCE_SIGNATURE']:env.pop(key,None)
 log=(base/'runtime.log').open('w')
@@ -160,8 +161,7 @@ def omarchy_send(app_name, summary, body, image, argv):
         '--method','org.freedesktop.Notifications.Notify',app_name,'0','',summary,body,'[]',hints,'0'],env=env,check=True,timeout=3,stdout=subprocess.DEVNULL)
 
 def omarchy_calls():
-    log=base/'omarchy-calls.log'
-    return [line[line.rfind('/')+1:] for line in log.read_text().splitlines()] if log.exists() else []
+    return [line[line.rfind('/')+1:] for line in hostenv.calls(base)]
 
 def dispatches():
     return dispatch_path.read_text().splitlines() if dispatch_path.exists() else []
@@ -769,4 +769,4 @@ try:
 finally:
     os.killpg(process.pid,signal.SIGTERM);process.wait(timeout=3);log.close()
     print('Runtime log:',base/'runtime.log')
-    hostenv.check(env, (base/'runtime.log').read_text(), (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')
+    hostenv.check(env, (base/'runtime.log').read_text(), testhost.calls(base))

@@ -8,7 +8,8 @@ import subprocess
 import sys
 import tempfile
 import time
-import hostenv
+import testhost
+from testhost import hostenv
 
 if '--inside' not in sys.argv:
     raise SystemExit(subprocess.run(['dbus-run-session', '--', sys.executable, __file__, '--inside', *sys.argv[1:]], timeout=30).returncode)
@@ -68,7 +69,9 @@ context.modules = [
 ]
 ''')
 # Host QML/data only: OMARCHY_PATH exposes shell/ and default/; omarchy-* are stubs.
-env.update(hostenv.make(base, app))
+testhost.make(base, app, env)
+# make() names a dead PipeWire socket; this test runs its own server.
+env['PIPEWIRE_REMOTE']=str(runtime/'pipewire-0')
 env['PATH']=str(cli)+':'+env['PATH']
 log=(base/'runtime.log').open('w')
 pw=subprocess.Popen(['pipewire','-c',str(pw_config)],env=env,stdout=log,stderr=log,start_new_session=True)
@@ -127,4 +130,4 @@ finally:
     for child in [proc,pw]:
         if child and child.poll() is None:os.killpg(child.pid,signal.SIGTERM);child.wait(timeout=3)
     log.close();print('Evidence:',base)
-    hostenv.check(env, (base/'runtime.log').read_text(), (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')
+    hostenv.check(env, (base/'runtime.log').read_text(), testhost.calls(base))

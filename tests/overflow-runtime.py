@@ -13,7 +13,8 @@ import subprocess
 import sys
 import tempfile
 import time
-import hostenv
+import testhost
+from testhost import hostenv
 
 SOURCE = Path(__file__).resolve().parents[1]
 if '--inside' not in sys.argv:
@@ -111,7 +112,7 @@ env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home/'.config'), XDG_
            XDG_RUNTIME_DIR=str(runtime), QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software',
            QT_QPA_PLATFORMTHEME='basic', QT_STYLE_OVERRIDE='Fusion')
 for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']: env.pop(key, None)
-env.update(hostenv.make(base, app))
+testhost.make(base, app, env)
 env['PATH'] = str(cli) + ':' + env['PATH']
 state_dir = home/'.local/state/foamy-notifications'
 log = (base/'runtime.log').open('w')
@@ -478,4 +479,4 @@ try:
 finally:
     os.killpg(process.pid, signal.SIGTERM); process.wait(timeout=3); log.close()
     print('Runtime log:', base/'runtime.log')
-    hostenv.check(env, (base/'runtime.log').read_text(), (base/'omarchy-calls.log').read_text() if (base/'omarchy-calls.log').exists() else '')
+    hostenv.check(env, (base/'runtime.log').read_text(), testhost.calls(base))
