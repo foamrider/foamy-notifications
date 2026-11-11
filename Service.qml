@@ -1069,7 +1069,10 @@ Item {
   // browserMappings window for the site first, then any app window of the site
   // (several when browser profiles each have one; Omarchy takes the one focused
   // last). Identity is BrowserIdentity's alone. With no app window for the
-  // site, onMiss hands the click to the browser as before.
+  // site, onMiss hands the click to the browser as before. So does a
+  // focus-app that is missing (older Omarchy: `timeout` exits 127), hangs
+  // (`timeout` ends its group: SIGTERM at 5 s, SIGKILL 1 s later) or can't
+  // start at all: the card never stays busy.
   readonly property var appWindowBrowsers: ({"vivaldi": true, "chromium": true, "google-chrome": true, "chrome": true,
                                              "brave": true, "microsoft-edge": true, "msedge": true})
   function siteFocusCandidate(row) {
@@ -1094,7 +1097,8 @@ Item {
     patterns.push("^(chrome|vivaldi|msedge|brave)-" + regexLiteral(host) + "__")
     function attempt(index) {
       if (index >= patterns.length) { onMiss(); return }
-      var proc = siteFocusProcess.createObject(service, {command: [service.omarchyPath + "/bin/omarchy-hyprland-focus-app", patterns[index]]})
+      var proc = siteFocusProcess.createObject(service, {command: ["timeout", "--kill-after=1s", "5s",
+                                                                  service.omarchyPath + "/bin/omarchy-hyprland-focus-app", patterns[index]]})
       if (!proc) { onMiss(); return }
       proc.done = function(focused) { if (focused) onFocused(); else attempt(index + 1) }
       proc.running = true
@@ -1102,16 +1106,28 @@ Item {
     attempt(0)
     return true
   }
+  // The one completion of a site-focus attempt: its exit, or a start that
+  // failed (Quickshell then emits no exited(), only running -> false, which
+  // also follows every exit and then finds nothing left to do). The attempt's
+  // Process is destroyed afterwards either way.
+  function finishSiteFocus(proc, focused) {
+    var callback = proc.done
+    if (!callback) return
+    proc.done = null
+    Qt.callLater(function() { proc.destroy() })
+    callback(focused)
+  }
+  // Live site-focus Processes (for the runtime test: none may outlive its attempt).
+  property int siteFocusProcesses: 0
   Component {
     id: siteFocusProcess
     Process {
+      id: siteFocusProc
       property var done: null
-      onExited: function(code, status) {
-        var callback = done
-        done = null
-        Qt.callLater(destroy)
-        if (callback) callback(code === 0 && status === 0)
-      }
+      Component.onCompleted: service.siteFocusProcesses++
+      Component.onDestruction: service.siteFocusProcesses--
+      onExited: function(code, status) { service.finishSiteFocus(siteFocusProc, code === 0 && status === 0) }
+      onRunningChanged: if (!running) service.finishSiteFocus(siteFocusProc, false)
     }
   }
 
@@ -1288,6 +1304,20 @@ Item {
     runNextPopupFileJob()
   }
 
+  // Restarts back off while the helper keeps dying: 1 s, doubling to 60 s,
+  // and 1 s again after a run of helperStableMs. A helper that dies at start
+  // never loops at 1 Hz (each restart fails the job in flight).
+  property int helperBackoffMs: 1000
+  readonly property int helperBackoffMaxMs: 60000
+  readonly property int helperStableMs: 30000
+  property double helperStartedAt: 0
+  function nextHelperRestartDelay(now) {
+    if (helperStartedAt > 0 && now - helperStartedAt >= helperStableMs) helperBackoffMs = 1000
+    var delay = helperBackoffMs
+    helperBackoffMs = Math.min(helperBackoffMs * 2, helperBackoffMaxMs)
+    return delay
+  }
+
   Process {
     id: helperProc
     command: FoamyNative.command(service.pluginDir, service.helper, ["serve"])
@@ -1295,8 +1325,10 @@ Item {
     stdinEnabled: true
     stdout: SplitParser { onRead: function(line) { service.helperReplied(line) } }
     stderr: SplitParser { onRead: function(line) { if (String(line).trim()) console.warn(String(line).trim()) } }
-    onRunningChanged: if (running) service.runNextPopupFileJob()
+    onRunningChanged: if (running) { service.helperStartedAt = Date.now(); service.runNextPopupFileJob() }
     onExited: function(exitCode, exitStatus) {
+      // Before any callback below can queue work (and start the restart timer).
+      helperRestart.interval = service.nextHelperRestartDelay(Date.now())
       var job = service.runningJob
       service.runningJob = null
       service.runningImageWrite = false
@@ -2416,7 +2448,8 @@ Item {
         centerEnabled:service.centerEnabled,configError:service.configError,lastError:service.lastError,helperUnavailable:service.helperUnavailable,
         queuedJobs:service.popupFileQueue.length, queuedBytes:service.popupFileQueue.reduce(function(total,job){return total+job.bytes},0),
         tracked:Object.keys(service.liveRefs).length, busy:service.runningJob !== null || service.popupFileQueue.length>0,
-        keyboardMode:service.keyboardMode, expanded:service.expanded, storeReady:service.storeReady})
+        keyboardMode:service.keyboardMode, expanded:service.expanded, storeReady:service.storeReady,
+        cardsBusy:Object.keys(service.busyKeys).length, siteFocusProcesses:service.siteFocusProcesses})
     }
   }
 
