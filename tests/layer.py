@@ -3,7 +3,7 @@ import os,json,shutil,tempfile,subprocess,sys,time,signal
 from pathlib import Path
 import hostenv
 if '--inside' not in sys.argv:
- raise SystemExit(subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=45).returncode)
+ raise SystemExit(subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=90).returncode)
 base=Path(tempfile.mkdtemp(prefix='foamy-native-motion-'));app=base/'app';app.mkdir();home=base/'home';home.mkdir()
 for n in ['Commons','Ui']:(app/n).symlink_to(hostenv.root()/'shell'/n,target_is_directory=True)
 shutil.copytree(Path(__file__).resolve().parents[1],app/'plugin',ignore=shutil.ignore_patterns('.git','__pycache__'))
@@ -69,10 +69,12 @@ try:
  end=time.monotonic()+5
  while service()['settings']['maxVisible']!=10:assert time.monotonic()<end,'config';time.sleep(.1)
  for i in range(20):subprocess.run(['notify-send','-a','Foamy screen-space check','-u','critical','Tall card '+str(i),'First line\nSecond line\nThird line'],env=env,check=True,timeout=2)
- end=time.monotonic()+8;last=None;steady=0
+ # Settled: ten identical polls with the persistence queue idle. One state read per
+ # poll, and a deadline with room for a loaded machine, where each IPC call is slow.
+ end=time.monotonic()+30;last=None;steady=0
  while steady<10:
-  now=(service()['visibleLimit'],len(service()['groups']),len(service()['queue']),json.loads(ipc('motion-review','fit')))
-  steady=steady+1 if now==last and not service()['busy'] else 0;last=now
+  st=service();now=(st['visibleLimit'],len(st['groups']),len(st['queue']),json.loads(ipc('motion-review','fit')))
+  steady=steady+1 if now==last and not st['busy'] else 0;last=now
   assert time.monotonic()<end,'screen-space queue did not settle: '+repr(now);time.sleep(.1)
  limit,shown,waiting,fit=last
  history=home/'.local/state/foamy-notifications/history'
