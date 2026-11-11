@@ -107,6 +107,13 @@ def send(title,hints='{}',icon='foot',replace=0):
     out=subprocess.check_output(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications','--method','org.freedesktop.Notifications.Notify','Foamy image test',str(replace),icon,title,'Picture with working text and actions','[]',hints,'0'],env=env,text=True,timeout=3)
     return int(out.split('uint32 ')[1].split(',')[0])
 
+def hide_released():
+    # A raw-image notification is released on arrival (README), so its replacement is a
+    # new card. At maxVisible 1 that card would wait out the old one's 8 s timeout, which
+    # a pointer resting on this real window pauses; hide the old card instead.
+    subprocess.run(['qs','ipc','-n','-p',str(app),'call','notifications','dismissAll'],env=env,check=True,capture_output=True,timeout=3)
+    wait(lambda:state()['count']==0,'released raw card hidden')
+
 def capture(name,width=520,light=False):
     ipc('capture',name,width,str(light).lower())
     wait(lambda:(app/(name+'.png')).exists(),'capture '+name)
@@ -126,15 +133,18 @@ try:
         for light,theme in [(False,'dark'),(True,'light')]:capture('images-'+label+'-'+theme,width,light)
     # The dangerous provider is never requested; its native notification is released.
     for alias in ['image-data','image_data','icon_data']:
+        if alias!='image-data':hide_released()
         identifier=send('Raw buffer safely omitted '+alias,"{'"+alias+"': <(4096, 4096, 16384, true, 8, 4, [byte 255])>}",replace=identifier)
         wait_state(lambda s:s['title']=='Raw buffer safely omitted '+alias and s['image'] and s['image']['source']=='' and s['icon'],'truncated '+alias+' omitted')
         assert state()['icon']['source'].startswith('image://icon/'),state()
     capture('images-raw-fallback',280)
+    hide_released()
     identifier=send('Raw image with file fallback',"{'image-data': <(4096, 4096, 16384, true, 8, 4, [byte 255])>, 'image-path': <'"+picture.as_uri()+"'>}",replace=identifier)
     wait_state(lambda s:s['title']=='Raw image with file fallback' and s['image'] and s['image']['status']==1,'raw buffer bypassed with local file')
     # File-backed allocation attacks fail in the bounded worker, leaving text and theme icon.
     data=bytearray(icon.read_bytes());frame=data.index(b'\xff\xc2');data[frame+5:frame+9]=(60000).to_bytes(2,'big')*2
     rejected=base/'rejected.jpg';rejected.write_bytes(data)
+    hide_released()
     identifier=send('Rejected file keeps text',"{'image-path': <'"+rejected.as_uri()+"'>}",replace=identifier)
     wait_state(lambda s:s['title']=='Rejected file keeps text' and s['image'] and s['image']['source']=='','invalid file fallback')
     capture('images-rejected-file',280)
