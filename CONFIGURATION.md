@@ -240,7 +240,9 @@ say which profile sent it. An exact mapping names the window to use:
 
 Without a mapping (or when the mapped window is gone), Omarchy's
 `omarchy-hyprland-focus-app` chooses among that website's app windows and takes
-the one focused last. Mappings select one window class per origin. They cannot
+the one focused last. If that command is missing or gives no answer within 5
+seconds, the click goes to the browser as if the site had no app window.
+Mappings select one window class per origin. They cannot
 recover account identity that the sender did not supply. When no window can be
 focused, the popup shows an error rather than selecting a random browser window. Failed actions keep
 the message and its history available for retry. Successful actions mark it handled

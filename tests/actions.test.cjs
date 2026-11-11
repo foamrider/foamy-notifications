@@ -5,12 +5,13 @@ function fixture() {
  const state=vm.createContext({popupFileQueue:[],runNextPopupFileJob(){},busyKeys:{},actionErrors:{},handledKeys:{},liveRefs:{},liveKeys:{},retainedHistory:{},deferredMoves:{},centerEnabled:true,historyLimit:100,centerActionLifetime:86400000,now:1000,pokes:0,helper:'helper',preferences:{browserMappings:[]},console,
   NotificationLogic:{...require('../NotificationLogic.js')},BrowserIdentity:require('../BrowserIdentity.js'),isRestoredRow:()=>false,
   omarchyPath:'/omarchy',processes:[],appWindowBrowsers:{vivaldi:true,chromium:true,'google-chrome':true,chrome:true,brave:true,'microsoft-edge':true,msedge:true},
-  siteFocusProcess:{createObject:(parent,props)=>{const proc={...props,done:null,running:false};state.processes.push(proc);return proc}},
+  siteFocusProcess:{createObject:(parent,props)=>{const proc={...props,done:null,running:false,destroyed:0,destroy(){proc.destroyed++}};state.processes.push(proc);return proc}},
+  Qt:{callLater:f=>f()},
   enqueueHelperJob:(op,data,done)=>jobs.push({command:op,done:done||null,payload:JSON.stringify(data)}),
   notifyCenter:()=>events.push('center'),centerActionsChanged(){state.pokes++},removeKeys:()=>events.push('remove'),scheduleRebuild(){},Util:{execArgv:()=>events.push('launch')}})
  state.service=state
  state.actionNow=()=>state.now
- for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','centerRow','centerButtons','centerActionList','invokeCenterAction','expireCenterActions','activateGroup','activateSender','siteFocusCandidate','regexLiteral','focusSiteWindow','siteRowFocus','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
+ for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','centerRow','centerButtons','centerActionList','invokeCenterAction','expireCenterActions','activateGroup','activateSender','siteFocusCandidate','regexLiteral','focusSiteWindow','finishSiteFocus','siteRowFocus','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
@@ -266,6 +267,8 @@ test('clearing before a cutoff releases every eligible live key, not just the fi
 })
 
 const site='^(chrome|vivaldi|msedge|brave)-outlook\\.office\\.com__'
+// focus-app runs under a deadline that ends its whole group.
+const focusTimeout=['timeout','--kill-after=1s','5s']
 const outlook={app:'Vivaldi',desktopEntry:'vivaldi-stable',body:'outlook.office.com\nTest notification'}
 test('a browser notification naming its site focuses the site app window instead of the browser callback',()=>{
  const {state,jobs,events,row}=fixture()
@@ -273,7 +276,7 @@ test('a browser notification naming its site focuses the site app window instead
  state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
  state.activateGroup(row,'default')
  assert.equal(jobs.length,0);assert.equal(state.processes.length,1)
- assert.deepEqual(Array.from(state.processes[0].command),['/omarchy/bin/omarchy-hyprland-focus-app',site])
+ assert.deepEqual(Array.from(state.processes[0].command),[...focusTimeout,'/omarchy/bin/omarchy-hyprland-focus-app',site])
  assert.equal(state.processes[0].running,true)
  state.processes[0].done(true)
  assert.equal(jobs[0].command,'forget');jobs.shift().done(true)
@@ -285,9 +288,9 @@ test('a browserMappings window is tried before the site pattern; no app window f
  state.preferences.browserMappings=[{origin:'outlook.office.com',windowClass:'vivaldi-outlook.office.com__-Profile_2'}]
  state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
  state.activateGroup(row,'default')
- assert.deepEqual(Array.from(state.processes[0].command),['/omarchy/bin/omarchy-hyprland-focus-app','^vivaldi-outlook\\.office\\.com__-Profile_2$'])
+ assert.deepEqual(Array.from(state.processes[0].command),[...focusTimeout,'/omarchy/bin/omarchy-hyprland-focus-app','^vivaldi-outlook\\.office\\.com__-Profile_2$'])
  state.processes[0].done(false)
- assert.deepEqual(Array.from(state.processes[1].command),['/omarchy/bin/omarchy-hyprland-focus-app',site])
+ assert.deepEqual(Array.from(state.processes[1].command),[...focusTimeout,'/omarchy/bin/omarchy-hyprland-focus-app',site])
  state.processes[1].done(false)
  assert.deepEqual(events,['invoke']);assert.equal(jobs[0].command,'forget')
 })
@@ -296,7 +299,7 @@ test('browser identity comes from BrowserIdentity alone, including the desktop e
  Object.assign(row,{app:'Teams',desktopEntry:'google-chrome',body:'teams.microsoft.com\nAlex: Hi'})
  state.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
  state.activateGroup(row,'default')
- assert.deepEqual(Array.from(state.processes[0].command),['/omarchy/bin/omarchy-hyprland-focus-app','^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__'])
+ assert.deepEqual(Array.from(state.processes[0].command),[...focusTimeout,'/omarchy/bin/omarchy-hyprland-focus-app','^(chrome|vivaldi|msedge|brave)-teams\\.microsoft\\.com__'])
  assert.deepEqual(events,[])
 })
 test('other senders, and no Omarchy, keep the sender callback first',()=>{
@@ -325,6 +328,63 @@ test('a center click whose focus fails at once does not stay busy',()=>{
  state.siteFocusProcess={createObject:()=>null}
  assert.equal(state.invokeCenterDefault('5-7'),'invoked')
  assert.equal(state.busyKeys['5-7'],undefined,'busy was restored after a synchronous miss');assert.deepEqual(events,[])
+})
+
+// Quickshell: a normal end emits exited(), then running -> false; a start that
+// fails (missing binary) emits only running -> false.
+const exited=(proc,code)=>{proc.running=false;state(proc).finishSiteFocus(proc,code===0);state(proc).finishSiteFocus(proc,false)}
+const failedStart=proc=>{proc.running=false;state(proc).finishSiteFocus(proc,false)}
+const owners=new WeakMap()
+function state(proc) { return owners.get(proc) }
+function watch(fixtureState) {
+ const create=fixtureState.siteFocusProcess.createObject
+ fixtureState.siteFocusProcess={createObject:(parent,props)=>{const proc=create(parent,props);owners.set(proc,fixtureState);return proc}}
+}
+test('each site focus attempt completes exactly once and is destroyed, however it ends',()=>{
+ const {state:s,jobs,events,row}=fixture();watch(s)
+ Object.assign(row,outlook)
+ s.preferences.browserMappings=[{origin:'outlook.office.com',windowClass:'vivaldi-outlook.office.com__-Profile_2'}]
+ s.liveRefs[1]={actions:[{identifier:'default',invoke(){events.push('invoke')}}]}
+ s.activateGroup(row,'default')
+ // The mapped window's attempt exits non-zero (no window, or timeout's 124): the site pattern is next, once.
+ exited(s.processes[0],124)
+ assert.equal(s.processes.length,2,'running -> false after exited() started no second attempt')
+ // The site pattern's command can't start: the sender's callback still gets the click.
+ failedStart(s.processes[1])
+ assert.deepEqual(events,['invoke']);assert.equal(jobs.length,1);assert.equal(jobs[0].command,'forget')
+ assert.deepEqual(s.processes.map(p=>p.destroyed),[1,1],'every attempt destroyed once')
+ jobs.shift().done(true)
+ assert.equal(s.busyKeys['1-1'],undefined,'card not left busy')
+ // A successful focus: exited(0), then running -> false: focused once.
+ const second=fixture();watch(second.state)
+ Object.assign(second.row,outlook)
+ second.state.activateGroup(second.row,'default')
+ exited(second.state.processes[0],0)
+ assert.equal(second.jobs.length,1,'handled once');assert.equal(second.state.processes[0].destroyed,1)
+})
+test('a site focus that never starts leaves no card busy and falls back to the browser callback',()=>{
+ for (const entry of ['popup','center']) {
+  const {state:s,jobs,events,row}=fixture();watch(s)
+  Object.assign(row,outlook)
+  s.liveRefs[1]={tracked:true,actions:[]}
+  if (entry==='popup') s.activateGroup(row,'default')
+  else {
+   s.popupModel={count:1,get:()=>({id:1,originalId:1,timestamp:5,...outlook,summary:'x'})}
+   s.liveKeys[1]='5-1';s.NotificationLogic.imageStem=r=>r.timestamp+'-'+r.originalId
+   assert.equal(s.invokeCenterDefault('5-1'),'invoked')
+  }
+  failedStart(s.processes[0])
+  // No callback: the popup asks the helper to focus the app; the center row is released.
+  if (entry==='popup') { assert.equal(jobs[0].command,'focus');jobs.shift().done(false,'','');assert.equal(s.busyKeys['1-1'],undefined) }
+  else assert.equal(s.busyKeys['5-1'],undefined)
+  assert.deepEqual(events,[]);assert.equal(s.processes[0].destroyed,1)
+ }
+})
+test('site focus Processes complete on running -> false and run focus-app under timeout',()=>{
+ const component=source.slice(source.indexOf('    id: siteFocusProcess'),source.indexOf('\n  }',source.indexOf('    id: siteFocusProcess')))
+ assert.match(component,/onExited: function\(code, status\) \{ service\.finishSiteFocus\(siteFocusProc, code === 0 && status === 0\) \}/)
+ assert.match(component,/onRunningChanged: if \(!running\) service\.finishSiteFocus\(siteFocusProc, false\)/)
+ assert.match(component,/Component\.onDestruction: service\.siteFocusProcesses--/)
 })
 
 test('the center cannot invoke a card still on screen once its action lifetime is over',()=>{

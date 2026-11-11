@@ -297,3 +297,24 @@ test('an unavailable helper rejects jobs at once and completes each callback onc
   assert.equal(s.popupFileQueue.length, 0)
   assert.equal(s.lastError, s.FoamyNative.UNAVAILABLE_TEXT)
 })
+
+test('helper restarts back off from 1 s to 60 s and reset after a stable run', () => {
+  const s = fixture()
+  s.helperBackoffMs = 1000; s.helperStartedAt = 0
+  for (const name of ['helperBackoffMaxMs', 'helperStableMs'])
+    s[name] = Number(source.match(new RegExp('readonly property int ' + name + ': ([0-9]+)'))[1])
+  load(s, 'nextHelperRestartDelay')
+  // A helper that dies right after each start: never a 1 Hz loop.
+  const delays = []
+  let now = 1000
+  for (let i = 0; i < 9; i++) { s.helperStartedAt = now; now += 50; delays.push(s.nextHelperRestartDelay(now)); now += delays[delays.length - 1] }
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000])
+  // One that ran for 30 s is restarted after 1 s again.
+  s.helperStartedAt = now; now += 30000
+  assert.equal(s.nextHelperRestartDelay(now), 1000)
+  s.helperStartedAt = now + 1000; assert.equal(s.nextHelperRestartDelay(now + 1010), 2000, 'a quick death after it doubles again')
+  // The exit handler sets the delay before callbacks can queue work.
+  const exit = source.slice(source.indexOf('onExited:', source.indexOf('    id: helperProc')), source.indexOf('\n    }', source.indexOf('    id: helperProc')))
+  assert.match(exit, /^onExited: function\(exitCode, exitStatus\) \{\n.*\n      helperRestart\.interval = service\.nextHelperRestartDelay\(Date\.now\(\)\)\n      var job/)
+  assert.match(source, /onRunningChanged: if \(running\) \{ service\.helperStartedAt = Date\.now\(\); service\.runNextPopupFileJob\(\) \}/)
+})

@@ -135,8 +135,8 @@ def ipc(target,*args):
     if result.returncode: raise RuntimeError(result.stderr)
     return result.stdout.strip()
 def state():return json.loads(ipc('foamy.notifications','state'))
-def wait_for(predicate,message):
-    end=time.monotonic()+5
+def wait_for(predicate,message,timeout=5):
+    end=time.monotonic()+timeout
     while time.monotonic()<end:
         try:
             if predicate():return
@@ -433,6 +433,37 @@ try:
         wait_for(lambda:state()['popups']==0 and not state()['busy'],'native callback handled')
         assert len(dispatches())==before,'native callback unexpectedly focused a window'
         if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'native callback clears center')
+    # A focus-app that hangs (killed by its 5 s deadline) or is missing (an older
+    # Omarchy) still hands the click to the sender, although the site has an app
+    # window: the card is not left busy and no focus Process outlives the click.
+    ctx['clients']=[browser,teams];context_path.write_text(json.dumps(ctx))
+    focus_app=Path(env['OMARCHY_PATH'])/'bin/omarchy-hyprland-focus-app'
+    focus_app_text=focus_app.read_text()
+    hang_pid=base/'focus-app-hang.pid'
+    for broken in ['hang','missing']:
+        if broken=='hang':
+            focus_app.write_text('#!/bin/sh\necho $$ > '+str(hang_pid)+'\nexec sleep 60\n');focus_app.chmod(0o755)
+        else:focus_app.unlink()
+        before=len(dispatches())
+        action=subprocess.Popen(['notify-send','-a','Vivaldi','-u','critical','--wait','--action=default=Open','Teams focus '+broken,'teams.microsoft.com\nAlex: Hi'],env=env,stdout=subprocess.PIPE,text=True)
+        wait_for(lambda:state()['popups']==1 and json.loads(ipc('countdown-test','stackState'))['settled'],'broken focus popup ready '+broken)
+        clicked=time.monotonic()
+        ipc('countdown-test','clickFirst')
+        if broken=='hang':
+            time.sleep(1);assert state()['cardsBusy']==1 and state()['siteFocusProcesses']==1,'focus-app still running'
+        output=action.communicate(timeout=12)[0].strip();assert output=='default',(broken,output)
+        assert broken=='missing' or time.monotonic()-clicked>=4.5,'the hang ended before its deadline'
+        wait_for(lambda:state()['popups']==0 and state()['cardsBusy']==0 and state()['siteFocusProcesses']==0 and not state()['busy'],'broken focus handled '+broken)
+        assert len(dispatches())==before,'broken focus-app focused a window'
+        if broken=='hang':
+            pid=int(hang_pid.read_text())
+            try:os.kill(pid,0);alive=True
+            except ProcessLookupError:alive=False
+            assert not alive,'the hung focus-app outlived its deadline'
+        if CENTER:wait_for(lambda:json.loads(ipc('foamy.notification-center.test','state'))['entries']==0,'broken focus clears center '+broken)
+        ipc('countdown-test','leave')
+    focus_app.write_text(focus_app_text);focus_app.chmod(0o755)
+    print('PASS: a hung or missing focus-app falls back to the sender callback; no busy card, no leaked Process')
     if CENTER:
         # Hiding a popup must not send NotificationClosed before the history click.
         cfg['plugins'][0]['normalTimeoutSec']=1;(config/'shell.json').write_text(json.dumps(cfg))
