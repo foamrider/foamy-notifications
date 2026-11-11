@@ -1,4 +1,9 @@
-"""Check live Omarchy translation bindings, fallback and literal parameters in isolation."""
+"""A notification card under a live Omarchy language switch (no, da, en, ar, no), in isolation.
+
+The catalog checks every plugin shares (fallback, literal values, plurals, RTL) are
+foamy-kit's preview/i18n_runtime.py, which tests/suite.sh runs too. This test keeps
+what only this plugin has: the card's footer, header and number bindings following
+the language, and its RTL header and footer order."""
 import json
 import os
 from pathlib import Path
@@ -26,10 +31,6 @@ with tempfile.TemporaryDirectory(prefix='foamy-language-test-') as directory:
     shutil.copytree(source / 'i18n', plugin / 'i18n')
     shutil.copytree(source / 'components', plugin / 'components')
     for name in ('NotificationLogic.js', 'Markup.js', 'BrowserIdentity.js'): shutil.copy(source / name, plugin)
-    # The added catalog entry exists only in this fixture, never in a release.
-    en = json.loads((plugin / 'i18n/en.json').read_text())
-    en['English only'] = 'English only'
-    (plugin / 'i18n/en.json').write_text(json.dumps(en))
     for name in ('Commons', 'Ui'):
         (app / name).symlink_to(omarchy / 'shell' / name, target_is_directory=True)
     language = base / 'language'
@@ -66,16 +67,23 @@ ShellRoot {
     }
   }
   FileView { id: choice; path: LANGUAGE_FILE }
+  // Each step waits (up to 10 s) for the language switch to arrive instead of
+  // assuming it lands within one fixed tick.
   Timer {
     id: stepper
     property int step: 0
-    interval: 250; running: true; repeat: true
+    property int waited: 0
+    readonly property var languages: ["no", "da", "en", "ar", "no"]
+    interval: 50; running: true; repeat: true
     onTriggered: {
       var expected = step === 0 || step === 4 ? TRANSLATED : KEY
-      if (rendered !== expected) { console.error("Wrong translation", step, rendered, expected); Qt.exit(1); return }
-      if (translator.t("English only") !== "English only" || translator.t("Unknown label") !== "Unknown label") { Qt.exit(2); return }
-      if (translator.t("Name %1 {name}", ["$& %2"]) !== "Name $& %2 {name}") { Qt.exit(3); return }
-      if (translator.t("Name {name}", {name: "$& {name}"}) !== "Name $& {name}") { Qt.exit(4); return }
+      if (translator.language !== languages[step] || rendered !== expected) {
+        if (++waited < 200) return
+        console.error("Wrong translation", step, translator.language, rendered, expected); Qt.exit(1); return
+      }
+      // One more tick once the language is in, so the card's layouts have polished.
+      if (waited >= 0) { waited = -1; return }
+      waited = 0
       var copy = child(card, "notificationCopyCode"), link = child(card, "notificationOpenLink")
       if (copy.text !== translator.t("Copied %1", "482913") || link.text !== translator.t(step % 2 === 1 ? "Join meeting" : "Open link")) { console.error("Stale footer translation", step, copy.text, link.text); Qt.exit(5); return }
       var snooze = child(card, "notificationSnooze"), time = child(card, "notificationTime")
@@ -107,7 +115,7 @@ ShellRoot {
     env.pop('WAYLAND_DISPLAY', None)
     testhost.make(base, app, env)
     result = subprocess.run(['quickshell', '-p', str(app), '--no-color'], env=env,
-                            capture_output=True, text=True, timeout=10)
+                            capture_output=True, text=True, timeout=60)
     output = result.stdout + result.stderr
     hostenv.check(env, output)
     if result.returncode or 'I18N_RUNTIME_PASS' not in output or any(e in output for e in ['ReferenceError', 'TypeError', 'Unable to assign']):
