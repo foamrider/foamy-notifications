@@ -1,0 +1,5 @@
+# Paths a check must not read: <glob> [checks]  # reason
+# Shared byte for byte with foamy-notification-center (tests/shared-files.sha256):
+# reformat them in both repositories in one change, never in one alone.
+components/BrowserIcons.qml  qmlformat  # shared verbatim with foamy-notification-center
+tests/favicon_test.py  ruff-format  # shared verbatim with foamy-notification-center
