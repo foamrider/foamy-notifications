@@ -4,7 +4,6 @@ Tests target Omarchy 4.5: by default the installed /usr/share/omarchy (its shell
 is 4.5.0, whatever /usr/share/omarchy/version says). OMARCHY_TEST_ROOT (an Omarchy
 tree with shell/ and default/) selects another tree; FOAMY_HOST_45 or
 OMARCHY_SHELL_PATH (a shell/ directory, as for foamy-kit's harness) select its parent.
-Omarchy 4.0 is opt-in: host40() is the tree FOAMY_HOST_40 names, else None (skip).
 Only `shell/` and `default/` are exposed through a private OMARCHY_PATH; its `bin/`
 and every `omarchy-*` on PATH are logging stubs. `omarchy-shell` reaches this test's
 own shell only (qs ipc -p APP), never the live session. check() asserts no host
@@ -24,12 +23,6 @@ def root():
         if not explicit and shell:
             explicit = str(Path(shell).parent)
     return Path(explicit or '/usr/share/omarchy')
-
-
-def host40():
-    """The Omarchy 4.0 tree FOAMY_HOST_40 (a shell/ directory) names, or None."""
-    shell = os.environ.get('FOAMY_HOST_40') or ''
-    return Path(shell).parent if shell else None
 
 
 def host_bins():

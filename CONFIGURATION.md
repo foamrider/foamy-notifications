@@ -409,5 +409,4 @@ The tests load the installed Omarchy 4.5 shell (`/usr/share/omarchy`; only its
 QML and data, never its scripts). Set `OMARCHY_TEST_ROOT` to another Omarchy
 tree, or `FOAMY_HOST_45` to its `shell/` directory, to exercise its Commons/Ui
 components with `runtime.py`, `features-runtime.py`, `render.py`, and `ui.py`,
-without installing that release. Omarchy 4.0 checks are opt-in through
-`FOAMY_HOST_40`. This does not test a complete OS upgrade.
+without installing that release. This does not test a complete OS upgrade.

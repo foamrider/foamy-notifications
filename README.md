@@ -315,4 +315,4 @@ Provided **as is**, without warranty or guaranteed support. Use at your own risk
 
 Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (shared foamy-kit i18n). Plugin language overrides are no longer used. Missing translations fall back to English.
 
-Translation checks: `python3 tests/i18n-runtime.py` checks live language switching on the installed Omarchy 4.5 shell. The 4.0 English fallback runs only when `FOAMY_HOST_40` names an Omarchy 4.0 `shell/` directory; otherwise the test prints a SKIP line.
+Translation checks: `python3 tests/i18n-runtime.py` checks live language switching on the installed Omarchy 4.5 shell.

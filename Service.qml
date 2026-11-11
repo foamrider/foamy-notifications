@@ -58,7 +58,8 @@ Item {
     var bar = shell && shell.bar ? shell.bar : null
     if (!bar) return defaultBarSize
     if (bar.barHidden) return 0
-    // 4.5: a notch can thicken the bar on one screen; 4.0 has barSize only.
+    // A notch can thicken the bar on one screen (barSizeFor); the host's own
+    // panels fall back to barSize the same way.
     var size = Number(typeof bar.barSizeFor === "function" ? bar.barSizeFor(service.focusedMonitor) : bar.barSize)
     return isFinite(size) && size > 0 ? size : defaultBarSize
   }
@@ -1717,7 +1718,7 @@ Item {
     return true
   }
 
-  // Stock-compatible target (4.0 and 4.5-rc2), so Omarchy's bindings and
+  // Stock-compatible target, so Omarchy's bindings and
   // scripts work: SUPER+comma runs `act`, SUPER+CTRL+comma runs `keyboard`.
   FoamyIpc {
     id: ipcHandler

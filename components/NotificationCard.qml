@@ -43,9 +43,9 @@ Rectangle {
   // Foamy body font; glyphs (Nerd Font code points) use the Omarchy mono font.
   property string fontFamily: FoamyStyle.fontFamily
   readonly property string glyphFamily: FoamyStyle.monoFamily
-  // The theme's [notifications] colours (4.0 and 4.5), foamy 1px border.
-  readonly property color surface: Commons.Color.notifications ? Commons.Color.notifications.background : Commons.Color.popups.background
-  readonly property color ink: Commons.Color.notifications ? Commons.Color.notifications.text : Commons.Color.popups.text
+  // The theme's [notifications] colours, foamy 1px border.
+  readonly property color surface: Commons.Color.notifications.background
+  readonly property color ink: Commons.Color.notifications.text
   // Keyboard mode (`omarchy-shell notifications keyboard`): this card has the cursor.
   property bool selected: false
   // Every button in draw/number order (NotificationLogic.deeds).
