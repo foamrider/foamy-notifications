@@ -140,7 +140,7 @@ test('history callback survives the popup and is released after successful handl
  assert.equal(state.liveRefs[1],undefined)
 })
 test('retention is bounded and cannot release a reused notification ID',()=>{
- const {state,row,ref,events}=retainedFixture();state.historyLimit=1
+ const {state,row,ref}=retainedFixture();state.historyLimit=1
  state.retainHistoryAction(row,ref)
  const next={...row,timestamp:11,originalId:2},other={...ref}
  state.liveRefs[2]=other;state.liveKeys[2]='11-2';state.retainHistoryAction(next,other)
@@ -320,14 +320,17 @@ test('the center click on a live browser notification focuses the site window, e
  state.processes[0].done(false)
  assert.deepEqual(events,['invoke']);assert.equal(jobs[0].command,'forget')
 })
-test('a center click whose focus fails at once does not stay busy',()=>{
- const {state,events}=fixture()
+test('a center click whose focus fails at once asks for app focus and does not stay busy',()=>{
+ const {state,jobs,events}=fixture()
  state.popupModel={count:1,get:()=>({id:7,originalId:7,timestamp:5,...outlook,summary:'x'})}
  state.liveKeys[7]='5-7';state.liveRefs[7]={tracked:true,actions:[]}
  state.NotificationLogic.imageStem=row=>row.timestamp+'-'+row.originalId
  state.siteFocusProcess={createObject:()=>null}
  assert.equal(state.invokeCenterDefault('5-7'),'invoked')
- assert.equal(state.busyKeys['5-7'],undefined,'busy was restored after a synchronous miss');assert.deepEqual(events,[])
+ // No callback: like a popup click, the helper is asked to focus the app.
+ assert.equal(jobs.length,1);assert.equal(jobs[0].command,'focus');assert.equal(state.busyKeys['5-7'],true)
+ jobs.shift().done(false,'','browser')
+ assert.equal(state.busyKeys['5-7'],undefined,'busy was not cleared after the failed focus');assert.ok(state.actionErrors['5-7']);assert.deepEqual(events,[])
 })
 
 // Quickshell: a normal end emits exited(), then running -> false; a start that
@@ -374,16 +377,16 @@ test('a site focus that never starts leaves no card busy and falls back to the b
    assert.equal(s.invokeCenterDefault('5-1'),'invoked')
   }
   failedStart(s.processes[0])
-  // No callback: the popup asks the helper to focus the app; the center row is released.
-  if (entry==='popup') { assert.equal(jobs[0].command,'focus');jobs.shift().done(false,'','');assert.equal(s.busyKeys['1-1'],undefined) }
-  else assert.equal(s.busyKeys['5-1'],undefined)
+  // No callback: both entry points ask the helper to focus the app, and a failed focus releases the row.
+  const key=entry==='popup'?'1-1':'5-1'
+  assert.equal(jobs[0].command,'focus');jobs.shift().done(false,'','');assert.equal(s.busyKeys[key],undefined)
   assert.deepEqual(events,[]);assert.equal(s.processes[0].destroyed,1)
  }
 })
 test('site focus Processes complete on running -> false and run focus-app under timeout',()=>{
  const component=source.slice(source.indexOf('    id: siteFocusProcess'),source.indexOf('\n  }',source.indexOf('    id: siteFocusProcess')))
- assert.match(component,/onExited: function\(code, status\) \{ service\.finishSiteFocus\(siteFocusProc, code === 0 && status === 0\) \}/)
- assert.match(component,/onRunningChanged: if \(!running\) service\.finishSiteFocus\(siteFocusProc, false\)/)
+ assert.match(component,/onExited: function \(code, status\) \{\s*service\.finishSiteFocus\(siteFocusProc, code === 0 && status === 0\)\s*\}/)
+ assert.match(component,/onRunningChanged: if \(!running\)\s*service\.finishSiteFocus\(siteFocusProc, false\)/)
  assert.match(component,/Component\.onDestruction: service\.siteFocusProcesses--/)
 })
 

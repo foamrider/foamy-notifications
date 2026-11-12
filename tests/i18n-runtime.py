@@ -1,44 +1,44 @@
-"""Check live Omarchy translation bindings, fallback and literal parameters in isolation."""
+"""A notification card under a live Omarchy language switch (no, da, en, ar, no), in isolation.
+
+The catalog checks every plugin shares (fallback, literal values, plurals, RTL) are
+foamy-kit's preview/i18n_runtime.py, which tests/suite.sh runs too. This test keeps
+what only this plugin has: the card's footer, header and number bindings following
+the language, and its RTL header and footer order."""
+
 import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
-import sys
 import tempfile
-import hostenv
+import testhost
+from testhost import hostenv
 
 source = Path(__file__).resolve().parents[1]
 # The host tree (hostenv.root(): the installed 4.5 by default; OMARCHY_TEST_ROOT,
 # FOAMY_HOST_45 or else OMARCHY_PATH picks another); only its QML and data are loaded.
-# The 4.0 English fallback runs only on a FOAMY_HOST_40 tree.
-if not os.environ.get('OMARCHY_TEST_ROOT') and not os.environ.get('FOAMY_HOST_45') and os.environ.get('OMARCHY_PATH'):
-    os.environ['OMARCHY_TEST_ROOT'] = os.environ['OMARCHY_PATH']
+if not os.environ.get("OMARCHY_TEST_ROOT") and not os.environ.get("FOAMY_HOST_45") and os.environ.get("OMARCHY_PATH"):
+    os.environ["OMARCHY_TEST_ROOT"] = os.environ["OMARCHY_PATH"]
 omarchy = hostenv.root()
-native = (omarchy / 'shell/Commons/Translations.qml').exists()
-catalog = json.loads((source / 'i18n/no.json').read_text())
-key = next(k for k, v in catalog.items() if k != v and '%' not in k and '{' not in k)
-with tempfile.TemporaryDirectory(prefix='foamy-language-test-') as directory:
+catalog = json.loads((source / "i18n/no.json").read_text())
+key = next(k for k, v in catalog.items() if k != v and "%" not in k and "{" not in k)
+with tempfile.TemporaryDirectory(prefix="foamy-language-test-") as directory:
     base = Path(directory)
-    app = base / 'app'
+    app = base / "app"
     app.mkdir()
-    plugin = app / 'plugin'
+    plugin = app / "plugin"
     plugin.mkdir()
-    shutil.copytree(source / 'kit', plugin / 'kit')
-    shutil.copytree(source / 'i18n', plugin / 'i18n')
-    shutil.copytree(source / 'components', plugin / 'components')
-    for name in ('NotificationLogic.js', 'Markup.js', 'BrowserIdentity.js'): shutil.copy(source / name, plugin)
-    # The added catalog entry exists only in this fixture, never in a release.
-    en = json.loads((plugin / 'i18n/en.json').read_text())
-    en['English only'] = 'English only'
-    (plugin / 'i18n/en.json').write_text(json.dumps(en))
-    for name in ('Commons', 'Ui'):
-        (app / name).symlink_to(omarchy / 'shell' / name, target_is_directory=True)
-    language = base / 'language'
-    language.write_text('no')
-    runtime = base / 'runtime'
+    shutil.copytree(source / "kit", plugin / "kit")
+    shutil.copytree(source / "i18n", plugin / "i18n")
+    shutil.copytree(source / "components", plugin / "components")
+    for name in ("NotificationLogic.js", "Markup.js", "BrowserIdentity.js"):
+        shutil.copy(source / name, plugin)
+    for name in ("Commons", "Ui"):
+        (app / name).symlink_to(omarchy / "shell" / name, target_is_directory=True)
+    language = base / "language"
+    language.write_text("no")
+    runtime = base / "runtime"
     runtime.mkdir(mode=0o700)
-    qml = '''import QtQuick
+    qml = """import QtQuick
 import Quickshell
 import Quickshell.Io
 import "plugin/kit" as Plugin
@@ -68,58 +68,68 @@ ShellRoot {
     }
   }
   FileView { id: choice; path: LANGUAGE_FILE }
+  // Each step waits (up to 10 s) for the language switch to arrive instead of
+  // assuming it lands within one fixed tick.
   Timer {
     id: stepper
     property int step: 0
-    interval: 250; running: true; repeat: true
+    property int waited: 0
+    readonly property var languages: ["no", "da", "en", "ar", "no"]
+    interval: 50; running: true; repeat: true
     onTriggered: {
-      var expected = NATIVE && (step === 0 || step === 4) ? TRANSLATED : KEY
-      if (rendered !== expected) { console.error("Wrong translation", step, rendered, expected); Qt.exit(1); return }
-      if (translator.t("English only") !== "English only" || translator.t("Unknown label") !== "Unknown label") { Qt.exit(2); return }
-      if (translator.t("Name %1 {name}", ["$& %2"]) !== "Name $& %2 {name}") { Qt.exit(3); return }
-      if (translator.t("Name {name}", {name: "$& {name}"}) !== "Name $& {name}") { Qt.exit(4); return }
+      var expected = step === 0 || step === 4 ? TRANSLATED : KEY
+      if (translator.language !== languages[step] || rendered !== expected) {
+        if (++waited < 200) return
+        console.error("Wrong translation", step, translator.language, rendered, expected); Qt.exit(1); return
+      }
+      // One more tick once the language is in, so the card's layouts have polished.
+      if (waited >= 0) { waited = -1; return }
+      waited = 0
       var copy = child(card, "notificationCopyCode"), link = child(card, "notificationOpenLink")
       if (copy.text !== translator.t("Copied %1", "482913") || link.text !== translator.t(step % 2 === 1 ? "Join meeting" : "Open link")) { console.error("Stale footer translation", step, copy.text, link.text); Qt.exit(5); return }
       var snooze = child(card, "notificationSnooze"), time = child(card, "notificationTime")
       if (snooze.Accessible.name !== translator.t("Snooze this sender")) { Qt.exit(6); return }
-      var rtl = NATIVE && step === 3
+      var rtl = step === 3
       if (translator.rightToLeft !== rtl || (snooze.mapToItem(card,0,0).x > time.mapToItem(card,0,0).x) !== rtl) { console.error("Wrong header direction", step); Qt.exit(7); return }
       var buttons = Array.from(child(card,"notificationFooter").children).filter(function(item) { return item.entry !== undefined })
       if ((buttons[0].x > buttons[1].x) !== rtl) { console.error("Wrong footer direction", step); Qt.exit(8); return }
       for (var button of buttons) {
         if (button.mapToItem(card,0,0).x < 0 || button.mapToItem(card,button.width,0).x > card.width) { Qt.exit(9); return }
       }
-      var decimal = NATIVE && (step === 0 || step === 1 || step === 4) ? "13,1" : "13.1"
+      var decimal = step === 0 || step === 1 || step === 4 ? "13,1" : "13.1"
       if (translator.number(13.14, 1) !== decimal) { console.error("Wrong number format", step); Qt.exit(10); return }
       if (step === 0) choice.setText("da")
       else if (step === 1) choice.setText("en")
       else if (step === 2) choice.setText("ar")
       else if (step === 3) choice.setText("no")
-      else { console.log("I18N_RUNTIME_PASS", NATIVE ? "4.5 live no/da/en/ar/no with card bindings and RTL" : "4.0 English fallback"); Qt.quit() }
+      else { console.log("I18N_RUNTIME_PASS"); Qt.quit() }
       step++
     }
   }
 }
-'''
-    qml = qml.replace('LANGUAGE_FILE', json.dumps(str(language))).replace('TRANSLATED', json.dumps(catalog[key])).replace('KEY', json.dumps(key)).replace('NATIVE', str(native).lower())
-    (app / 'shell.qml').write_text(qml)
-    env = dict(os.environ, OMARCHY_LANGUAGE_FILE=str(language),
-               XDG_RUNTIME_DIR=str(runtime), QT_QPA_PLATFORM='offscreen',
-               QT_QPA_PLATFORMTHEME='generic', QT_QUICK_BACKEND='software')
-    env.pop('WAYLAND_DISPLAY', None)
-    env.update(hostenv.make(base, app))
-    result = subprocess.run(['quickshell', '-p', str(app), '--no-color'], env=env,
-                            capture_output=True, text=True, timeout=10)
-    output = result.stdout + result.stderr
+"""
+    qml = (
+        qml.replace("LANGUAGE_FILE", json.dumps(str(language)))
+        .replace("TRANSLATED", json.dumps(catalog[key]))
+        .replace("KEY", json.dumps(key))
+    )
+    (app / "shell.qml").write_text(qml)
+    env = dict(
+        os.environ,
+        OMARCHY_LANGUAGE_FILE=str(language),
+        XDG_RUNTIME_DIR=str(runtime),
+        QT_QPA_PLATFORM="offscreen",
+        QT_QPA_PLATFORMTHEME="generic",
+        QT_QUICK_BACKEND="software",
+    )
+    env.pop("WAYLAND_DISPLAY", None)
+    testhost.make(base, app, env)
+    status, output = testhost.run(["quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 60)
     hostenv.check(env, output)
-    if result.returncode or 'I18N_RUNTIME_PASS' not in output or any(e in output for e in ['ReferenceError', 'TypeError', 'Unable to assign']):
+    if (
+        status
+        or "I18N_RUNTIME_PASS" not in output
+        or any(e in output for e in ["ReferenceError", "TypeError", "Unable to assign"])
+    ):
         raise AssertionError(output)
-    print(source.name, '4.5 live no/da/en/ar/no with card bindings and RTL' if native else '4.0 English fallback', 'passed')
-
-if native and not os.environ.get('FOAMY_I18N_40'):
-    host40 = hostenv.host40()
-    if host40 is None:
-        print('SKIP: 4.0 English fallback (set FOAMY_HOST_40 to an Omarchy 4.0 shell/ directory)')
-    else:
-        subprocess.run([sys.executable, __file__], env=dict(os.environ, OMARCHY_TEST_ROOT=str(host40), FOAMY_I18N_40='1'),
-                       check=True, timeout=60)
+    print(source.name, "4.5 live no/da/en/ar/no with card bindings and RTL passed")

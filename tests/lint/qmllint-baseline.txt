@@ -1,0 +1,280 @@
+# qmllint findings accepted when the check was adopted. tests/validate.sh fails on any
+# finding not listed here. Regenerate with `tests/validate.sh --update-baseline qmllint`
+# only to drop fixed entries or after reviewing every added one; never to pass a check.
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var c = 0; c < cancelled.length; c++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var c = 0; c < changed.length; c++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var g = 0; g < groups.length; g++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var hoverKey in hoveredKeys)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < displayGroups.length; i++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < displayGroups.length; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < entries.length; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < keys.length; i += 100)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < nodes.length && out.length < 64; i++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < pending.length; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupFileQueue.length; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < popupModel.count; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < queue.length; i++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < queue.length; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < ref.actions.length; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < rows.length; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < targetMonitors.length; i++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < updateSignals.length; i++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = popupFileQueue.length - 1; i >= 0; i--) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = popupModel.count - 1; i >= 0; i--)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = popupModel.count - 1; i >= 0; i--)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = popupModel.count - 1; i >= 0; i--) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = popupModel.count - 1; i >= 0; i--) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = popupModel.count - 1; i >= 0; i--) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var index = displayGroups.findIndex(function (group) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var j = 0; j < group.keys.length; j++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var j = 0; j < live.length; j++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var k = 0; k < keys.length; k++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var k = 0; k < popupModel.count; k++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var k = 0; k < shown.keys.length; k++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var key in heldKeys)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var key in moves)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var key in next)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var m = 0; m < mappings.length; m++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var q = 0; q < plan.waiting[w].keys.length; q++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var r = 0; r < roles.length; r++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var r = 0; r < roles.length; r++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var releasedKey in releasedKeys)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var signalIndex = 0; signalIndex < updateSignals.length; signalIndex++)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var v = 0; v < plan.visible.length; v++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var w = 0; w < plan.waiting.length; w++) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var actions = NotificationLogic.parseExecActions(row.execActions)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var argv = actions && actions[Number(deed.value)] ? actions[Number(deed.value)].argv : null
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var argv = ref && ref.tracked ? NotificationLogic.parseExecArgv(row.execArgv) : null
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var batch = []
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var busy = Object.assign({}, busyKeys)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var busy = Object.assign({}, busyKeys)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var busy = Object.assign({}, busyKeys)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var busy = Object.assign({}, busyKeys)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var busy = Object.assign({}, busyKeys)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var buttons = row ? centerButtons(row) : []
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var changedRow = rowsByKey[changed[c]]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var data = JSON.parse(contextOutput.text)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var data = JSON.parse(job.payload)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var duplicate = false
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var duration = durationFor(entry.urgency, entry.expireTimeout)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var duration = durationFor(shown.urgency, shown.expireTimeout)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var entry = entries[i]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var group = displayGroups[i]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var group = groups[g]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var hovered = hoverKeys.some(function (k) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var images = Object.assign({}, normalizedImages)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var job = popupFileQueue[i]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var job = popupFileQueue[i]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var key = NotificationLogic.imageStem(entry)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var key = NotificationLogic.imageStem(entry)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var key = NotificationLogic.imageStem(row)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var key = group.keys[j]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var key = keys[k]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var key = shown.keys[k]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var layout = JSON.parse(text()).bar || {}
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var mapping = mappings[m] || {}
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var moves = deferredMoves, archive = [], remove = []
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var moves = deferredMoves, archive = [], remove = []
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var moves = deferredMoves, archive = [], remove = []
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var onScreen = group.keys.some(function (key) {
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var queued = entry.queued === true
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var ref = liveKeys[row.originalId] === key ? liveRefs[row.originalId] : null
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var ref = liveRefs[row.originalId]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var restored = live[j]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var restoredKey = NotificationLogic.imageStem(restored)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var roles = NotificationLogic.popupRoles()
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = Object.assign({}, popupModel.get(i))
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = Object.assign({}, popupModel.get(i))
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = centerRow(key)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(i)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(i)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(i)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(i)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(i)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(i)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(i)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(i)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = popupModel.get(k)
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var shown = plan.visible[v]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var signal = notification[updateSignals[i]]
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var waitStart = Number(entry.waitingSince) || Number(entry.timestamp) || now
+Service.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var waitingKey = plan.waiting[w].keys[q]
+Service.qml: missing-property: Member "done" not found on type call to method createObject, returning QObject | proc.done = function (focused) {
+Service.qml: missing-property: Member "running" not found on type call to method createObject, returning QObject | proc.running = true
+Service.qml: missing-property: Member "sizeHorizontal" not found on type "QObject" | readonly property int defaultBarSize: barVertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
+Service.qml: missing-property: Member "sizeVertical" not found on type "QObject" | readonly property int defaultBarSize: barVertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
+Service.qml: uncreatable-type: Type PanelWindow is not creatable. | PanelWindow {
+Service.qml: uncreatable-type: Type PanelWindow is not creatable. | PanelWindow {
+Service.qml: unqualified: Unqualified access | Component.onCompleted: service.sharingPromptHeight = implicitHeight
+Service.qml: unqualified: Unqualified access | Component.onCompleted: service.siteFocusProcesses++
+Service.qml: unqualified: Unqualified access | Component.onDestruction: delete service.hoveredKeys[registeredHoverKey]
+Service.qml: unqualified: Unqualified access | Component.onDestruction: service.holdArrivals(popupColumn, false)
+Service.qml: unqualified: Unqualified access | Component.onDestruction: service.siteFocusProcesses--
+Service.qml: unqualified: Unqualified access | ListView.delayRemove: exitFade.running || popupColumn.holdsRemoval(card)
+Service.qml: unqualified: Unqualified access | anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen 
+Service.qml: unqualified: Unqualified access | anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen 
+Service.qml: unqualified: Unqualified access | anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen 
+Service.qml: unqualified: Unqualified access | appIcon: service.popupImageFor(modelData, "appIcon")
+Service.qml: unqualified: Unqualified access | busy: !!service.busyKeys[modelData.key]
+Service.qml: unqualified: Unqualified access | compact: service.preferences.compact
+Service.qml: unqualified: Unqualified access | copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
+Service.qml: unqualified: Unqualified access | copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
+Service.qml: unqualified: Unqualified access | deeds: service.deedsFor(modelData)
+Service.qml: unqualified: Unqualified access | delete service.hoveredKeys[next]
+Service.qml: unqualified: Unqualified access | delete service.hoveredKeys[registeredHoverKey]
+Service.qml: unqualified: Unqualified access | error: service.actionErrors[modelData.key] || ""
+Service.qml: unqualified: Unqualified access | event.accepted = service.keyboardPressed(event.key, event.text)
+Service.qml: unqualified: Unqualified access | groups: service.displayGroups.filter(function (group) {
+Service.qml: unqualified: Unqualified access | image: service.popupImageFor(modelData, "image")
+Service.qml: unqualified: Unqualified access | imageSize: service.preferences.imageSize
+Service.qml: unqualified: Unqualified access | offers: service.offersFor(modelData)
+Service.qml: unqualified: Unqualified access | onCardClicked: service.sharingOfferHandled = true
+Service.qml: unqualified: Unqualified access | onCloseRequested: service.sharingOfferHandled = true
+Service.qml: unqualified: Unqualified access | onHideRequested: service.sharingOfferHandled = true
+Service.qml: unqualified: Unqualified access | onImplicitHeightChanged: service.sharingPromptHeight = implicitHeight
+Service.qml: unqualified: Unqualified access | pending: pendingNotifications.length,
+Service.qml: unqualified: Unqualified access | readonly property bool selected: service.targetMonitors.indexOf(screen.name) >= 0
+Service.qml: unqualified: Unqualified access | readonly property bool takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name
+Service.qml: unqualified: Unqualified access | readonly property bool takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name
+Service.qml: unqualified: Unqualified access | readonly property var placement: NotificationLogic.popupPlacement(service.barPosition, service.barClearance, Style.gapsOut)
+Service.qml: unqualified: Unqualified access | readonly property var placement: NotificationLogic.popupPlacement(service.barPosition, service.barClearance, Style.gapsOut)
+Service.qml: unqualified: Unqualified access | remainingMs: showTimeoutIndicator ? service.remainingFor(modelData) : 0
+Service.qml: unqualified: Unqualified access | return service.showsGroupOn(popupWindow.screen.name, group)
+Service.qml: unqualified: Unqualified access | selected: service.keyboardMode && service.keyboardKey === modelData.key
+Service.qml: unqualified: Unqualified access | selected: service.keyboardMode && service.keyboardKey === modelData.key
+Service.qml: unqualified: Unqualified access | service.activateGroup(modelData, "default")
+Service.qml: unqualified: Unqualified access | service.activateGroup(modelData, identifier)
+Service.qml: unqualified: Unqualified access | service.dismissGroup(modelData, false)
+Service.qml: unqualified: Unqualified access | service.dismissGroup(modelData, true)
+Service.qml: unqualified: Unqualified access | service.featureAction(modelData, kind, value)
+Service.qml: unqualified: Unqualified access | service.finishSiteFocus(siteFocusProc, code === 0 && status === 0)
+Service.qml: unqualified: Unqualified access | service.finishSiteFocus(siteFocusProc, false)
+Service.qml: unqualified: Unqualified access | service.holdArrivals(popupColumn, holdPositions)
+Service.qml: unqualified: Unqualified access | service.hoveredKeys[next] = hovered
+Service.qml: unqualified: Unqualified access | service.limitToFit(popupColumn.count - 1)
+Service.qml: unqualified: Unqualified access | service.resetFit()
+Service.qml: unqualified: Unqualified access | service.scheduleRebuild()
+Service.qml: unqualified: Unqualified access | service.sharingOfferHandled = true
+Service.qml: unqualified: Unqualified access | service.snoozeSource("*", 30)
+Service.qml: unqualified: Unqualified access | service.stopKeyboard()
+Service.qml: unqualified: Unqualified access | service.stopKeyboard()
+Service.qml: unqualified: Unqualified access | service.stopKeyboard()
+Service.qml: unqualified: Unqualified access | service.stopKeyboard()
+Service.qml: unqualified: Unqualified access | service.stopKeyboard()
+Service.qml: unqualified: Unqualified access | showImages: service.preferences.showImages
+Service.qml: unqualified: Unqualified access | showTimeoutIndicator: service.preferences.showTimeoutIndicator
+Service.qml: unqualified: Unqualified access | timeoutMs: service.durationFor(modelData.urgency, modelData.expireTimeout)
+Service.qml: unqualified: Unqualified access | top: service.barClearance + Style.space(8)
+Service.qml: unqualified: Unqualified access | var next = popupWindow.screen.name + "|" + modelData.key
+Service.qml: unqualified: Unqualified access | waiting: service.waitingGroups.length
+Service.qml: unqualified: Unqualified access | width: Math.max(1, Math.min(Style.space(service.preferences.width), popupWindow.width - anchors.rightMargin - Style.space(8)))
+Service.qml: unqualified: Unqualified access | width: popupColumn.width
+Service.qml: unqualified: unknown grouped property scope margins. | margins {
+Service.qml: unresolved-type: Type margins is used but it is not resolved | margins {
+components/BrowserIcons.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < Math.min(rows.length, 128) && queue.length < 128; i++) {
+components/BrowserIcons.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var cached = icons[key]
+components/BrowserIcons.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var parsed = JSON.parse(output)
+components/BrowserIcons.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = rows[i], key = BrowserIdentity.key(row)
+components/BrowserIcons.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var row = rows[i], key = BrowserIdentity.key(row)
+components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < deeds.length; i++) {
+components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i <= 24; i++) {
+components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var j = 0; j <= 24; j++) {
+components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var angle = Math.PI / 2 + i * Math.PI / 48
+components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var deed = deeds[i]
+components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var inner = r + thickness * Math.cos(angle)
+components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var topAngle = -Math.PI + j * Math.PI / 48
+components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var topInner = r + thickness * Math.cos(topAngle)
+components/NotificationCard.qml: missing-property: Member "background" not found on type "QObject" | readonly property color surface: Commons.Color.notifications.background
+components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+components/NotificationCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+components/NotificationCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+components/NotificationCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+components/NotificationCard.qml: missing-property: Member "text" not found on type "QObject" | readonly property color ink: Commons.Color.notifications.text
+components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
+components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
+components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
+components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
+components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
+components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
+components/NotificationCard.qml: unqualified: Unqualified access | Layout.columnSpan: index === root.footerActions.length - 1 && index % 2 === 0 ? footer.columns : 1
+components/NotificationCard.qml: unqualified: Unqualified access | Layout.columnSpan: index === root.footerActions.length - 1 && index % 2 === 0 ? footer.columns : 1
+components/NotificationCard.qml: unqualified: Unqualified access | border.color: Util.alpha(root.ink, 0.2)
+components/NotificationCard.qml: unqualified: Unqualified access | border.color: featureButton.activeFocus ? Commons.Color.accent : Util.alpha(root.ink, 0.2)
+components/NotificationCard.qml: unqualified: Unqualified access | bottomLeftRadius: footerButton.roundLeft ? Math.max(0, root.radius - 1) : 0
+components/NotificationCard.qml: unqualified: Unqualified access | bottomRightRadius: footerButton.roundRight ? Math.max(0, root.radius - 1) : 0
+components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, actionButton.hovered ? 0.1 : 0.04))
+components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, actionButton.hovered ? 0.1 : 0.04))
+components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, featureButton.hovered || featureButton.activeFocus ? 0.12 : 0.04))
+components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, featureButton.hovered || featureButton.activeFocus ? 0.12 : 0.04))
+components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, footerButton.hovered ? 0.10 : 0.055))
+components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, footerButton.hovered ? 0.10 : 0.055))
+components/NotificationCard.qml: unqualified: Unqualified access | color: Util.alpha(root.ink, 0.15)
+components/NotificationCard.qml: unqualified: Unqualified access | color: Util.alpha(root.ink, 0.15)
+components/NotificationCard.qml: unqualified: Unqualified access | color: footerButton.copied ? root.copiedColor : root.ink
+components/NotificationCard.qml: unqualified: Unqualified access | color: footerButton.copied ? root.copiedColor : root.ink
+components/NotificationCard.qml: unqualified: Unqualified access | color: footerButton.copied ? root.copiedColor : root.ink
+components/NotificationCard.qml: unqualified: Unqualified access | color: footerButton.copied ? root.copiedColor : root.ink
+components/NotificationCard.qml: unqualified: Unqualified access | color: root.ink
+components/NotificationCard.qml: unqualified: Unqualified access | color: root.ink
+components/NotificationCard.qml: unqualified: Unqualified access | enabled: !root.busy
+components/NotificationCard.qml: unqualified: Unqualified access | enabled: !root.busy
+components/NotificationCard.qml: unqualified: Unqualified access | enabled: !root.busy
+components/NotificationCard.qml: unqualified: Unqualified access | font.family: root.fontFamily
+components/NotificationCard.qml: unqualified: Unqualified access | font.family: root.fontFamily
+components/NotificationCard.qml: unqualified: Unqualified access | font.family: root.fontFamily
+components/NotificationCard.qml: unqualified: Unqualified access | font.family: root.glyphFamily
+components/NotificationCard.qml: unqualified: Unqualified access | fontFamily: root.fontFamily
+components/NotificationCard.qml: unqualified: Unqualified access | implicitWidth: Math.min(implicitContentWidth + leftPadding + rightPadding, root.width)
+components/NotificationCard.qml: unqualified: Unqualified access | maskSource: imageMask
+components/NotificationCard.qml: unqualified: Unqualified access | readonly property bool copied: entry.kind === "code" && root.copiedCode === entry.value
+components/NotificationCard.qml: unqualified: Unqualified access | readonly property bool firstInLastRow: index === root.footerActions.length - (root.footerActions.length % 2 === 0 ? 2 : 1)
+components/NotificationCard.qml: unqualified: Unqualified access | readonly property bool firstInLastRow: index === root.footerActions.length - (root.footerActions.length % 2 === 0 ? 2 : 1)
+components/NotificationCard.qml: unqualified: Unqualified access | readonly property bool lastInLastRow: index === root.footerActions.length - 1
+components/NotificationCard.qml: unqualified: Unqualified access | root.actionRequested(actionData.identifier)
+components/NotificationCard.qml: unqualified: Unqualified access | root.actionRequested(entry.value)
+components/NotificationCard.qml: unqualified: Unqualified access | root.actionsExpanded = false
+components/NotificationCard.qml: unqualified: Unqualified access | root.actionsExpanded = false
+components/NotificationCard.qml: unqualified: Unqualified access | root.featureRequested("snooze", String(modelData))
+components/NotificationCard.qml: unqualified: Unqualified access | root.featureRequested(entry.kind, entry.value)
+components/NotificationCard.qml: unqualified: Unqualified access | root.snoozeExpanded = false
+components/NotificationCard.qml: unqualified: Unqualified access | text: root.selected && entry.number <= 9 ? FoamyI18n.number(entry.number) + " " + label : label
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < count; i++) {
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = entries.count - 1; i >= 0; i--) {
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var j = target; j < entries.count; j++) {
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var target = 0; target < groups.length; target++) {
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var group = groups[target], found = -1
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var group = groups[target], found = -1
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var item = itemAtIndex(i)
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var next = JSON.stringify(group)
+components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var serialized = entries.get(i).entryJson
+components/NotificationStack.qml: missing-property: Member "background" not found on type "QObject" | readonly property color surface: Commons.Color.notifications.background
+components/NotificationStack.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+components/NotificationStack.qml: missing-property: Member "text" not found on type "QObject" | readonly property color ink: Commons.Color.notifications.text
+components/NotificationStack.qml: unqualified: Unqualified access | height: root.waiting > 0 && root.count > 0 ? waitingNote.height + root.spacing : 0
+components/NotificationStack.qml: unqualified: Unqualified access | height: root.waiting > 0 && root.count > 0 ? waitingNote.height + root.spacing : 0
+components/NotificationStack.qml: unqualified: Unqualified access | height: root.waiting > 0 && root.count > 0 ? waitingNote.height + root.spacing : 0
+components/NotificationStack.qml: unqualified: Unqualified access | text: FoamyI18n.t("+%1 waiting", root.waiting)
+components/NotificationStack.qml: unqualified: Unqualified access | width: root.width
+preview/Before.qml: missing-property: Member "barSize" not found on type "QObject" | y: preview.bar.barSize + Style.gapsOut + Style.space(8)
+preview/Before.qml: unqualified: Unqualified access | selected: preview.previewState === "keyboard" && index === 0
+preview/Before.qml: unqualified: Unqualified access | timestamp: preview.now
+preview/Before.qml: unqualified: Unqualified access | width: stack.width
+preview/Preview.qml: missing-property: Member "barSize" not found on type "QObject" | y: preview.bar.barSize + Style.gapsOut + Style.space(8)
+preview/Preview.qml: unqualified: Unqualified access | selected: preview.previewState === "keyboard" && index === 0
+preview/Preview.qml: unqualified: Unqualified access | timestamp: preview.now
+preview/Preview.qml: unqualified: Unqualified access | width: stack.width
+tests/tst_card.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var button of [copy, link]) {
+tests/tst_card.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var button of buttons) {
+tests/tst_card.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var label = findChild(button, "notificationFooterLabel")

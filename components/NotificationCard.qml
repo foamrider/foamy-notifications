@@ -33,7 +33,11 @@ Rectangle {
   property double timestamp: 0
   property int count: 1
   property var actions: []
-  property var offers: ({codes:"", link:"", meeting:false})
+  property var offers: ({
+      codes: "",
+      link: "",
+      meeting: false
+    })
   property bool snoozeAvailable: false
   property string copiedCode: ""
   property bool snoozeExpanded: false
@@ -43,9 +47,9 @@ Rectangle {
   // Foamy body font; glyphs (Nerd Font code points) use the Omarchy mono font.
   property string fontFamily: FoamyStyle.fontFamily
   readonly property string glyphFamily: FoamyStyle.monoFamily
-  // The theme's [notifications] colours (4.0 and 4.5), foamy 1px border.
-  readonly property color surface: Commons.Color.notifications ? Commons.Color.notifications.background : Commons.Color.popups.background
-  readonly property color ink: Commons.Color.notifications ? Commons.Color.notifications.text : Commons.Color.popups.text
+  // The theme's [notifications] colours, foamy 1px border.
+  readonly property color surface: Commons.Color.notifications.background
+  readonly property color ink: Commons.Color.notifications.text
   // Keyboard mode (`omarchy-shell notifications keyboard`): this card has the cursor.
   property bool selected: false
   // Every button in draw/number order (NotificationLogic.deeds).
@@ -58,39 +62,60 @@ Rectangle {
     var out = [], senders = 0
     for (var i = 0; i < deeds.length; i++) {
       var deed = deeds[i]
-      if (deed.kind === "action" && (senders >= 2 || /^settings$/i.test(deed.value))) continue
-      if (deed.kind === "action") senders++
-      out.push({kind: deed.kind, value: deed.value, number: i + 1,
+      if (deed.kind === "action" && (senders >= 2 || /^settings$/i.test(deed.value)))
+        continue
+      if (deed.kind === "action")
+        senders++
+      out.push({
+        kind: deed.kind,
+        value: deed.value,
+        number: i + 1,
         text: deed.kind === "link" ? (deed.meeting ? FoamyI18n.t("Join meeting") : FoamyI18n.t("Open link")) : deed.text,
-        glyph: deed.kind === "code" ? "\u{f018f}" : deed.kind === "link" ? (deed.meeting ? "\u{f0567}" : "\u{f03cc}") : deed.kind === "action" && deed.value === "reply" ? "\u{f045a}" : ""})
+        glyph: deed.kind === "code" ? "\u{f018f}" : deed.kind === "link" ? (deed.meeting ? "\u{f0567}" : "\u{f03cc}") : deed.kind === "action" && deed.value === "reply" ? "\u{f045a}" : ""
+      })
     }
     return out
   }
   readonly property var overflowActions: {
-    var shown = footerActions.map(function(entry) { return entry.kind + ":" + entry.value })
-    return deeds.filter(function(deed) { return deed.kind === "action" && shown.indexOf("action:" + deed.value) < 0 })
-      .map(function(deed) { return {identifier: deed.value, text: deed.text} })
+    var shown = footerActions.map(function (entry) {
+      return entry.kind + ":" + entry.value
+    })
+    return deeds.filter(function (deed) {
+      return deed.kind === "action" && shown.indexOf("action:" + deed.value) < 0
+    }).map(function (deed) {
+      return {
+        identifier: deed.value,
+        text: deed.text
+      }
+    })
   }
   readonly property color copiedColor: FoamyPalette.success
   readonly property bool hovered: hover.hovered || actionsExpanded || snoozeExpanded || selected
   readonly property bool hasTitle: summary.trim().length > 0
   readonly property string smallIcon: {
-    if (!appIcon) return ""
-    if (appIcon.indexOf("file://") === 0) return appIcon
+    if (!appIcon)
+      return ""
+    if (appIcon.indexOf("file://") === 0)
+      return appIcon
     var name = Logic.themeIcon(appIcon)
     return name ? Quickshell.iconPath(name, true) : ""
   }
   readonly property string safeImageSource: {
-    if (image.indexOf("file://") === 0) return image
+    if (image.indexOf("file://") === 0)
+      return image
     return image.charAt(0) === "/" ? Util.fileUrl(image) : ""
   }
   readonly property string contentImageSource: showImages ? safeImageSource : ""
   onActionsChanged: actionsExpanded = false
-  onBusyChanged: if (busy) actionsExpanded = false
-  Keys.onEscapePressed: { actionsExpanded = false; snoozeExpanded = false }
-  signal closeRequested()
-  signal hideRequested()
-  signal cardClicked()
+  onBusyChanged: if (busy)
+    actionsExpanded = false
+  Keys.onEscapePressed: {
+    actionsExpanded = false
+    snoozeExpanded = false
+  }
+  signal closeRequested
+  signal hideRequested
+  signal cardClicked
   signal actionRequested(string identifier)
   implicitWidth: cardWidth
   implicitHeight: content.implicitHeight + 2
@@ -98,20 +123,25 @@ Rectangle {
   color: urgency === 2 ? Qt.tint(root.surface, Util.alpha(Commons.Color.urgent, 0.09)) : root.surface
   border.width: selected ? 2 : 1
   border.color: selected ? Commons.Color.accent : Util.alpha(root.ink, 0.15)
-  HoverHandler { id: hover }
+  HoverHandler {
+    id: hover
+  }
   MouseArea {
     anchors.fill: parent
     acceptedButtons: Qt.LeftButton | Qt.RightButton
     cursorShape: Qt.PointingHandCursor
     enabled: !root.busy
-    onClicked: function(mouse) {
-      if (mouse.button === Qt.RightButton) root.hideRequested()
-      else root.cardClicked()
+    onClicked: function (mouse) {
+      if (mouse.button === Qt.RightButton)
+        root.hideRequested()
+      else
+        root.cardClicked()
     }
   }
   ColumnLayout {
     id: content
-    x: 1; y: 1
+    x: 1
+    y: 1
     width: parent.width - 2
     spacing: 0
     Item {
@@ -130,8 +160,10 @@ Rectangle {
       RowLayout {
         id: header
         anchors.fill: parent
-        anchors.topMargin: Style.space(root.compact ? 4 : 10); anchors.bottomMargin: anchors.topMargin
-        anchors.leftMargin: Style.space(13); anchors.rightMargin: Style.space(9)
+        anchors.topMargin: Style.space(root.compact ? 4 : 10)
+        anchors.bottomMargin: anchors.topMargin
+        anchors.leftMargin: Style.space(13)
+        anchors.rightMargin: Style.space(9)
         spacing: Style.space(8)
         Item {
           Layout.preferredWidth: Style.space(root.compact ? 14 : 22)
@@ -141,7 +173,8 @@ Rectangle {
             objectName: "notificationAppIcon"
             anchors.fill: parent
             source: root.smallIcon
-            sourceSize.width: Math.ceil(width * 2); sourceSize.height: Math.ceil(height * 2)
+            sourceSize.width: Math.ceil(width * 2)
+            sourceSize.height: Math.ceil(height * 2)
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: status === Image.Ready && faviconIcon.status !== Image.Ready
@@ -151,7 +184,8 @@ Rectangle {
             objectName: "notificationFavicon"
             anchors.fill: parent
             source: root.faviconSource
-            sourceSize.width: Math.ceil(width * 2); sourceSize.height: Math.ceil(height * 2)
+            sourceSize.width: Math.ceil(width * 2)
+            sourceSize.height: Math.ceil(height * 2)
             fillMode: Image.PreserveAspectFit
             asynchronous: true
             visible: status === Image.Ready
@@ -195,8 +229,18 @@ Rectangle {
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
           Accessible.name: FoamyI18n.t("Snooze this sender")
-          background: Rectangle { radius: FoamyStyle.radius; color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(root.ink, 0.09) : "transparent" }
-          contentItem: Text { text: "\u{f0954}"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: root.ink; font.family: root.glyphFamily; font.pixelSize: FoamyStyle.font.body }
+          background: Rectangle {
+            radius: FoamyStyle.radius
+            color: snoozeButton.hovered || root.snoozeExpanded ? Util.alpha(root.ink, 0.09) : "transparent"
+          }
+          contentItem: Text {
+            text: "\u{f0954}"
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: root.ink
+            font.family: root.glyphFamily
+            font.pixelSize: FoamyStyle.font.body
+          }
           onClicked: root.snoozeExpanded = !root.snoozeExpanded
         }
         Text {
@@ -215,8 +259,18 @@ Rectangle {
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
           Accessible.name: root.actionsExpanded ? FoamyI18n.t("Hide more actions") : FoamyI18n.t("Show more actions")
-          background: Rectangle { radius: FoamyStyle.radius; color: moreButton.hovered || root.actionsExpanded ? Util.alpha(root.ink, 0.09) : "transparent" }
-          contentItem: Text { text: "⋯"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: root.ink; font.family: root.fontFamily; font.pixelSize: FoamyStyle.font.title }
+          background: Rectangle {
+            radius: FoamyStyle.radius
+            color: moreButton.hovered || root.actionsExpanded ? Util.alpha(root.ink, 0.09) : "transparent"
+          }
+          contentItem: Text {
+            text: "⋯"
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: root.ink
+            font.family: root.fontFamily
+            font.pixelSize: FoamyStyle.font.title
+          }
           onClicked: root.actionsExpanded = !root.actionsExpanded
         }
         Controls.AbstractButton {
@@ -226,8 +280,18 @@ Rectangle {
           Layout.preferredHeight: Style.space(24)
           enabled: !root.busy
           Accessible.name: FoamyI18n.t("Dismiss notification")
-          background: Rectangle { radius: FoamyStyle.radius; color: closeButton.hovered ? Util.alpha(root.ink, 0.09) : "transparent" }
-          contentItem: Text { text: "×"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: Util.alpha(root.ink, 0.7); font.family: root.fontFamily; font.pixelSize: FoamyStyle.font.title }
+          background: Rectangle {
+            radius: FoamyStyle.radius
+            color: closeButton.hovered ? Util.alpha(root.ink, 0.09) : "transparent"
+          }
+          contentItem: Text {
+            text: "×"
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: Util.alpha(root.ink, 0.7)
+            font.family: root.fontFamily
+            font.pixelSize: FoamyStyle.font.title
+          }
           onClicked: root.closeRequested()
         }
       }
@@ -262,7 +326,8 @@ Rectangle {
             objectName: "notificationImage"
             anchors.fill: parent
             source: root.contentImageSource
-            sourceSize.width: 144; sourceSize.height: 144
+            sourceSize.width: 144
+            sourceSize.height: 144
             // Keep the full screenshot visible; square avatars naturally fill the same tile.
             fillMode: Image.PreserveAspectFit
             asynchronous: true
@@ -312,7 +377,10 @@ Rectangle {
             objectName: "notificationSnooze" + modelData
             text: modelData < 60 ? FoamyI18n.t("%1 min", FoamyI18n.number(modelData)) : FoamyI18n.t("%1 h", FoamyI18n.number(modelData / 60))
             width: Math.min(implicitWidth, parent.width)
-            onClicked: { root.snoozeExpanded = false; root.featureRequested("snooze", String(modelData)) }
+            onClicked: {
+              root.snoozeExpanded = false
+              root.featureRequested("snooze", String(modelData))
+            }
           }
         }
       }
@@ -321,7 +389,11 @@ Rectangle {
         Layout.fillWidth: true
         visible: root.actionsExpanded && root.overflowActions.length > 0
         spacing: Style.space(3)
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Util.alpha(root.ink, 0.2) }
+        Rectangle {
+          Layout.fillWidth: true
+          implicitHeight: 1
+          color: Util.alpha(root.ink, 0.2)
+        }
         Repeater {
           model: root.overflowActions
           ActionButton {
@@ -377,7 +449,8 @@ Rectangle {
 
   Rectangle {
     id: imageMask
-    width: imageTile.width; height: imageTile.height
+    width: imageTile.width
+    height: imageTile.height
     radius: imageTile.radius
     color: "white"
     visible: false
@@ -403,12 +476,26 @@ Rectangle {
       bottomLeftRadius: footerButton.roundLeft ? Math.max(0, root.radius - 1) : 0
       bottomRightRadius: footerButton.roundRight ? Math.max(0, root.radius - 1) : 0
       color: Qt.tint(root.surface, Util.alpha(root.ink, footerButton.hovered ? 0.10 : 0.055))
-      Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Util.alpha(root.ink, 0.15) }
-      Rectangle { visible: footerButton.leftDivider; anchors.left: parent.left; width: 1; height: parent.height; color: Util.alpha(root.ink, 0.15) }
       Rectangle {
-        anchors.fill: parent; anchors.margins: 2
+        anchors.top: parent.top
+        width: parent.width
+        height: 1
+        color: Util.alpha(root.ink, 0.15)
+      }
+      Rectangle {
+        visible: footerButton.leftDivider
+        anchors.left: parent.left
+        width: 1
+        height: parent.height
+        color: Util.alpha(root.ink, 0.15)
+      }
+      Rectangle {
+        anchors.fill: parent
+        anchors.margins: 2
         visible: footerButton.activeFocus
-        color: "transparent"; border.width: 1; border.color: Commons.Color.accent
+        color: "transparent"
+        border.width: 1
+        border.color: Commons.Color.accent
         radius: Style.cornerRadius
       }
     }
@@ -456,7 +543,8 @@ Rectangle {
       if (entry.kind === "action") {
         root.actionsExpanded = false
         root.actionRequested(entry.value)
-      } else root.featureRequested(entry.kind, entry.value)
+      } else
+        root.featureRequested(entry.kind, entry.value)
     }
   }
 
@@ -510,7 +598,10 @@ Rectangle {
       elide: Text.ElideRight
       maximumLineCount: 1
     }
-    onClicked: { root.actionsExpanded = false; root.actionRequested(actionData.identifier) }
+    onClicked: {
+      root.actionsExpanded = false
+      root.actionRequested(actionData.identifier)
+    }
   }
   Rectangle {
     id: timeoutIndicator
@@ -528,14 +619,16 @@ Rectangle {
   Canvas {
     id: urgentEdge
     visible: root.urgency === 2
-    width: Math.max(curveRadius + 1, Style.space(3)); height: root.height
+    width: Math.max(curveRadius + 1, Style.space(3))
+    height: root.height
     property color accent: Commons.Color.urgent
     property real curveRadius: Math.min(root.radius, root.width / 2, root.height / 2)
     onAccentChanged: requestPaint()
     onCurveRadiusChanged: requestPaint()
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
-    onVisibleChanged: if (visible) requestPaint()
+    onVisibleChanged: if (visible)
+      requestPaint()
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()

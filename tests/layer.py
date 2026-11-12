@@ -1,13 +1,32 @@
 """Check the real Wayland popup surface on a private bus with temporary history."""
-import os,json,shutil,tempfile,subprocess,sys,time,signal
+
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import time
 from pathlib import Path
-import hostenv
-if '--inside' not in sys.argv:
- raise SystemExit(subprocess.run(['dbus-run-session','--','python3',__file__,'--inside'],timeout=45).returncode)
-base=Path(tempfile.mkdtemp(prefix='foamy-native-motion-'));app=base/'app';app.mkdir();home=base/'home';home.mkdir()
-for n in ['Commons','Ui']:(app/n).symlink_to(hostenv.root()/'shell'/n,target_is_directory=True)
-shutil.copytree(Path(__file__).resolve().parents[1],app/'plugin',ignore=shutil.ignore_patterns('.git','__pycache__'))
-p=app/'plugin/Service.qml';s=p.read_text();s=s.replace('  id: service','''  id: service
+import testhost
+from testhost import hostenv
+
+testhost.desktop_opt_in(__file__)
+testhost.session(__file__, 90)
+base = Path(tempfile.mkdtemp(prefix="foamy-native-motion-"))
+app = base / "app"
+app.mkdir()
+home = base / "home"
+home.mkdir()
+for n in ["Commons", "Ui"]:
+    (app / n).symlink_to(hostenv.root() / "shell" / n, target_is_directory=True)
+shutil.copytree(
+    Path(__file__).resolve().parents[1], app / "plugin", ignore=shutil.ignore_patterns(".git", "__pycache__")
+)
+p = app / "plugin/Service.qml"
+s = p.read_text()
+s = s.replace(
+    "  id: service",
+    """  id: service
   property var surfaces: ({})
   property var trace: []
   IpcHandler {target: "motion-review"
@@ -21,8 +40,12 @@ p=app/'plugin/Service.qml';s=p.read_text();s=s.replace('  id: service','''  id: 
       return JSON.stringify(out)
     }
   }
-''',1)
-s=s.replace('      id: popupWindow','''      id: popupWindow
+""",
+    1,
+)
+s = s.replace(
+    "      id: popupWindow",
+    """      id: popupWindow
       Component.onCompleted: service.surfaces[screen.name]=popupWindow
       readonly property var stack: popupColumn
       property bool capturedEntry: false
@@ -39,48 +62,157 @@ s=s.replace('      id: popupWindow','''      id: popupWindow
           if(name)popupWindow.contentItem.grabToImage(function(result){result.saveToFile(Qt.resolvedUrl(name+".png").toString().replace("file://",""))})
         }
       }}
-''')
+""",
+)
+# Ten times slower card fades in this copy: on a loaded machine the compositor's
+# frames came more than a second apart, so a 180 ms entrance and a 120 ms exit
+# passed between two frames and the trace had no frame in between.
+for motion in ("FoamyMotion.fadeIn", "FoamyMotion.fadeOut"):
+    assert "duration: " + motion in s, motion
+    s = s.replace("duration: " + motion, "duration: 10 * " + motion)
 p.write_text(s)
-(app/'shell.qml').write_text('import QtQuick\nimport Quickshell\nimport "plugin" as Plugin\nShellRoot { Plugin.Service {} }\n')
-config=home/'.config/omarchy';config.mkdir(parents=True);(config/'shell.json').write_text(json.dumps({'plugins':[{'id':'foamy.notifications','normalTimeoutSec':1}]}))
-env=dict(os.environ,HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_STATE_HOME=str(home/'.local/state'),QT_QPA_PLATFORM='wayland',QT_QPA_PLATFORMTHEME='basic',QT_QUICK_BACKEND='rhi')
-log=(base/'log').open('w');proc=subprocess.Popen(['qs','-p',str(app),'--no-color'],env=env,stdout=log,stderr=log,start_new_session=True)
-def ipc(target,*args):return subprocess.check_output(['qs','ipc','-n','-p',str(app),'call',target,*args],env=env,text=True,stderr=subprocess.DEVNULL,timeout=2).strip()
+(app / "shell.qml").write_text(
+    'import QtQuick\nimport Quickshell\nimport "plugin" as Plugin\nShellRoot { Plugin.Service {} }\n'
+)
+config = home / ".config/omarchy"
+config.mkdir(parents=True)
+(config / "shell.json").write_text(json.dumps({"plugins": [{"id": "foamy.notifications", "normalTimeoutSec": 3}]}))
+env = dict(
+    os.environ,
+    HOME=str(home),
+    XDG_CONFIG_HOME=str(home / ".config"),
+    XDG_STATE_HOME=str(home / ".local/state"),
+    QT_QPA_PLATFORM="wayland",
+    QT_QPA_PLATFORMTHEME="basic",
+    QT_QUICK_BACKEND="rhi",
+)
+# Host scripts are stubs and an AppImage's bundled libraries are dropped (notify-send
+# exits 127 against them), as in the other runtime tests; the live compositor and
+# hyprctl stay (display=True).
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"], display=True)
+log = (base / "log").open("w")
+proc = hostenv.ProcessGroup(["qs", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log)
+
+
+def ipc(target, *args):
+    return subprocess.check_output(
+        ["qs", "ipc", "-n", "-p", str(app), "call", target, *args],
+        env=env,
+        text=True,
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+    ).strip()
+
+
 try:
- end=time.monotonic()+5
- while True:
-  try:
-   if ipc('notifications','ping')=='ok':break
-  except Exception:pass
-  assert time.monotonic()<end,'startup';time.sleep(.1)
- subprocess.run(['notify-send','-a','Foamy animation check','-u','normal','Animation B','Synthetic notification on an isolated bus'],env=env,check=True,timeout=2)
- time.sleep(2)
- state=json.loads(ipc('motion-review','state'));(base/'trace.json').write_text(json.dumps(state))
- assert any(0<r['opacity']<1 and r['offset']>0 and not r['retired'] for r in state['trace']), 'no entrance frames'
- assert any(0<r['opacity']<1 and r['retired'] and r['visible'] for r in state['trace']), 'window hid before exit completed'
- assert not state['visible'],'empty notification layer remains mapped'
- print('PASS real layer-shell: gentle entrance, visible final-card fade, automatic surface close')
- # Cards that do not fit the real screen wait in the overflow queue, not in history.
- (config/'shell.json').write_text(json.dumps({'plugins':[{'id':'foamy.notifications','maxVisible':10,'criticalTimeoutSec':0}]}))
- def service():return json.loads(ipc('foamy.notifications','state'))
- end=time.monotonic()+5
- while service()['settings']['maxVisible']!=10:assert time.monotonic()<end,'config';time.sleep(.1)
- for i in range(20):subprocess.run(['notify-send','-a','Foamy screen-space check','-u','critical','Tall card '+str(i),'First line\nSecond line\nThird line'],env=env,check=True,timeout=2)
- end=time.monotonic()+8;last=None;steady=0
- while steady<10:
-  now=(service()['visibleLimit'],len(service()['groups']),len(service()['queue']),json.loads(ipc('motion-review','fit')))
-  steady=steady+1 if now==last and not service()['busy'] else 0;last=now
-  assert time.monotonic()<end,'screen-space queue did not settle: '+repr(now);time.sleep(.1)
- limit,shown,waiting,fit=last
- history=home/'.local/state/foamy-notifications/history'
- assert shown+waiting==20 and waiting>0,last
- assert not any(json.loads(f.read_text())['summary'].startswith('Tall card') for f in history.glob('*.json')),'screen-space overflow went to history'
- assert all(v['need']<=v['room'] for v in fit.values()),fit
- if shown<10:assert limit==shown,last
- ipc('notifications','dismissOne')
- end=time.monotonic()+5
- while not (len(service()['groups'])==shown and len(service()['queue'])==waiting-1):assert time.monotonic()<end,'a freed slot shows the next card';time.sleep(.1)
- ipc('notifications','dismissAll')
- print('PASS real layer-shell screen space: '+str(shown)+' of 20 cards fit '+json.dumps(fit)+', the rest wait (limit '+str(limit)+')')
+    end = time.monotonic() + 30
+    while True:
+        try:
+            if ipc("notifications", "ping") == "ok":
+                break
+        except Exception:
+            pass
+        assert time.monotonic() < end, "startup"
+        time.sleep(0.1)
+    subprocess.run(
+        [
+            "notify-send",
+            "-a",
+            "Foamy animation check",
+            "-u",
+            "normal",
+            "Animation B",
+            "Synthetic notification on an isolated bus",
+        ],
+        env=env,
+        check=True,
+        timeout=10,
+    )
+    # The card enters, expires and fades out, then the surface closes: wait for that, not a fixed 2 s.
+    end = time.monotonic() + 15
+    while True:
+        try:
+            state = json.loads(ipc("motion-review", "state"))
+        except Exception:
+            state = None
+        if state and not state["visible"] and any(r["retired"] for r in state["trace"]):
+            break
+        assert time.monotonic() < end, "the card did not enter, expire and close: " + repr(state and state["visible"])
+        time.sleep(0.1)
+    (base / "trace.json").write_text(json.dumps(state))
+    assert any(0 < r["opacity"] < 1 and r["offset"] > 0 and not r["retired"] for r in state["trace"]), (
+        "no entrance frames"
+    )
+    assert any(0 < r["opacity"] < 1 and r["retired"] and r["visible"] for r in state["trace"]), (
+        "window hid before exit completed"
+    )
+    assert not state["visible"], "empty notification layer remains mapped"
+    print("PASS real layer-shell: gentle entrance, visible final-card fade, automatic surface close")
+    # Cards that do not fit the real screen wait in the overflow queue, not in history.
+    (config / "shell.json").write_text(
+        json.dumps({"plugins": [{"id": "foamy.notifications", "maxVisible": 10, "criticalTimeoutSec": 0}]})
+    )
+
+    def service():
+        return json.loads(ipc("foamy.notifications", "state"))
+
+    end = time.monotonic() + 5
+    while service()["settings"]["maxVisible"] != 10:
+        assert time.monotonic() < end, "config"
+        time.sleep(0.1)
+    for i in range(20):
+        subprocess.run(
+            [
+                "notify-send",
+                "-a",
+                "Foamy screen-space check",
+                "-u",
+                "critical",
+                "Tall card " + str(i),
+                "First line\nSecond line\nThird line",
+            ],
+            env=env,
+            check=True,
+            timeout=10,
+        )
+    # Settled: ten identical polls with the persistence queue idle. One state read per
+    # poll, and a deadline with room for a loaded machine, where each IPC call is slow.
+    end = time.monotonic() + 30
+    last = None
+    steady = 0
+    while steady < 10:
+        st = service()
+        now = (st["visibleLimit"], len(st["groups"]), len(st["queue"]), json.loads(ipc("motion-review", "fit")))
+        steady = steady + 1 if now == last and not st["busy"] else 0
+        last = now
+        assert time.monotonic() < end, "screen-space queue did not settle: " + repr(now)
+        time.sleep(0.1)
+    limit, shown, waiting, fit = last
+    history = home / ".local/state/foamy-notifications/history"
+    assert shown + waiting == 20 and waiting > 0, last
+    assert not any(json.loads(f.read_text())["summary"].startswith("Tall card") for f in history.glob("*.json")), (
+        "screen-space overflow went to history"
+    )
+    assert all(v["need"] <= v["room"] for v in fit.values()), fit
+    if shown < 10:
+        assert limit == shown, last
+    ipc("notifications", "dismissOne")
+    end = time.monotonic() + 5
+    while not (len(service()["groups"]) == shown and len(service()["queue"]) == waiting - 1):
+        assert time.monotonic() < end, "a freed slot shows the next card"
+        time.sleep(0.1)
+    ipc("notifications", "dismissAll")
+    hostenv.check(env, (base / "log").read_text())
+    print(
+        "PASS real layer-shell screen space: "
+        + str(shown)
+        + " of 20 cards fit "
+        + json.dumps(fit)
+        + ", the rest wait (limit "
+        + str(limit)
+        + ")"
+    )
 finally:
- os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=3);log.close();print('Native evidence:',base)
+    proc.stop()
+    log.close()
+    print("Native evidence:", base)

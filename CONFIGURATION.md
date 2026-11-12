@@ -227,7 +227,9 @@ activation token, so the browser cannot raise an app window itself and sites
 such as Outlook open a new tab instead. Focusing brings the app forward; it
 does not open the specific message. Only when the website has no app window
 does the click go to the browser, as for any other sender. This applies to
-popup clicks and to clicks in Notification Center.
+popup clicks and to clicks in Notification Center. When the sender has no live
+callback either, both fall back to focusing the sending app's window, and
+report an error when none matches.
 
 When multiple profiles have the same website open, the notification does not
 say which profile sent it. An exact mapping names the window to use:
@@ -353,18 +355,9 @@ omarchy plugin validate .
 node --test tests/*.test.cjs
 python3 -m unittest discover -s tests -p '*_test.py' -v
 python3 tests/render.py
-# In a Wayland desktop, verify GPU-rendered rounded image masks:
-python3 tests/render.py --desktop
 python3 tests/ui.py
 python3 tests/browser-ui.py
-# Real popup image intake/rendering on a private D-Bus session:
-python3 tests/images-ui.py
 python3 tests/motion.py
-# In a Wayland desktop, verify animation frames on a real surface:
-python3 tests/motion.py --desktop
-# Requires Wayland; checks first-popup mapping and final-popup unmapping, and
-# that cards which do not fit the real screen wait in the queue:
-python3 tests/layer.py
 python3 tests/runtime.py
 # The overflow queue: order, timers, replacements, CloseNotification, DND,
 # restart survival, screen space, the hover rule and the hold while hovered:
@@ -375,6 +368,28 @@ python3 tests/queue-runtime.py
 python3 tests/preferences-runtime.py
 # Also exercise the center, if its checkout is available:
 FOAMY_CENTER_SOURCE=/path/to/foamy-notification-center python3 tests/runtime.py
+```
+
+These tests put real popups on the live desktop (layer-shell surfaces on the
+running compositor), so they run only on purpose: each one refuses to start,
+and `tests/suite.sh` skips it, unless `FOAMY_TEST_DESKTOP=1` is set. Their
+notifications go to the test's own shell on a private bus, never to the
+desktop's notification daemon.
+
+```sh
+# Real popup image intake and GPU rendering:
+FOAMY_TEST_DESKTOP=1 python3 tests/images-ui.py
+# First-popup mapping, final-popup unmapping, and cards that do not fit the
+# real screen waiting in the queue:
+FOAMY_TEST_DESKTOP=1 python3 tests/layer.py
+# GPU-rendered rounded image masks:
+FOAMY_TEST_DESKTOP=1 python3 tests/render.py --desktop
+# Animation frames on a real surface:
+FOAMY_TEST_DESKTOP=1 python3 tests/motion.py --desktop
+# The sharing prompt on real layer surfaces:
+FOAMY_TEST_DESKTOP=1 python3 tests/features-runtime.py --desktop
+# Everything above that suite.sh runs (images-ui, layer):
+FOAMY_TEST_DESKTOP=1 tests/validate.sh
 ```
 
 The render test uses the real card with synthetic data at wide and narrow widths.
@@ -409,5 +424,4 @@ The tests load the installed Omarchy 4.5 shell (`/usr/share/omarchy`; only its
 QML and data, never its scripts). Set `OMARCHY_TEST_ROOT` to another Omarchy
 tree, or `FOAMY_HOST_45` to its `shell/` directory, to exercise its Commons/Ui
 components with `runtime.py`, `features-runtime.py`, `render.py`, and `ui.py`,
-without installing that release. Omarchy 4.0 checks are opt-in through
-`FOAMY_HOST_40`. This does not test a complete OS upgrade.
+without installing that release. This does not test a complete OS upgrade.

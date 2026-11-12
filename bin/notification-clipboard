@@ -6,7 +6,12 @@ IFS= read -r -n 65 code
 case ${1:-} in
   copy) printf '%s' "$code" | timeout --kill-after=1 2 wl-copy --sensitive ;;
   clear)
-    current=$(timeout --kill-after=1 2 wl-paste --no-newline | head -c 65) || exit 1
+    status=0
+    current=$(timeout --kill-after=1 2 wl-paste --no-newline | head -c 65) || status=$?
+    # More than 8 characters is not the code, whatever wl-paste reports: a clipboard
+    # longer than 65 bytes makes it fail writing to the closed pipe (SIGPIPE or EPIPE).
+    if ((${#current} > 8)); then exit 0; fi
+    ((status == 0)) || exit 1
     if [[ $current == "$code" ]]; then timeout --kill-after=1 2 wl-copy --clear; fi
     ;;
   *) exit 2 ;;

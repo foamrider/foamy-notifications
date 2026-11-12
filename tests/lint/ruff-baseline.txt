@@ -1,0 +1,12 @@
+# ruff findings accepted when the check was adopted. tests/validate.sh fails on any
+# finding not listed here. Regenerate with `tests/validate.sh --update-baseline ruff`
+# only to drop fixed entries or after reviewing every added one; never to pass a check.
+tests/images-ui.py: B023: Function definition does not bind loop variable `alias` | s["title"] == "Raw buffer safely omitted " + alias
+tests/runtime.py: B023: Function definition does not bind loop variable `before` | wait_for(lambda: len(dispatches()) == before + 1, "Teams focus dispatched once")
+tests/runtime.py: B023: Function definition does not bind loop variable `before` | wait_for(lambda: len(dispatches()) == before + 1, "mapped Teams focus dispatched once")
+tests/runtime.py: B023: Function definition does not bind loop variable `before` | wait_for(lambda: len(dispatches()) == before + 1, "raw click focuses sending app once")
+tests/runtime.py: B023: Function definition does not bind loop variable `enabled` | wait_for(lambda: state()["settings"]["closeButtonRemovesHistory"] == enabled, "X preference reload")
+tests/runtime.py: B023: Function definition does not bind loop variable `key` | ipc("foamy.notification-center.test", "focus", key)
+tests/runtime.py: B023: Function definition does not bind loop variable `target` | if target == "popup":
+tests/runtime.py: B023: Function definition does not bind loop variable `timeout` | state()["settings"]["closeButtonRemovesHistory"] and state()["settings"]["lowTimeoutSec"] == timeout
+tests/runtime.py: B023: Function definition does not bind loop variable `title` | any(json.loads(p.read_text()).get("summary") == title for p in history.glob("*.json"))

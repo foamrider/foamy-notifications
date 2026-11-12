@@ -1,0 +1,4 @@
+# oxlint findings accepted when the check was adopted. tests/validate.sh fails on any
+# finding not listed here. Regenerate with `tests/validate.sh --update-baseline oxlint`
+# only to drop fixed entries or after reviewing every added one; never to pass a check.
+Features.js: unicorn(prefer-string-starts-ends-with): Prefer String#endsWith over a regex with a dollar sign. | found.meeting = ["meet.google.com", "teams.microsoft.com", "teams.live.com", "zoom.us"].indexOf(Security.hostOf(found.link)) >= 0 || /\.zoom\.us$/.test(Security
