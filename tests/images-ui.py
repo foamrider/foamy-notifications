@@ -155,7 +155,7 @@ def ipc(method, *args):
         ["qs", "ipc", "-n", "-p", str(app), "call", "images-test", method, *map(str, args)],
         env=env,
         text=True,
-        timeout=3,
+        timeout=10,
     ).strip()
 
 
@@ -205,7 +205,7 @@ def send(title, hints="{}", icon="foot", replace=0):
         ],
         env=env,
         text=True,
-        timeout=3,
+        timeout=10,
     )
     return int(out.split("uint32 ")[1].split(",")[0])
 
@@ -219,7 +219,7 @@ def hide_released():
         env=env,
         check=True,
         capture_output=True,
-        timeout=3,
+        timeout=10,
     )
     wait(lambda: state()["count"] == 0, "released raw card hidden")
 
@@ -246,7 +246,7 @@ try:
         env=env,
         check=True,
         capture_output=True,
-        timeout=3,
+        timeout=10,
     )
     wait(lambda: state()["count"] == 0, "restore dismissed")
     identifier = send("File images retained", "{'image-path': <'" + picture.as_uri() + "'>}", str(icon))

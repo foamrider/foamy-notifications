@@ -15,7 +15,7 @@ from testhost import hostenv
 from gi.repository import Gio, GLib
 
 SOURCE = Path(__file__).resolve().parents[1]
-testhost.session(__file__, 180)
+testhost.session(__file__, 300)
 base = Path(tempfile.mkdtemp(prefix="foamy-popup-queue-"))
 app = base / "app"
 app.mkdir()
@@ -123,7 +123,7 @@ def ipc(target, method, *args):
         env=env,
         text=True,
         stderr=subprocess.DEVNULL,
-        timeout=3,
+        timeout=10,
     ).strip()
 
 
@@ -168,7 +168,7 @@ def send(title, icon="foot", replace=0):
         ],
         env=env,
         text=True,
-        timeout=3,
+        timeout=10,
     )
     return int(result.split("uint32 ")[1].split(",")[0])
 

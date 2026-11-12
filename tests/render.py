@@ -107,7 +107,7 @@ if not desktop:
     command = ["dbus-run-session", "--", *command]
 testhost.make(base, app, env, display=desktop)
 # Desktop rendering uses the GPU for rounded image masks; it owns only this test window.
-status, output = testhost.run(command, env, base / "qs.log", 20)
+status, output = testhost.run(command, env, base / "qs.log", 60)
 print(output)
 assert status == 0 and "PASS:" in output
 print("Renders:", app)

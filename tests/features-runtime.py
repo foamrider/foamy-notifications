@@ -108,7 +108,7 @@ def ipc(target, *args):
         ["qs", "ipc", "-n", "-p", str(app), "call", target, *args],
         env=env,
         text=True,
-        timeout=2,
+        timeout=10,
         stderr=subprocess.DEVNULL,
     ).strip()
 
@@ -130,7 +130,7 @@ def wait(fn, seconds=5):
 
 
 def send(app, title, body="Message"):
-    subprocess.run(["notify-send", "-a", app, "-u", "critical", title, body], env=env, check=True, timeout=2)
+    subprocess.run(["notify-send", "-a", app, "-u", "critical", title, body], env=env, check=True, timeout=10)
 
 
 def files():
@@ -179,7 +179,7 @@ try:
         ],
         env=env,
         check=True,
-        timeout=3,
+        timeout=10,
         stdout=subprocess.DEVNULL,
     )
     wait(lambda: json.loads(ipc("feature-test", "state"))["sharing"])

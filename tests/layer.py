@@ -63,13 +63,19 @@ s = s.replace(
       }}
 """,
 )
+# Ten times slower card fades in this copy: on a loaded machine the compositor's
+# frames came more than a second apart, so a 180 ms entrance and a 120 ms exit
+# passed between two frames and the trace had no frame in between.
+for motion in ("FoamyMotion.fadeIn", "FoamyMotion.fadeOut"):
+    assert "duration: " + motion in s, motion
+    s = s.replace("duration: " + motion, "duration: 10 * " + motion)
 p.write_text(s)
 (app / "shell.qml").write_text(
     'import QtQuick\nimport Quickshell\nimport "plugin" as Plugin\nShellRoot { Plugin.Service {} }\n'
 )
 config = home / ".config/omarchy"
 config.mkdir(parents=True)
-(config / "shell.json").write_text(json.dumps({"plugins": [{"id": "foamy.notifications", "normalTimeoutSec": 1}]}))
+(config / "shell.json").write_text(json.dumps({"plugins": [{"id": "foamy.notifications", "normalTimeoutSec": 3}]}))
 env = dict(
     os.environ,
     HOME=str(home),
@@ -93,7 +99,7 @@ def ipc(target, *args):
         env=env,
         text=True,
         stderr=subprocess.DEVNULL,
-        timeout=2,
+        timeout=10,
     ).strip()
 
 
@@ -119,7 +125,7 @@ try:
         ],
         env=env,
         check=True,
-        timeout=2,
+        timeout=10,
     )
     # The card enters, expires and fades out, then the surface closes: wait for that, not a fixed 2 s.
     end = time.monotonic() + 15
@@ -166,7 +172,7 @@ try:
             ],
             env=env,
             check=True,
-            timeout=2,
+            timeout=10,
         )
     # Settled: ten identical polls with the persistence queue idle. One state read per
     # poll, and a deadline with room for a loaded machine, where each IPC call is slow.

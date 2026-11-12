@@ -194,7 +194,7 @@ def ipc(target, *args):
         env=env,
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=10,
     )
     if result.returncode:
         raise RuntimeError(result.stderr)
@@ -235,7 +235,7 @@ def send(summary, urgency="normal", extra=(), body="Sample body"):
         env=env,
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=10,
     )
     assert sent.returncode == 0 and sent.stdout.strip(), "notify-send failed: " + sent.stderr
     return sent.stdout.strip()
@@ -524,7 +524,7 @@ try:
         env=env,
         check=True,
         capture_output=True,
-        timeout=3,
+        timeout=10,
     )
     wait(lambda: c not in queue() and c in files("history") and settled(), "CloseNotification removes the waiting card")
     assert shown() == [a], "closing a waiting card changed the stack"

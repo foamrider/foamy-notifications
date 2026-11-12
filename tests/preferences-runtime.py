@@ -100,7 +100,7 @@ def ipc(target, *args):
         ["qs", "ipc", "-n", "-p", str(app), "call", target, *args],
         env=env,
         text=True,
-        timeout=2,
+        timeout=10,
         stderr=subprocess.DEVNULL,
     ).strip()
 

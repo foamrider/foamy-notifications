@@ -166,7 +166,7 @@ for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
 testhost.make(base, app, env)
 try:
     status, output = testhost.run(
-        ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 15
+        ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 60
     )
 finally:
     browser.close()

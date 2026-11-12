@@ -204,7 +204,7 @@ process = hostenv.ProcessGroup(["quickshell", "-p", str(app), "--no-color"], env
 
 def ipc(target, *args):
     result = subprocess.run(
-        ["qs", "ipc", "-n", "-p", str(app), "call", target, *args], env=env, capture_output=True, text=True, timeout=3
+        ["qs", "ipc", "-n", "-p", str(app), "call", target, *args], env=env, capture_output=True, text=True, timeout=10
     )
     if result.returncode:
         raise RuntimeError(result.stderr)
@@ -234,7 +234,7 @@ def send(summary, extra=(), body="Sample body"):
         env=env,
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=10,
     )
     # A notify-send that cannot run (e.g. a foreign libnotify) must not read as a plugin timeout.
     assert sent.returncode == 0 and sent.stdout.strip(), "notify-send failed: " + sent.stderr
@@ -277,7 +277,7 @@ def omarchy_send(app_name, summary, body, image, argv):
         ],
         env=env,
         check=True,
-        timeout=3,
+        timeout=10,
         stdout=subprocess.DEVNULL,
     )
 
@@ -1060,7 +1060,7 @@ try:
                     env=env,
                     check=True,
                     capture_output=True,
-                    timeout=3,
+                    timeout=10,
                 )
                 wait_for(lambda: state()["retainedActions"] == 0, "sender closure releases callback")
                 assert ipc("foamy.notifications", "invokeDefault", key) == "unavailable"
@@ -1440,7 +1440,7 @@ try:
                 ],
                 env=env,
                 check=True,
-                timeout=3,
+                timeout=10,
                 stdout=subprocess.DEVNULL,
             )
             wait_for(lambda: state()["popups"] == 1 and not state()["busy"], "button notification " + summary)
@@ -1542,7 +1542,7 @@ try:
             env=env,
             check=True,
             capture_output=True,
-            timeout=3,
+            timeout=10,
         )
         assert closing.communicate(timeout=4)[0].strip() == ""
         wait_for(
@@ -1628,9 +1628,10 @@ try:
     ipc("notifications", "invokeLast")
     wait_for(lambda: state()["popups"] == 0, "merged stack cleanup")
     # Real mouse hover and D-Bus expiry: upper cards disappear without moving the third.
-    settings["normalTimeoutSec"] = 2
+    # 6 s: the hover lands before the cards expire even when each IPC call is slow.
+    settings["normalTimeoutSec"] = 6
     (config / "shell.json").write_text(json.dumps(cfg))
-    wait_for(lambda: state()["settings"]["normalTimeoutSec"] == 2, "stack timeout config")
+    wait_for(lambda: state()["settings"]["normalTimeoutSec"] == 6, "stack timeout config")
     ipc("countdown-test", "leave")
     send("Hold this third card", ("-u", "normal"))
     send("Second card expires", ("-u", "normal"))
@@ -1645,7 +1646,7 @@ try:
     held_y = stack_state()["y"]
     assert held_y > 0
     ipc("countdown-test", "capture", "stack-before")
-    wait_for(lambda: state()["popups"] == 1 and stack_state()["count"] == 1, "other cards still expire")
+    wait_for(lambda: state()["popups"] == 1 and stack_state()["count"] == 1, "other cards still expire", 20)
     after = stack_state()
     assert after["y"] == held_y and after["hovered"] and after["sameCard"], "hovered card moved or was recreated"
     ipc("countdown-test", "capture", "stack-held")
@@ -1653,7 +1654,7 @@ try:
     ipc("countdown-test", "leave")
     wait_for(lambda: not stack_state()["held"] and stack_state()["y"] == 0, "leaving stack closes gaps")
     ipc("countdown-test", "capture", "stack-closed")
-    wait_for(lambda: state()["popups"] == 0, "held card resumes its timeout")
+    wait_for(lambda: state()["popups"] == 0, "held card resumes its timeout", 20)
     settings["normalTimeoutSec"] = 1
     (config / "shell.json").write_text(json.dumps(cfg))
     wait_for(lambda: state()["settings"]["normalTimeoutSec"] == 1, "restore timeout")

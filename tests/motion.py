@@ -280,7 +280,7 @@ if not desktop:
         env.pop(key, None)
 testhost.make(base, app, env, display=desktop)
 status, output = testhost.run(
-    ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 15
+    ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 60
 )
 print(output)
 print("Motion captures:", app)
