@@ -58,7 +58,10 @@ config.mkdir(parents=True)
 cli = base / "bin"
 cli.mkdir()
 # The helper uses actual stdin and exit statuses; it cannot touch the real clipboard.
-(cli / "wl-copy").write_text('#!/bin/bash\n[[ ${1:-} == --sensitive ]] || exit 2\ncat > "$HOME/copied"\n')
+# The copy appears whole (renamed into place): the test reads it once it exists.
+(cli / "wl-copy").write_text(
+    '#!/bin/bash\n[[ ${1:-} == --sensitive ]] || exit 2\ncat > "$HOME/copied.part" && mv "$HOME/copied.part" "$HOME/copied"\n'
+)
 (cli / "wl-copy").chmod(0o755)
 env = dict(
     os.environ,
