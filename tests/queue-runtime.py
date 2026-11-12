@@ -112,7 +112,7 @@ env = dict(
 for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
     env.pop(key, None)
 cli_path = env["PATH"].split(":")[0]
-testhost.make(base, app, env)
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"])
 env["PATH"] = cli_path + ":" + env["PATH"]
 log = (base / "runtime.log").open("w")
 process = subprocess.Popen(

@@ -91,7 +91,7 @@ env = dict(
 for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
     env.pop(key, None)
 # Host QML/data only: OMARCHY_PATH exposes shell/ and default/; omarchy-* are stubs.
-testhost.make(base, app, env)
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"])
 log = (base / "runtime.log").open("w")
 proc = None
 

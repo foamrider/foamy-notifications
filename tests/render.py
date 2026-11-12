@@ -107,7 +107,7 @@ if not desktop:
     for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
         env.pop(key, None)
     command = ["dbus-run-session", "--", *command]
-testhost.make(base, app, env)
+testhost.make(base, app, env, display=desktop)
 # Desktop rendering uses the GPU for rounded image masks; it owns only this test window.
 process = subprocess.Popen(
     command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True

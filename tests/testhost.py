@@ -27,14 +27,17 @@ FOCUS_APP = (
 )
 
 
-def make(base, app, env):
+def make(base, app, env, session_bus=None, display=False):
     """`env` (changed in place and returned) for a qs or client the test starts:
-    hostenv.isolate() (no host bin dirs or AppImage libraries, dead audio and
-    system-bus addresses) and hostenv.make() (a private OMARCHY_PATH whose
-    omarchy-* log to <base>/omarchy-calls.log; omarchy-shell reaches this
-    test's shell only), with the focus-app double above."""
+    hostenv.isolate() (no host bin dirs or AppImage libraries, dead audio,
+    system-bus and session-bus addresses, no display) and hostenv.make() (a
+    private OMARCHY_PATH whose omarchy-* log to <base>/omarchy-calls.log;
+    omarchy-shell reaches this test's shell only), with the focus-app double
+    above. A test inside session() passes its private bus as `session_bus`
+    (`os.environ["DBUS_SESSION_BUS_ADDRESS"]`); one that runs on the live
+    compositor on purpose passes `display=True`."""
     base = Path(base)
-    hostenv.isolate(env, base)
+    hostenv.isolate(env, base, session_bus=session_bus, display=display)
     stubs = {"omarchy-hyprland-focus-app": FOCUS_APP.format(log=base / hostenv.CALLS_LOG)}
     env.update(hostenv.make(base, app, env=env, stubs=stubs, names=("omarchy-notification-send",)))
     if not env.get("LD_LIBRARY_PATH"):

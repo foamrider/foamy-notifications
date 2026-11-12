@@ -280,7 +280,7 @@ if not desktop:
     env["XDG_RUNTIME_DIR"] = str(runtime)
     for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
         env.pop(key, None)
-testhost.make(base, app, env)
+testhost.make(base, app, env, display=desktop)
 process = subprocess.Popen(
     ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"],
     env=env,

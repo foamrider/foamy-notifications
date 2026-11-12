@@ -176,7 +176,7 @@ env = dict(
 )
 for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
     env.pop(key, None)
-testhost.make(base, app, env)
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"])
 env["PATH"] = str(cli) + ":" + env["PATH"]
 state_dir = home / ".local/state/foamy-notifications"
 log = (base / "runtime.log").open("w")

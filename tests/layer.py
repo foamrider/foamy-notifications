@@ -81,8 +81,9 @@ env = dict(
     QT_QUICK_BACKEND="rhi",
 )
 # Host scripts are stubs and an AppImage's bundled libraries are dropped (notify-send
-# exits 127 against them), as in the other runtime tests; hyprctl stays real.
-testhost.make(base, app, env)
+# exits 127 against them), as in the other runtime tests; the live compositor and
+# hyprctl stay (display=True).
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"], display=True)
 log = (base / "log").open("w")
 proc = subprocess.Popen(["qs", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log, start_new_session=True)
 

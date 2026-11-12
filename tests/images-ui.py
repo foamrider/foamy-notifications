@@ -103,7 +103,7 @@ env = dict(
 env["WAYLAND_DISPLAY"] = str(Path(os.environ["XDG_RUNTIME_DIR"]) / os.environ["WAYLAND_DISPLAY"])
 for k in ["QT_QUICK_BACKEND", "DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
     env.pop(k, None)
-testhost.make(base, app, env)
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"], display=True)
 # This test's own hyprctl and omarchy-shell come before the logging stubs.
 env["PATH"] = str(cli) + ":" + env["PATH"]
 picture = base / "picture.png"

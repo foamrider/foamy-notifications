@@ -195,7 +195,7 @@ env = dict(
     QT_STYLE_OVERRIDE="Fusion",
 )
 # Host QML only: omarchy-* are stubs, omarchy-shell reaches this test shell, no host script runs.
-testhost.make(base, app, env)
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"])
 env["PATH"] = str(bin_dir) + ":" + env["PATH"]
 for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
     env.pop(key, None)

@@ -88,7 +88,7 @@ context.modules = [
 ]
 """)
 # Host QML/data only: OMARCHY_PATH exposes shell/ and default/; omarchy-* are stubs.
-testhost.make(base, app, env)
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"], display=desktop)
 # make() names a dead PipeWire socket; this test runs its own server.
 env["PIPEWIRE_REMOTE"] = str(runtime / "pipewire-0")
 env["PATH"] = str(cli) + ":" + env["PATH"]
