@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import platform
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -115,9 +114,7 @@ cli_path = env["PATH"].split(":")[0]
 testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"])
 env["PATH"] = cli_path + ":" + env["PATH"]
 log = (base / "runtime.log").open("w")
-process = subprocess.Popen(
-    ["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log, start_new_session=True
-)
+process = hostenv.ProcessGroup(["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log)
 
 
 def ipc(target, method, *args):
@@ -142,7 +139,7 @@ def wait(check, label, seconds=10):
                 return
         except (ValueError, subprocess.SubprocessError):
             pass
-        if process.poll() is not None:
+        if process.exit_status() is not None:
             raise AssertionError("Shell exited: " + label)
         time.sleep(0.04)
     raise AssertionError(label + " " + json.dumps(state()))
@@ -375,7 +372,7 @@ try:
         "Raw replacement awaiting context",
         "Raw initial awaiting context",
     }, files
-    assert process.poll() is None
+    assert process.exit_status() is None
     log.flush()
     output = (base / "runtime.log").read_text()
     # The private XDG_RUNTIME_DIR has no PipeWire socket; the screen-share prompt's
@@ -406,9 +403,7 @@ try:
 finally:
     stall.unlink(missing_ok=True)
     context_stall.unlink(missing_ok=True)
-    if process.poll() is None:
-        os.killpg(process.pid, signal.SIGTERM)
-        process.wait(timeout=3)
+    process.stop()
     log.close()
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))
     print("Runtime log:", base / "runtime.log")

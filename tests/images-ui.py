@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
@@ -146,8 +145,8 @@ stamp = int(time.time() * 1000)
     )
 )
 log = (base / "runtime.log").open("w")
-process = subprocess.Popen(
-    ["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True
+process = hostenv.ProcessGroup(
+    ["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=subprocess.STDOUT
 )
 
 
@@ -172,7 +171,7 @@ def wait(check, label):
                 return
         except (ValueError, subprocess.SubprocessError):
             pass
-        if process.poll() is not None:
+        if process.exit_status() is not None:
             raise AssertionError("Shell exited: " + label)
         time.sleep(0.05)
     raise AssertionError("Timed out: " + label + " " + json.dumps(state()))
@@ -309,7 +308,7 @@ try:
         "invalid file fallback",
     )
     capture("images-rejected-file", 280)
-    assert process.poll() is None
+    assert process.exit_status() is None
     assert not state()["error"], state()
     # The copied delegate must bind: a missing import only logs a ReferenceError.
     unbound = [line for line in (base / "runtime.log").read_text().splitlines() if "ReferenceError" in line]
@@ -318,8 +317,7 @@ try:
         "PASS: actual popup file normalization, progressive JPEG icon, wide/narrow dark/light rendering, all raw-data aliases, truncated-buffer rejection, local-file fallback, replacements, rejected-image fallback"
     )
 finally:
-    os.killpg(process.pid, signal.SIGTERM)
-    process.wait(timeout=3)
+    process.stop()
     log.close()
     print("Image captures:", app)
     print("Runtime log:", base / "runtime.log")

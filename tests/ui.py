@@ -2,8 +2,6 @@
 
 import os
 from pathlib import Path
-import signal
-import subprocess
 import tempfile
 import testhost
 from testhost import hostenv
@@ -72,20 +70,10 @@ env = dict(
 for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
     env.pop(key, None)
 testhost.make(base, app, env)
-process = subprocess.Popen(
-    ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"],
-    env=env,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT,
-    text=True,
-    start_new_session=True,
+status, output = testhost.run(
+    ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 15
 )
-try:
-    output = process.communicate(timeout=15)[0]
-except subprocess.TimeoutExpired:
-    os.killpg(process.pid, signal.SIGTERM)
-    output = process.communicate(timeout=3)[0]
 print(output)
 hostenv.check(env, output, testhost.calls(base))
 # completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
-assert process.returncode == 0 and "UI_RESULT 24 passed 0 failed" in output
+assert status == 0 and "UI_RESULT 24 passed 0 failed" in output

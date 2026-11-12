@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
@@ -136,9 +135,7 @@ def save(key, value):
 
 
 try:
-    proc = subprocess.Popen(
-        ["qs", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log, start_new_session=True
-    )
+    proc = hostenv.ProcessGroup(["qs", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log)
     wait(lambda: ipc("notifications", "ping") == "ok", 30)
     wait(lambda: preferences()["settings"]["normalTimeoutSec"] == 8)
     assert preferences()["settings"]["compact"] is True, "read the XDG_CONFIG_HOME decoy"
@@ -176,9 +173,8 @@ try:
         "PASS center preferences save the full raw entry through shell.updateEntryInline; unchanged, refused, missing and detached saves"
     )
 finally:
-    if proc and proc.poll() is None:
-        os.killpg(proc.pid, signal.SIGTERM)
-        proc.wait(timeout=3)
+    if proc:
+        proc.stop()
     log.close()
     print("Evidence:", base)
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))

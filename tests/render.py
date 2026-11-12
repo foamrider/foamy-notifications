@@ -1,10 +1,8 @@
 """Render the actual popup card at wide/narrow sizes with synthetic messages."""
 
 import os
-import signal
 from pathlib import Path
 import sys
-import subprocess
 import tempfile
 import testhost
 from testhost import hostenv
@@ -109,14 +107,7 @@ if not desktop:
     command = ["dbus-run-session", "--", *command]
 testhost.make(base, app, env, display=desktop)
 # Desktop rendering uses the GPU for rounded image masks; it owns only this test window.
-process = subprocess.Popen(
-    command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True
-)
-try:
-    output = process.communicate(timeout=20)[0]
-except subprocess.TimeoutExpired:
-    os.killpg(process.pid, signal.SIGTERM)
-    output = process.communicate(timeout=3)[0]
+status, output = testhost.run(command, env, base / "qs.log", 20)
 print(output)
-assert process.returncode == 0 and "PASS:" in output
+assert status == 0 and "PASS:" in output
 print("Renders:", app)

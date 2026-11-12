@@ -45,6 +45,18 @@ def make(base, app, env, session_bus=None, display=False):
     return env
 
 
+def run(argv, env, log, timeout):
+    """Run `argv` (a qs the test starts) as its own process group until it
+    exits or `timeout` seconds pass, then stop the whole group, so the
+    scripts its Processes started go too (hostenv.ProcessGroup). Returns the
+    exit status (negative: the signal that stopped it) and the output, which
+    goes to the file `log`."""
+    log = Path(log)
+    with log.open("w") as out, hostenv.ProcessGroup(argv, env=env, stdout=out, stderr=subprocess.STDOUT) as shell:
+        shell.wait(timeout)
+    return shell.returncode, log.read_text()
+
+
 def calls(base):
     """The stubs' log as one string, for hostenv.check()."""
     return "\n".join(hostenv.calls(base))
@@ -59,20 +71,13 @@ def session(script, timeout, *args):
     if "--inside" in sys.argv:
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
         return
-    inner = subprocess.Popen(
-        ["dbus-run-session", "--", sys.executable, str(script), "--inside", *args], start_new_session=True
-    )
+    inner = hostenv.ProcessGroup(["dbus-run-session", "--", sys.executable, str(script), "--inside", *args])
     try:
-        code = inner.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        print(f"{Path(script).name}: no result within {timeout} s, stopping it", file=sys.stderr, flush=True)
-        code = 124
+        code = inner.wait(timeout)
+        if code is None:
+            print(f"{Path(script).name}: no result within {timeout} s, stopping it", file=sys.stderr, flush=True)
+            code = 124
     finally:
-        if inner.poll() is None:
-            os.killpg(inner.pid, signal.SIGTERM)
-            try:
-                inner.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(inner.pid, signal.SIGKILL)
-                inner.wait()
+        # The whole group, also what the run left behind when it ended.
+        inner.stop(grace=10)
     raise SystemExit(code)

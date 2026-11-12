@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -96,14 +95,12 @@ testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"]
 env["PIPEWIRE_REMOTE"] = str(runtime / "pipewire-0")
 env["PATH"] = str(cli) + ":" + env["PATH"]
 log = (base / "runtime.log").open("w")
-pw = subprocess.Popen(["pipewire", "-c", str(pw_config)], env=env, stdout=log, stderr=log, start_new_session=True)
+pw = hostenv.ProcessGroup(["pipewire", "-c", str(pw_config)], env=env, stdout=log, stderr=log)
 proc = None
 
 
 def start():
-    return subprocess.Popen(
-        ["qs", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log, start_new_session=True
-    )
+    return hostenv.ProcessGroup(["qs", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log)
 
 
 def ipc(target, *args):
@@ -165,8 +162,7 @@ try:
             in json.loads((home / ".local/state/foamy-notifications/state.json").read_text()).get("snoozes", {})
         )
     )
-    os.killpg(proc.pid, signal.SIGTERM)
-    proc.wait(timeout=3)
+    proc.stop()
     proc = start()
     wait(lambda: "app:Chat" in state()["snoozes"], 30)
     ipc("feature-test", "shortSnooze")
@@ -203,9 +199,8 @@ try:
     )
 finally:
     for child in [proc, pw]:
-        if child and child.poll() is None:
-            os.killpg(child.pid, signal.SIGTERM)
-            child.wait(timeout=3)
+        if child:
+            child.stop()
     log.close()
     print("Evidence:", base)
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))

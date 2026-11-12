@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import tempfile
 import testhost
 from testhost import hostenv
@@ -125,13 +124,10 @@ ShellRoot {
     )
     env.pop("WAYLAND_DISPLAY", None)
     testhost.make(base, app, env)
-    result = subprocess.run(
-        ["quickshell", "-p", str(app), "--no-color"], env=env, capture_output=True, text=True, timeout=60
-    )
-    output = result.stdout + result.stderr
+    status, output = testhost.run(["quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 60)
     hostenv.check(env, output)
     if (
-        result.returncode
+        status
         or "I18N_RUNTIME_PASS" not in output
         or any(e in output for e in ["ReferenceError", "TypeError", "Unable to assign"])
     ):

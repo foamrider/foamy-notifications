@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
@@ -183,9 +182,7 @@ log = (base / "runtime.log").open("w")
 
 
 def start():
-    return subprocess.Popen(
-        ["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log, start_new_session=True
-    )
+    return hostenv.ProcessGroup(["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log)
 
 
 process = start()
@@ -408,8 +405,7 @@ try:
     wait(lambda: shown() == [long, first] and queue() == [waiting] and settled(), "restart aging fixture")
     clock = files("popups")[waiting]["waitingSince"]
     time.sleep(2)
-    os.killpg(process.pid, signal.SIGTERM)
-    process.wait(timeout=3)
+    process.stop()
     process = start()
     wait(
         lambda: ipc("notifications", "ping") == "ok" and state()["storeReady"] and waiting in files("history"),
@@ -563,8 +559,7 @@ try:
     clocks = {key: files("popups")[key].get("waitingSince") for key in (x, y, z)}
     assert all(clocks.values()), "a waiting card was saved without its waiting clock"
     time.sleep(2.2)
-    os.killpg(process.pid, signal.SIGTERM)
-    process.wait(timeout=3)
+    process.stop()
     process = start()
     wait(
         lambda: ipc("notifications", "ping") == "ok" and state()["storeReady"] and state()["popups"] == 4, "restart", 30
@@ -818,8 +813,7 @@ try:
         lambda: ids(state()["held"]) == [survivor] and files("popups")[survivor].get("queued") is True and settled(),
         "held before the restart",
     )
-    os.killpg(process.pid, signal.SIGTERM)
-    process.wait(timeout=3)
+    process.stop()
     restarted_at = time.time() * 1000
     process = start()
     wait(
@@ -837,8 +831,7 @@ try:
     reset()
     print("PASS: a held card survives a restart as a waiting card, once, without early expiry")
 finally:
-    os.killpg(process.pid, signal.SIGTERM)
-    process.wait(timeout=3)
+    process.stop()
     log.close()
     print("Runtime log:", base / "runtime.log")
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))

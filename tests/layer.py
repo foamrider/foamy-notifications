@@ -3,7 +3,6 @@
 import json
 import os
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
@@ -85,7 +84,7 @@ env = dict(
 # hyprctl stay (display=True).
 testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"], display=True)
 log = (base / "log").open("w")
-proc = subprocess.Popen(["qs", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log, start_new_session=True)
+proc = hostenv.ProcessGroup(["qs", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log)
 
 
 def ipc(target, *args):
@@ -207,7 +206,6 @@ try:
         + ")"
     )
 finally:
-    os.killpg(proc.pid, signal.SIGTERM)
-    proc.wait(timeout=3)
+    proc.stop()
     log.close()
     print("Native evidence:", base)

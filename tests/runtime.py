@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -200,9 +199,7 @@ env["PATH"] = str(bin_dir) + ":" + env["PATH"]
 for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
     env.pop(key, None)
 log = (base / "runtime.log").open("w")
-process = subprocess.Popen(
-    ["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log, start_new_session=True
-)
+process = hostenv.ProcessGroup(["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log)
 
 
 def ipc(target, *args):
@@ -1365,14 +1362,9 @@ try:
             # popup ('history'); a reload releases it, and the center's fixed
             # opener (with its failure feedback) takes over.
             if mode in ["reload", "missing", "launch-failure"]:
-                os.killpg(process.pid, signal.SIGTERM)
-                process.wait(timeout=3)
-                process = subprocess.Popen(
-                    ["quickshell", "-p", str(app), "--no-color"],
-                    env=env,
-                    stdout=log,
-                    stderr=log,
-                    start_new_session=True,
+                process.stop()
+                process = hostenv.ProcessGroup(
+                    ["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log
                 )
                 wait_for(
                     lambda: json.loads(ipc("foamy.notification-center.test", "state"))["entries"] == 1,
@@ -1684,8 +1676,7 @@ try:
         "PASS: stable third-card hover through real expiry and gap closure; timeout indicator progression, hover/busy pause, persistence and disabled expiry; center replacements, single removal, shared focus/retry, idle event-driven refresh; raw-image native closure and popup/visible/archived/DND center focus fallbacks; actual D-Bus delivery, duplicates, click handling, dismissal history, DND, overflow, native action callback, screenshot image delivery, structured action and center editor parity through expiry/reload with missing-file and launch-failure retries, configurable fullscreen/critical exceptions, expiry, invalid settings"
     )
 finally:
-    os.killpg(process.pid, signal.SIGTERM)
-    process.wait(timeout=3)
+    process.stop()
     log.close()
     print("Runtime log:", base / "runtime.log")
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))
