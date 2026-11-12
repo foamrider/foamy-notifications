@@ -355,18 +355,9 @@ omarchy plugin validate .
 node --test tests/*.test.cjs
 python3 -m unittest discover -s tests -p '*_test.py' -v
 python3 tests/render.py
-# In a Wayland desktop, verify GPU-rendered rounded image masks:
-python3 tests/render.py --desktop
 python3 tests/ui.py
 python3 tests/browser-ui.py
-# Real popup image intake/rendering on a private D-Bus session:
-python3 tests/images-ui.py
 python3 tests/motion.py
-# In a Wayland desktop, verify animation frames on a real surface:
-python3 tests/motion.py --desktop
-# Requires Wayland; checks first-popup mapping and final-popup unmapping, and
-# that cards which do not fit the real screen wait in the queue:
-python3 tests/layer.py
 python3 tests/runtime.py
 # The overflow queue: order, timers, replacements, CloseNotification, DND,
 # restart survival, screen space, the hover rule and the hold while hovered:
@@ -377,6 +368,28 @@ python3 tests/queue-runtime.py
 python3 tests/preferences-runtime.py
 # Also exercise the center, if its checkout is available:
 FOAMY_CENTER_SOURCE=/path/to/foamy-notification-center python3 tests/runtime.py
+```
+
+These tests put real popups on the live desktop (layer-shell surfaces on the
+running compositor), so they run only on purpose: each one refuses to start,
+and `tests/suite.sh` skips it, unless `FOAMY_TEST_DESKTOP=1` is set. Their
+notifications go to the test's own shell on a private bus, never to the
+desktop's notification daemon.
+
+```sh
+# Real popup image intake and GPU rendering:
+FOAMY_TEST_DESKTOP=1 python3 tests/images-ui.py
+# First-popup mapping, final-popup unmapping, and cards that do not fit the
+# real screen waiting in the queue:
+FOAMY_TEST_DESKTOP=1 python3 tests/layer.py
+# GPU-rendered rounded image masks:
+FOAMY_TEST_DESKTOP=1 python3 tests/render.py --desktop
+# Animation frames on a real surface:
+FOAMY_TEST_DESKTOP=1 python3 tests/motion.py --desktop
+# The sharing prompt on real layer surfaces:
+FOAMY_TEST_DESKTOP=1 python3 tests/features-runtime.py --desktop
+# Everything above that suite.sh runs (images-ui, layer):
+FOAMY_TEST_DESKTOP=1 tests/validate.sh
 ```
 
 The render test uses the real card with synthetic data at wide and narrow widths.

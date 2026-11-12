@@ -11,6 +11,8 @@ import time
 import testhost
 from testhost import hostenv
 
+if "--desktop" in sys.argv:
+    testhost.desktop_opt_in(__file__)
 testhost.session(__file__, 60, *sys.argv[1:])
 source = Path(__file__).resolve().parents[1]
 base = Path(tempfile.mkdtemp(prefix="foamy-features-runtime-"))

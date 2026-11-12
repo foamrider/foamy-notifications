@@ -11,6 +11,7 @@ import testhost
 from testhost import hostenv
 
 SOURCE = Path(__file__).resolve().parents[1]
+testhost.desktop_opt_in(__file__)
 testhost.session(__file__, 55)
 base = Path(tempfile.mkdtemp(prefix="foamy-popup-images-"))
 app = base / "app"

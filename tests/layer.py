@@ -10,6 +10,7 @@ from pathlib import Path
 import testhost
 from testhost import hostenv
 
+testhost.desktop_opt_in(__file__)
 testhost.session(__file__, 90)
 base = Path(tempfile.mkdtemp(prefix="foamy-native-motion-"))
 app = base / "app"

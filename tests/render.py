@@ -8,6 +8,8 @@ import testhost
 from testhost import hostenv
 
 source = Path(__file__).resolve().parents[1]
+if "--desktop" in sys.argv:
+    testhost.desktop_opt_in(__file__)
 base = Path(tempfile.mkdtemp(prefix="foamy-notifications-render-"))
 app = base / "app"
 app.mkdir()

@@ -27,6 +27,20 @@ FOCUS_APP = (
 )
 
 
+DESKTOP_OPT_IN = "FOAMY_TEST_DESKTOP"
+
+
+def desktop_opt_in(script):
+    """Stop a run that draws real surfaces on the live compositor (layer-shell
+    popups on the user's screen) unless FOAMY_TEST_DESKTOP=1 asks for it.
+    Call it before the test creates anything."""
+    if os.environ.get(DESKTOP_OPT_IN) != "1":
+        raise SystemExit(
+            f"{Path(script).name}: refused: it draws real surfaces on the live desktop; "
+            f"set {DESKTOP_OPT_IN}=1 to run it on purpose"
+        )
+
+
 def make(base, app, env, session_bus=None, display=False):
     """`env` (changed in place and returned) for a qs or client the test starts:
     hostenv.isolate() (no host bin dirs or AppImage libraries, dead audio,
