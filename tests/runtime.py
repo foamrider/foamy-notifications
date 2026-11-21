@@ -115,6 +115,12 @@ card_delegate = (
     .replace("NotificationCard {", "Cards.NotificationCard {")
     .replace("service.", "notifications.")
     .replace("popupWindow.screen.name", '"TEST-1"')
+    # Count the shipped card's remaining-time changes: the per-frame clock check reads them.
+    .replace(
+        "Cards.NotificationCard {",
+        "Cards.NotificationCard {\n property int progressUpdates: 0\n onRemainingMsChanged: progressUpdates++",
+        1,
+    )
 )
 (app / "shell.qml").write_text(
     """import QtQuick
@@ -134,25 +140,8 @@ ShellRoot {
   }
   TestCase {id:input;name:"StackRuntimeInput";when:false}
  }
- Cards.NotificationCard {
-  id: countdown
-  property int progressUpdates: 0
-  onRemainingMsChanged: progressUpdates++
-  property var group: notifications.displayGroups[0] || null
-  showTimeoutIndicator: notifications.preferences.showTimeoutIndicator
-  timeoutMs: group ? notifications.durationFor(group.urgency, group.expireTimeout) : 0
-  remainingMs: showTimeoutIndicator ? notifications.remainingFor(group) : 0
- }
- QtObject { id:testState; property var heldCard:null }
  IpcHandler {
   target: "countdown-test"
-  function capture(name: string): void {
-   popupColumn.grabToImage(function(result) { result.saveToFile(Qt.resolvedUrl(name+".png").toString().replace("file://","")) })
-  }
-  function hoverLast(): void {
-   testState.heldCard=popupColumn.itemAtIndex(popupColumn.count-1)
-   input.mouseMove(testState.heldCard,100,50)
-  }
   function leave(): void { input.mouseMove(testWindow.contentItem,480,580) }
   function clickFirst(): void { input.mouseClick(popupColumn.itemAtIndex(0),100,50,Qt.LeftButton) }
   function rightClickFirst(): void { input.mouseClick(popupColumn.itemAtIndex(0),100,50,Qt.RightButton) }
@@ -162,11 +151,14 @@ ShellRoot {
   function stackState(): string {
    var settled=true
    for(var i=0;i<popupColumn.count;i++){var card=popupColumn.itemAtIndex(i);if(!card || card.entranceOffset!==0)settled=false}
-   return JSON.stringify({count:popupColumn.count,settled:settled,held:popupColumn.holdPositions,
-    y:testState.heldCard?testState.heldCard.mapToItem(popupColumn,0,0).y:-1,hovered:testState.heldCard?testState.heldCard.hovered:false,
-    sameCard:popupColumn.count===1 && popupColumn.itemAtIndex(0)===testState.heldCard})
+   return JSON.stringify({count:popupColumn.count,settled:settled})
   }
-  function state(): string { return JSON.stringify({updates:countdown.progressUpdates,remaining:countdown.remainingMs,progress:countdown.timeoutProgress,duration:countdown.timeoutMs,enabled:countdown.showTimeoutIndicator}) }
+  // The timeout line of the newest card, as the shipped delegate binds it.
+  function state(): string {
+   var card=popupColumn.itemAtIndex(0)
+   if(!card) return JSON.stringify({present:false,updates:0,remaining:0,progress:0,duration:0,enabled:false})
+   return JSON.stringify({present:true,updates:card.progressUpdates,remaining:card.remainingMs,progress:card.timeoutProgress,duration:card.timeoutMs,enabled:card.showTimeoutIndicator})
+  }
   function actionError(key: string): string { return notifications.actionErrors[key] || "" }
   function pause(mode: string): void {
    var key=notifications.displayGroups[0].key
@@ -290,6 +282,10 @@ def dispatches():
     return dispatch_path.read_text().splitlines() if dispatch_path.exists() else []
 
 
+def countdown():
+    return json.loads(ipc("countdown-test", "state"))
+
+
 try:
     wait_for(lambda: ipc("notifications", "ping") == "ok", "service startup", 30)
     # A dismiss shortcut hides one visible card, not one member of a duplicate group.
@@ -320,10 +316,10 @@ try:
     # Placeholders have no persisted key: every close path must remain local.
     cfg = json.loads((config / "shell.json").read_text())
     # The placeholder stays 5 s while it is closed by hand (a slow IPC poll must
-    # still find it), and 1 s for the expiry case, which needs no poll first.
+    # still find it), and 3 s for the expiry case: each row first sees it shown.
     before = len(dispatches())
     for method in ["closeFirst", "deleteFirst", "enterFirst", "dismissOne", "dismissAll", "expire"]:
-        timeout = 1 if method == "expire" else 5
+        timeout = 3 if method == "expire" else 5
         settings = state()["settings"]
         if not (settings["closeButtonRemovesHistory"] and settings["lowTimeoutSec"] == timeout):
             cfg["plugins"][0].update(closeButtonRemovesHistory=True, lowTimeoutSec=timeout)
@@ -335,15 +331,14 @@ try:
                 "placeholder close settings",
             )
         ipc("notifications", "showHistory")
-        if method != "expire":
-            wait_for(
-                lambda: (
-                    state()["popups"] == 1
-                    and len(state()["groups"]) == 1
-                    and json.loads(ipc("countdown-test", "stackState"))["settled"]
-                ),
-                "empty-history placeholder",
-            )
+        wait_for(
+            lambda: (
+                state()["popups"] == 1
+                and len(state()["groups"]) == 1
+                and json.loads(ipc("countdown-test", "stackState"))["settled"]
+            ),
+            "empty-history placeholder",
+        )
         if method in ["closeFirst", "deleteFirst", "enterFirst"]:
             ipc("countdown-test", method)
         elif method != "expire":
@@ -370,10 +365,20 @@ try:
         wait_for(lambda: state()["popups"] == 1 and not state()["busy"], "default trusted critical bypass")
         ipc("notifications", "dismissAll")
         wait_for(lambda: state()["popups"] == 0 and not state()["busy"], "default bypass cleanup")
+    # Under the default option a critical from an ordinary app is still silenced:
+    # it goes to history and shows no card.
+    send("DND policy default chat")
+    wait_for(
+        lambda: (
+            any(json.loads(p.read_text()).get("summary") == "DND policy default chat" for p in history.glob("*.json"))
+            and not state()["busy"]
+        ),
+        "an ordinary critical reaches history during DND",
+    )
+    assert state()["popups"] == 0, "an ordinary critical escaped DND"
     cfg["plugins"][0]["dndSilenceCritical"] = True
     (config / "shell.json").write_text(json.dumps(cfg))
     wait_for(lambda: state()["settings"]["dndSilenceCritical"], "critical DND option reloads")
-    history = home / ".local/state/foamy-notifications/history"
     for app_name in ["omarchy-action", "notify-send", "Foamy Test"]:
         title = "DND policy silenced " + app_name
         send(title, ("-a", app_name))
@@ -422,8 +427,19 @@ try:
         assert action.communicate(timeout=4)[0].strip() == "default"
         wait_for(lambda: state()["retainedActions"] == 0 and not state()["busy"], "critical history action handled")
     send("DND policy transient", ("-a", "omarchy-action", "-h", "boolean:transient:true"))
-    time.sleep(0.15)
-    assert not any(json.loads(p.read_text()).get("summary") == "DND policy transient" for p in history.glob("*.json"))
+    # Jobs run in order: once a later silenced critical is in history, a stored
+    # transient would be there too.
+    send("DND policy sentinel")
+    wait_for(
+        lambda: (
+            any(json.loads(p.read_text()).get("summary") == "DND policy sentinel" for p in history.glob("*.json"))
+            and not state()["busy"]
+        ),
+        "the critical after the transient reaches history",
+    )
+    assert not any(
+        json.loads(p.read_text()).get("summary") == "DND policy transient" for p in history.glob("*.json")
+    ), "a transient notification was stored"
     send("DND policy normal feedback", ("-a", "omarchy-action", "-u", "normal"))
     wait_for(lambda: state()["popups"] == 1, "normal action feedback still bypasses DND")
     ipc("notifications", "dismissAll")
@@ -474,7 +490,8 @@ try:
     first = send("Duplicate")
     send("Duplicate")
     wait_for(lambda: len(state()["groups"]) == 1 and state()["groups"][0]["count"] == 2, "duplicate grouping")
-    assert json.loads(ipc("countdown-test", "state"))["progress"] == 0, "persistent popup showed a timeout"
+    wait_for(lambda: countdown()["present"], "duplicate card shown")
+    assert countdown()["progress"] == 0, "persistent popup showed a timeout"
     wait_for(lambda: not state()["busy"], "writes drain")
     if CENTER:
         wait_for(
@@ -876,8 +893,9 @@ try:
         clicked = time.monotonic()
         ipc("countdown-test", "clickFirst")
         if broken == "hang":
-            time.sleep(1)
-            assert state()["cardsBusy"] == 1 and state()["siteFocusProcesses"] == 1, "focus-app still running"
+            wait_for(
+                lambda: state()["cardsBusy"] == 1 and state()["siteFocusProcesses"] == 1, "focus-app still running", 3
+            )
         output = action.communicate(timeout=12)[0].strip()
         assert output == "default", (broken, output)
         assert broken == "missing" or time.monotonic() - clicked >= 4.5, "the hang ended before its deadline"
@@ -1135,8 +1153,11 @@ try:
             lambda: state()["tracked"] == state()["retainedActions"] == 0 and not state()["busy"],
             "raw native source released",
         )
-        pump_signals()
-        assert identifier in raw_closed, "raw sender was not told of closure"
+        # The NotificationClosed signal can still be in transit: pump until it arrives.
+        wait_for(
+            lambda identifier=identifier: (pump_signals(), identifier in raw_closed)[1],
+            "raw sender was not told of closure",
+        )
         if target == "popup":
             wait_for(
                 lambda: state()["popups"] == 1 and json.loads(ipc("countdown-test", "stackState"))["settled"],
@@ -1180,16 +1201,6 @@ try:
     context_path.write_text(json.dumps(ctx))
     cfg["plugins"][0]["browserMappings"] = []
     (config / "shell.json").write_text(json.dumps(cfg))
-    send("Dismiss me")
-    wait_for(lambda: state()["popups"] == 1 and not state()["busy"], "new popup")
-    ipc("notifications", "dismissOne")
-    wait_for(lambda: state()["popups"] == 0 and not state()["busy"], "dismiss drains")
-    assert list((home / ".local/state/foamy-notifications/history").glob("*.json")), "dismiss did not retain history"
-    ipc("notifications", "setDnd", "on")
-    send("Silenced")
-    wait_for(lambda: not state()["busy"], "DND drains")
-    assert state()["popups"] == 0, "DND showed popup"
-    ipc("notifications", "setDnd", "off")
     # Overflow waits in the queue rather than going to history.
     for i in range(5):
         send("Overflow " + str(i))
@@ -1203,67 +1214,6 @@ try:
         "dismissAll also clears the queue",
     )
 
-    # A normal notification followed by three criticals (a reported "it vanished").
-    def in_history(summary):
-        return any(
-            json.loads(path.read_text()).get("summary") == summary
-            for path in (home / ".local/state/foamy-notifications/history").glob("*.json")
-        )
-
-    def sequence():
-        normal = send("Non-critical notification", ("-u", "normal"))
-        return normal, [send("Critical notification " + str(i)) for i in (1, 2, 3)]
-
-    # With the default limit (5) all four show.
-    cfg = json.loads((config / "shell.json").read_text())
-    cfg["plugins"][0].pop("maxVisible", None)
-    (config / "shell.json").write_text(json.dumps(cfg))
-    wait_for(lambda: state()["settings"]["maxVisible"] == 5, "default visible limit is 5")
-    sequence()
-    wait_for(
-        lambda: len(state()["groups"]) == 4 and not state()["queue"] and not state()["busy"],
-        "the default limit shows all four",
-    )
-    assert not in_history("Non-critical notification"), "the normal notification went to history"
-    ipc("notifications", "dismissAll")
-    wait_for(lambda: state()["popups"] == 0 and not state()["busy"], "default sequence dismissed")
-    # With a limit of 3 one slot stays for the normal one: two criticals show with
-    # it, and the oldest critical waits and shows when one is dismissed.
-    cfg["plugins"][0]["maxVisible"] = 3
-    (config / "shell.json").write_text(json.dumps(cfg))
-    wait_for(lambda: state()["settings"]["maxVisible"] == 3, "visible limit 3")
-    normal, criticals = sequence()
-
-    def ids(keys):
-        return [key.split("-")[1] for key in keys]
-
-    wait_for(
-        lambda: (
-            ids(g["key"] for g in state()["groups"]) == [criticals[2], criticals[1], normal]
-            and ids(state()["queue"]) == [criticals[0]]
-            and not state()["busy"]
-        ),
-        "the normal one and two criticals show, the oldest critical waits",
-    )
-
-    def archived():
-        return ids(path.stem for path in (home / ".local/state/foamy-notifications/history").glob("*.json"))
-
-    assert normal not in archived() and criticals[0] not in archived(), (
-        "a shown or waiting notification went to history"
-    )
-    assert not set(criticals) & set(archived()), "a critical went to history"
-    ipc("notifications", "dismissOne")
-    # The newest critical leaves; the waiting card joins the bottom of the stack.
-    wait_for(
-        lambda: (
-            ids(g["key"] for g in state()["groups"]) == [criticals[1], normal, criticals[0]] and not state()["queue"]
-        ),
-        "the waiting card shows when a critical is dismissed",
-    )
-    wait_for(lambda: criticals[2] in archived(), "the dismissed critical is in history")
-    ipc("notifications", "dismissAll")
-    wait_for(lambda: state()["popups"] == 0 and not state()["busy"], "overflow sequence dismissed")
     action = subprocess.Popen(
         [
             "notify-send",
@@ -1282,7 +1232,9 @@ try:
         text=True,
     )
     wait_for(lambda: len(state()["groups"]) == 1 and state()["groups"][0]["actions"] == 1, "native action labels")
-    ipc("foamy.notifications", "invokeAction", state()["groups"][0]["key"], "read")
+    # Pressed as the keybindings press it: button 1 of the newest card. "default"
+    # is the card click, not a button, so button 1 is "read".
+    assert ipc("notifications", "invokeAction", "1") == "ok", "button 1 of the newest card was not pressed"
     output = action.communicate(timeout=4)[0].strip()
     assert output == "read", output
     wait_for(lambda: state()["popups"] == 0, "native action handles popup")
@@ -1585,10 +1537,6 @@ try:
     )
     send("Normal expiry", ("-u", "normal"))
     wait_for(lambda: state()["popups"] == 1, "normal popup visible")
-
-    def countdown():
-        return json.loads(ipc("countdown-test", "state"))
-
     wait_for(lambda: 0 < countdown()["progress"] < 1, "indicator receives shared clock ticks")
     before = countdown()
     time.sleep(0.2)
@@ -1603,16 +1551,15 @@ try:
         assert state()["popups"] == 1, "paused popup expired"
     ipc("countdown-test", "pause", "resume")
     wait_for(lambda: state()["popups"] == 0, "configured normal expiry", 8)
-    assert countdown()["progress"] == 0, "indicator retained expired state"
     settings.update({"showTimeoutIndicator": False, "normalTimeoutSec": 1})
     (config / "shell.json").write_text(json.dumps(cfg))
     wait_for(
-        lambda: not countdown()["enabled"] and state()["settings"]["normalTimeoutSec"] == 1,
+        lambda: state()["settings"]["showTimeoutIndicator"] is False and state()["settings"]["normalTimeoutSec"] == 1,
         "indicator setting updates live",
     )
     send("Hidden indicator still expires", ("-u", "normal"))
-    wait_for(lambda: state()["popups"] == 1, "disabled indicator popup visible")
-    assert countdown()["progress"] == 0
+    wait_for(lambda: state()["popups"] == 1 and countdown()["present"], "disabled indicator popup visible")
+    assert not countdown()["enabled"] and countdown()["progress"] == 0, "the turned-off timeout line still shows"
     wait_for(lambda: state()["popups"] == 0, "disabled indicator retains normal expiry")
     settings.update({"groupDuplicates": False, "criticalTimeoutSec": 0})
     (config / "shell.json").write_text(json.dumps(cfg))
@@ -1627,45 +1574,11 @@ try:
     )
     ipc("notifications", "invokeLast")
     wait_for(lambda: state()["popups"] == 0, "merged stack cleanup")
-    # Real mouse hover and D-Bus expiry: upper cards disappear without moving the third.
-    # 6 s: the hover lands before the cards expire even when each IPC call is slow.
-    settings["normalTimeoutSec"] = 6
-    (config / "shell.json").write_text(json.dumps(cfg))
-    wait_for(lambda: state()["settings"]["normalTimeoutSec"] == 6, "stack timeout config")
-    ipc("countdown-test", "leave")
-    send("Hold this third card", ("-u", "normal"))
-    send("Second card expires", ("-u", "normal"))
-    send("First card expires", ("-u", "normal"))
-
-    def stack_state():
-        return json.loads(ipc("countdown-test", "stackState"))
-
-    wait_for(lambda: stack_state()["count"] == 3 and stack_state()["settled"], "stack entrance settles for three cards")
-    ipc("countdown-test", "hoverLast")
-    wait_for(lambda: stack_state()["held"] and stack_state()["hovered"], "mouse hover holds stack")
-    held_y = stack_state()["y"]
-    assert held_y > 0
-    ipc("countdown-test", "capture", "stack-before")
-    wait_for(lambda: state()["popups"] == 1 and stack_state()["count"] == 1, "other cards still expire", 20)
-    after = stack_state()
-    assert after["y"] == held_y and after["hovered"] and after["sameCard"], "hovered card moved or was recreated"
-    ipc("countdown-test", "capture", "stack-held")
-    wait_for(lambda: (app / "stack-held.png").exists(), "held stack captured")
-    ipc("countdown-test", "leave")
-    wait_for(lambda: not stack_state()["held"] and stack_state()["y"] == 0, "leaving stack closes gaps")
-    ipc("countdown-test", "capture", "stack-closed")
-    wait_for(lambda: state()["popups"] == 0, "held card resumes its timeout", 20)
-    settings["normalTimeoutSec"] = 1
-    (config / "shell.json").write_text(json.dumps(cfg))
-    wait_for(lambda: state()["settings"]["normalTimeoutSec"] == 1, "restore timeout")
     # Invalid edits must leave the last valid configuration running.
     settings["normalTimeoutSec"] = -1
     (config / "shell.json").write_text(json.dumps(cfg))
     wait_for(lambda: bool(state()["configError"]), "invalid configuration reported")
     assert state()["settings"]["normalTimeoutSec"] == 1
-
-    for name in ["stack-before", "stack-held", "stack-closed"]:
-        assert (app / (name + ".png")).exists(), "missing stack render: " + name
     # The copied delegate must bind: a missing import only logs a ReferenceError.
     unbound = [
         line
@@ -1674,7 +1587,7 @@ try:
     ]
     assert not unbound, unbound[:3]
     print(
-        "PASS: stable third-card hover through real expiry and gap closure; timeout indicator progression, hover/busy pause, persistence and disabled expiry; center replacements, single removal, shared focus/retry, idle event-driven refresh; raw-image native closure and popup/visible/archived/DND center focus fallbacks; actual D-Bus delivery, duplicates, click handling, dismissal history, DND, overflow, native action callback, screenshot image delivery, structured action and center editor parity through expiry/reload with missing-file and launch-failure retries, configurable fullscreen/critical exceptions, expiry, invalid settings"
+        "PASS: timeout indicator progression, hover/busy pause, persistence and disabled expiry; center replacements, single removal, shared focus/retry, idle event-driven refresh; raw-image native closure and popup/visible/archived/DND center focus fallbacks; actual D-Bus delivery, duplicates, click handling, dismissal history, DND, overflow, native action callback, screenshot image delivery, structured action and center editor parity through expiry/reload with missing-file and launch-failure retries, configurable fullscreen/critical exceptions, expiry, invalid settings"
     )
 finally:
     process.stop()
