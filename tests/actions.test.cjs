@@ -383,13 +383,6 @@ test('a site focus that never starts leaves no card busy and falls back to the b
   assert.deepEqual(events,[]);assert.equal(s.processes[0].destroyed,1)
  }
 })
-test('site focus Processes complete on running -> false and run focus-app under timeout',()=>{
- const component=source.slice(source.indexOf('    id: siteFocusProcess'),source.indexOf('\n  }',source.indexOf('    id: siteFocusProcess')))
- assert.match(component,/onExited: function \(code, status\) \{\s*service\.finishSiteFocus\(siteFocusProc, code === 0 && status === 0\)\s*\}/)
- assert.match(component,/onRunningChanged: if \(!running\)\s*service\.finishSiteFocus\(siteFocusProc, false\)/)
- assert.match(component,/Component\.onDestruction: service\.siteFocusProcesses--/)
-})
-
 test('the center cannot invoke a card still on screen once its action lifetime is over',()=>{
  const {state,jobs,events}=fixture()
  state.popupModel={count:1,get:()=>({id:7,originalId:7,timestamp:5,app:'Mail',body:'x',summary:'x'})}

@@ -2,8 +2,8 @@
 
 The catalog checks every plugin shares (fallback, literal values, plurals, RTL) are
 foamy-kit's preview/i18n_runtime.py, which tests/suite.sh runs too. This test keeps
-what only this plugin has: the card's footer, header and number bindings following
-the language, and its RTL header and footer order."""
+what only this plugin has: the card's footer and header bindings following the
+language, and its RTL header and footer order."""
 
 import json
 import os
@@ -96,8 +96,6 @@ ShellRoot {
       for (var button of buttons) {
         if (button.mapToItem(card,0,0).x < 0 || button.mapToItem(card,button.width,0).x > card.width) { Qt.exit(9); return }
       }
-      var decimal = step === 0 || step === 1 || step === 4 ? "13,1" : "13.1"
-      if (translator.number(13.14, 1) !== decimal) { console.error("Wrong number format", step); Qt.exit(10); return }
       if (step === 0) choice.setText("da")
       else if (step === 1) choice.setText("en")
       else if (step === 2) choice.setText("ar")

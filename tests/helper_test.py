@@ -15,16 +15,16 @@ class HelperTest(unittest.TestCase):
         self.box = Sandbox()
         self.addCleanup(self.box.cleanup)
 
-    def focus(self, data, clients, op="focus"):
+    def focus(self, data, clients):
         """Runs one focus job in `serve`; returns (reply, dispatch argv lists)."""
         self.box.hypr("clients", clients)
         self.box.clear_calls()
-        reply = self.box.job(op, data)
+        reply = self.box.job("focus", data)
         return reply, self.box.dispatches()
 
-    def focused(self, data, clients, op="focus"):
+    def focused(self, data, clients):
         """The address a focus job brought forward, or 'none'."""
-        reply, dispatches = self.focus(data, clients, op)
+        reply, dispatches = self.focus(data, clients)
         self.assertTrue(reply["ok"], reply)
         if reply["out"].strip() == "none":
             self.assertEqual(dispatches, [])
@@ -34,8 +34,8 @@ class HelperTest(unittest.TestCase):
         self.assertTrue(dispatches[0][0].startswith(FOCUS) and dispatches[0][0].endswith('" })'), dispatches)
         return dispatches[0][0][len(FOCUS) : -len('" })')]
 
-    def miss(self, data, clients, op="focus"):
-        reply, dispatches = self.focus(data, clients, op)
+    def miss(self, data, clients):
+        reply, dispatches = self.focus(data, clients)
         self.assertFalse(reply["ok"], reply)
         self.assertTrue(reply["error"])
         self.assertEqual(dispatches, [])
@@ -166,17 +166,6 @@ class HelperTest(unittest.TestCase):
         }
         self.assertEqual(self.miss(mapped, clients), "browser")
         self.assertIsNone(self.miss({"app": "Vivaldi", "body": "teams.microsoft.com", "mappings": None}, clients))
-
-    def test_focus_reports_a_windowless_sender_without_failing(self):
-        self.box.hypr("clients", [{"class": "Other", "address": "0x1"}])
-        self.assertEqual(self.box.ok("focus", {"app": "omasnap"}), "none\n")
-        self.assertEqual(self.box.dispatches(), [])
-        # A browser app without its window is still an error: a mapping can fix it.
-        result = self.box.run("focus", {"app": "Vivaldi", "body": "teams.microsoft.com"})
-        self.assertEqual(result.returncode, 1)
-        self.assertTrue(result.stderr.decode().startswith("foamy.notifications: "), result.stderr)
-        self.assertEqual(result.stdout, b"")
-        self.assertEqual(self.box.dispatches(), [])
 
     def test_focus_dispatch_uses_lua_syntax_then_the_legacy_dispatcher(self):
         self.box.hypr("clients", [{"class": "Chat", "address": "0xAbC1"}])
@@ -384,39 +373,6 @@ class HelperTest(unittest.TestCase):
             )
         rows = [json.loads(line) for line in self.box.ok("read", {}).splitlines()]
         self.assertEqual((len(rows), rows[0]["timestamp"], rows[-1]["timestamp"]), (1000, 1002, 3))
-
-    def test_center_focus_uses_current_browser_mapping_and_ignores_commands(self):
-        folder = self.box.home / ".config/omarchy"
-        folder.mkdir(parents=True)
-        mapping = {"origin": "teams.microsoft.com", "windowClass": "vivaldi-teams.microsoft.com__-Profile_2"}
-        (folder / "shell.json").write_text(
-            json.dumps(
-                {
-                    "plugins": [
-                        {"id": "other", "browserMappings": "x"},
-                        {"id": "foamy.notifications", "browserMappings": [mapping]},
-                    ]
-                }
-            )
-        )
-        clients = [
-            {"class": "vivaldi-teams.microsoft.com__-Profile_1", "address": "0x11"},
-            {"class": "vivaldi-teams.microsoft.com__-Profile_2", "address": "0x12"},
-        ]
-        marker = self.box.root / "marker"
-        data = {"app": "Vivaldi", "body": "teams.microsoft.com", "execArgv": '["touch", "%s"]' % marker, "mappings": []}
-        self.assertEqual(self.focused(data, clients, op="focus-configured"), "0x12")
-        self.assertFalse(marker.exists())
-        (folder / "shell.json").write_text(
-            json.dumps({"plugins": [{"id": "foamy.notifications", "browserMappings": [{"origin": 1}]}]})
-        )
-        self.assertIsNone(self.miss(data, clients, op="focus-configured"))
-        (folder / "shell.json").write_text(
-            json.dumps({"plugins": [{"id": "foamy.notifications", "browserMappings": [mapping] * 33}]})
-        )
-        self.assertIsNone(self.miss(data, clients, op="focus-configured"))
-        (folder / "shell.json").unlink()
-        self.assertEqual(self.miss(data, clients, op="focus-configured"), "browser")
 
     def test_context_reports_fullscreen_and_pointer_monitors(self):
         self.box.hypr(

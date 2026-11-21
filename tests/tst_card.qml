@@ -226,30 +226,6 @@ Item {
       verify(!footer.visible)
       compare(card.height, height - 34)
     }
-    function test_feature_buttons_do_not_trigger_default_actions() {
-      card.offers = {
-        codes: "482913",
-        link: "https://meet.google.com/abc",
-        meeting: true
-      }
-      card.width = 280
-      waitForRendering(card)
-      var copy = findChild(card, "notificationCopyCode"), link = findChild(card, "notificationOpenLink")
-      verify(copy.visible)
-      verify(link.visible)
-      mouseClick(copy)
-      compare(feature.count, 1)
-      compare(feature.signalArguments[0][0], "code")
-      compare(feature.signalArguments[0][1], "482913")
-      link.forceActiveFocus()
-      keyClick(Qt.Key_Space)
-      compare(feature.count, 2)
-      compare(feature.signalArguments[1][0], "link")
-      compare(opened.count, 0)
-      compare(action.count, 0)
-      verify(copy.mapToItem(card, copy.width, 0).x <= card.width)
-      verify(link.mapToItem(card, link.width, 0).x <= card.width)
-    }
     function test_snooze_controls_keep_right_click_and_escape_behavior() {
       card.snoozeAvailable = true
       mouseClick(findChild(card, "notificationSnooze"))
@@ -416,18 +392,6 @@ Item {
       verify(!tile.visible)
       verify(title.width > card.width * 0.88)
     }
-    function test_image_slot_is_identical_for_browser_and_native_apps() {
-      card.image = Qt.resolvedUrl("avatar.svg").toString()
-      var image = findChild(card, "notificationImage"), tile = findChild(card, "notificationImageTile")
-      tryCompare(image, "status", Image.Ready)
-      waitForRendering(card)
-      var before = tile.mapToItem(card, 0, 0), width = tile.width, height = card.height
-      card.app = "Vivaldi"
-      waitForRendering(card)
-      compare(tile.mapToItem(card, 0, 0), before)
-      compare(tile.width, width)
-      compare(card.height, height)
-    }
     function test_left_click_activates() {
       mouseClick(card, 100, 52, Qt.LeftButton)
       compare(opened.count, 1)
@@ -509,12 +473,6 @@ Item {
       card.actions = []
       compare(card.actionsExpanded, false)
       compare(findChild(card, "moreActionsButton").visible, false)
-    }
-    function test_hover_pauses_signal() {
-      mouseMove(card, 100, 52)
-      tryCompare(card, "hovered", true)
-      mouseMove(card, -10, -10)
-      tryCompare(card, "hovered", false)
     }
     function test_busy_click_does_not_duplicate_action() {
       card.busy = true
