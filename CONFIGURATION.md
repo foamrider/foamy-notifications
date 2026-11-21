@@ -360,12 +360,16 @@ python3 tests/browser-ui.py
 python3 tests/motion.py
 python3 tests/runtime.py
 # The overflow queue: order, timers, replacements, CloseNotification, DND,
-# restart survival, screen space, the hover rule and the hold while hovered:
+# restart survival, screen space, the hover rule and the hold while hovered,
+# plus the stock IPC contract and no running timer at idle:
 python3 tests/overflow-runtime.py
 # Stalled-worker floods, raw 4 MiB buffers, replacements and context backlog:
 python3 tests/queue-runtime.py
 # Center preference saves through the host API (shell.updateEntryInline):
 python3 tests/preferences-runtime.py
+# Real popup image intake: D-Bus hint, helper conversion, card image
+# (needs ImageMagick 7 and file):
+python3 tests/images-ui.py
 # Also exercise the center, if its checkout is available:
 FOAMY_CENTER_SOURCE=/path/to/foamy-notification-center python3 tests/runtime.py
 ```
@@ -377,8 +381,8 @@ notifications go to the test's own shell on a private bus, never to the
 desktop's notification daemon.
 
 ```sh
-# Real popup image intake and GPU rendering:
-FOAMY_TEST_DESKTOP=1 python3 tests/images-ui.py
+# GPU-rendered image captures:
+FOAMY_TEST_DESKTOP=1 python3 tests/images-ui.py --desktop
 # First-popup mapping, final-popup unmapping, and cards that do not fit the
 # real screen waiting in the queue:
 FOAMY_TEST_DESKTOP=1 python3 tests/layer.py
@@ -388,7 +392,7 @@ FOAMY_TEST_DESKTOP=1 python3 tests/render.py --desktop
 FOAMY_TEST_DESKTOP=1 python3 tests/motion.py --desktop
 # The sharing prompt on real layer surfaces:
 FOAMY_TEST_DESKTOP=1 python3 tests/features-runtime.py --desktop
-# Everything above that suite.sh runs (images-ui, layer):
+# Everything above that suite.sh runs (layer):
 FOAMY_TEST_DESKTOP=1 tests/validate.sh
 ```
 
