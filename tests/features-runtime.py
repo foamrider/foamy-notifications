@@ -132,7 +132,7 @@ def state():
     return json.loads(ipc("foamy.notifications", "state"))
 
 
-def wait(fn, seconds=5):
+def wait(fn, seconds=5, label="condition", detail=None):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         try:
@@ -141,7 +141,9 @@ def wait(fn, seconds=5):
         except (ValueError, subprocess.SubprocessError):
             pass
         time.sleep(0.05)
-    raise AssertionError((base / "runtime.log").read_text())
+    # Name the failed check and what it saw before the long runtime log.
+    seen = "\n" + detail() if detail else ""
+    raise AssertionError("timed out: " + label + seen + "\n" + (base / "runtime.log").read_text())
 
 
 def send(app, title, body="Message"):
@@ -164,8 +166,14 @@ try:
     ipc("feature-test", "offer", "code", "111111")
     ipc("feature-test", "offer", "code", "482913")
     clipboard = home / "clipboard.log"
-    wait(lambda: clipboard.exists() and clipboard.read_text().splitlines() == ["copy 482913", "clear"])
-    wait(lambda: json.loads(ipc("feature-test", "state"))["clipboard"] == "")
+    wait(
+        lambda: clipboard.exists() and clipboard.read_text().splitlines() == ["copy 482913", "clear"],
+        label="offered code copied once and cleared",
+        detail=lambda: "clipboard.log: " + (clipboard.read_text() if clipboard.exists() else "missing"),
+    )
+    wait(
+        lambda: json.loads(ipc("feature-test", "state"))["clipboard"] == "", label="card shows the clipboard as cleared"
+    )
     ipc("feature-test", "snooze")
     wait(lambda: state()["popups"] == 0 and not state()["busy"])
     send("Chat", "Held during snooze")
@@ -182,13 +190,19 @@ try:
         lambda: (
             "app:Chat" in json.loads(saved.read_text()).get("snoozes", {})
             and json.loads(saved.read_text()).get("dnd") is True
-        )
+        ),
+        label="DND and snooze saved to state.json",
+        detail=lambda: "state.json: " + (saved.read_text() if saved.exists() else "missing"),
     )
     proc.stop()
     proc = start()
-    wait(lambda: "app:Chat" in state()["snoozes"] and state()["doNotDisturb"], 30)
+    wait(
+        lambda: "app:Chat" in state()["snoozes"] and state()["doNotDisturb"],
+        30,
+        label="DND and snooze restored after restart",
+    )
     ipc("notifications", "setDnd", "off")
-    wait(lambda: not state()["doNotDisturb"])
+    wait(lambda: not state()["doNotDisturb"], label="DND turned off")
     ipc("feature-test", "shortSnooze")
     wait(lambda: not state()["snoozes"])
     send("Chat", "After snooze")
