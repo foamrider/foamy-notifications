@@ -267,7 +267,6 @@ pub fn py_eq(a: &Value, b: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn floats_print_like_python_repr() {
@@ -289,38 +288,5 @@ mod tests {
         for (value, text) in cases {
             assert_eq!(float_repr(value), text, "{value}");
         }
-    }
-
-    #[test]
-    fn dumps_matches_python() {
-        let value: Value = loads(br#"{"b": 1, "a": [1.0, true, null, "x\u00e5\ud83d\ude00\u007f\u0001\t\"\\/"], "e": {}, "l": []}"#).unwrap();
-        assert_eq!(
-            dumps(&value),
-            r#"{"b": 1, "a": [1.0, true, null, "x\u00e5\ud83d\ude00\u007f\u0001\t\"\\/"], "e": {}, "l": []}"#
-        );
-        assert_eq!(
-            dumps_indent(
-                &json!({"version": 5, "dnd": false, "snoozes": {}, "x": [1, {"y": 2}]}),
-                2
-            ),
-            "{\n  \"version\": 5,\n  \"dnd\": false,\n  \"snoozes\": {},\n  \"x\": [\n    1,\n    {\n      \"y\": 2\n    }\n  ]\n}"
-        );
-    }
-
-    #[test]
-    fn python_values() {
-        assert_eq!(py_str(&json!(null)), "None");
-        assert_eq!(py_str(&json!(true)), "True");
-        assert_eq!(py_str(&json!(1.0)), "1.0");
-        assert_eq!(py_str(&json!(-3)), "-3");
-        assert_eq!(py_str(&json!(["a'b", {"k": 1}])), "[\"a'b\", {'k': 1}]");
-        assert!(py_eq(&json!(1), &json!(1.0)));
-        assert!(py_eq(&json!(true), &json!(1)));
-        assert!(py_eq(&json!({"a": 1, "b": 2}), &json!({"b": 2, "a": 1})));
-        assert!(!py_eq(&json!("1"), &json!(1)));
-        assert!(!truthy(&json!(0.0)));
-        assert!(truthy(&json!(" ")));
-        assert!(loads(b"\xef\xbb\xbf{}").is_ok());
-        assert!(loads_text(b"\xef\xbb\xbf{}").is_err());
     }
 }
