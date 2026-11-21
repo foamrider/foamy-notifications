@@ -2,6 +2,8 @@
 
 import json
 import os
+import sys
+import time
 import unittest
 
 from helperproc import Sandbox
@@ -186,6 +188,25 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(self.box.dispatches(), [])
         (self.box.bin / "hyprctl").unlink()
         self.assertFalse(self.box.job("focus", {"app": "Chat"})["ok"])
+
+    def test_hung_hyprctl_fails_the_job_and_serve_goes_on(self):
+        # One serve worker runs every write, archive and forget: a hyprctl that
+        # never answers must fail its job at the 3 s deadline, not hold the queue.
+        pid_file = self.box.root / "hung.pid"
+        (self.box.bin / "hyprctl").write_text(
+            "#!%s\nimport os, time\nopen(%r, 'w').write(str(os.getpid()))\ntime.sleep(60)\n"
+            % (sys.executable, str(pid_file))
+        )
+        started = time.monotonic()
+        first, second = self.box.serve(
+            [{"id": 1, "op": "focus", "data": {"app": "Chat"}}, {"id": 2, "op": "read", "data": {}}], timeout=10
+        )
+        self.assertEqual((first["id"], first["ok"], second["id"], second["ok"]), (1, False, 2, True))
+        self.assertNotIn("reason", first)
+        self.assertLess(time.monotonic() - started, 10)
+        # The pid file proves the fake ran; it was killed and reaped, not left behind.
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(pid_file.read_text()), 0)
 
     def test_serve_reports_the_focus_miss_reason(self):
         self.box.hypr("clients", [])
