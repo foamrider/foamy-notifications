@@ -24,6 +24,25 @@ function fixture() {
   return state
 }
 function bytes(state) { return state.popupFileQueue.reduce((sum, job) => sum + job.bytes, 0) }
+// Run a method of the FoamyIpc handler (4-space indent, typed parameters) in its
+// own context: some names exist both there and in the Service it calls.
+function loadIpc(service, name) {
+  const start = source.indexOf('    function ' + name + '(')
+  assert.notEqual(start, -1, name)
+  const text = source.slice(start, source.indexOf('\n    }', start) + 6)
+    .replace(/\)\s*:\s*\w+\s*\{/, ') {').replace(/(\w+)\s*:\s*(string|int)\b/g, '$1')
+  const context = vm.createContext({service})
+  vm.runInContext(text, context)
+  return context[name]
+}
+// A helper process stub that records each job line it is sent.
+function withHelper(state) {
+  const sent = []
+  state.helperProc = {running:true, write(line) { sent.push(JSON.parse(line)) }}; state.helperRestart = {running:false, start() {}}
+  state.runningJob = null; state.nextJobId = 0; state.acceptNormalizedImages = () => {}; state.deferredMoves = {}
+  load(state, 'runNextPopupFileJob'); load(state, 'helperReplied')
+  return sent
+}
 
 test('blocked worker cannot retain an unbounded distinct-sender backlog', () => {
   const s = fixture()
@@ -105,6 +124,10 @@ test('draining a write releases its pending slot and bytes; a read remains a bar
   s.runNextPopupFileJob()
   assert.equal(sent[0].data, 'first')
   assert.equal(s.popupFileQueue.length, 2)
+  // A malformed reply is ignored: the job stays in flight and nothing else is sent.
+  assert.doesNotThrow(() => s.helperReplied('{'))
+  assert.equal(sent.length, 1)
+  assert.notEqual(s.runningJob, null)
   // One job in flight: nothing else is sent until the helper answers.
   s.runNextPopupFileJob(); assert.equal(sent.length, 1)
   s.helperReplied(JSON.stringify({id:sent[0].id, ok:true, out:''}))
@@ -126,40 +149,64 @@ test('rejected DND writes release their live object without catch-up recursion o
   assert.equal(writes, 1); assert.equal(released, 1)
 })
 
-test('popup producers roll back rejected image generations and history producers carry cancellation identity', () => {
+test('a refused popup write reports the limit; a history-only cancel ends the history write once and keeps the popup write', () => {
   const s = fixture()
   s.imagesDir='/tmp/images/'; s.nextImageWriteVersion=0; s.imageWriteVersions={}; s.waitingKeys={}; s.shownDeadlines={}
   load(s, 'persistPopupFile'); load(s, 'writeHistoryFile')
   const row={originalId:1,timestamp:1000,app:'Chat',appIcon:'chat',body:'\0'.repeat(25000)}
   assert.equal(s.persistPopupFile(row), false)
-  assert.deepEqual(Object.keys(s.imageWriteVersions), [])
+  assert.match(s.lastError, /128 KiB/)
+  assert.equal(s.popupFileQueue.length, 0)
   row.body='hello'
-  assert.equal(s.writeHistoryFile(row), true)
-  assert.equal(s.popupFileQueue[0].writeKey, '1000-1')
-  assert.equal(s.popupFileQueue[0].historyWrite, true)
+  let done = 0
+  assert.equal(s.persistPopupFile(row), true)
+  assert.equal(s.writeHistoryFile(row, ok => { assert.equal(ok, false); done++ }), true)
+  assert.equal(s.popupFileQueue.length, 2)
+  s.cancelPendingWrites([Logic.imageStem(row)], true)
+  assert.equal(done, 1)
+  assert.equal(s.popupFileQueue.length, 1)
+  assert.equal(s.popupFileQueue[0].op, 'write')
+  assert.equal(JSON.parse(s.popupFileQueue[0].payload).history, undefined, 'the popup write was cancelled instead')
+  s.cancelPendingWrites([Logic.imageStem(row)], true)
+  assert.equal(done, 1, 'a cancelled write completed twice')
 })
 
-test('oversized fields/actions are rejected at intake and replacements without copying full metadata', () => {
+test('intake takes every field, hint and action at its limit, rejects one more, and drops oversized replacement values whole', () => {
   const n={appName:'Chat',appIcon:'chat',summary:'Hi',body:'Hello',desktopEntry:'chat',hints:{},actions:[]}
   assert.equal(Logic.notificationWithinLimits(n), true)
-  for(const [name, length] of Object.entries({appName:257,appIcon:4097,summary:4097,body:16385,desktopEntry:513,image:12289}))
-    assert.equal(Logic.notificationWithinLimits({...n,[name]:'x'.repeat(length)}), false, name)
-  for(const [name,length] of Object.entries({'image-path':4097,'image_path':4097,'omarchy-glyph':65,'omarchy-exec-argv':8193}))
-    assert.equal(Logic.notificationWithinLimits({...n,hints:{[name]:'x'.repeat(length)}}), false, name)
-  assert.equal(Logic.notificationWithinLimits({...n,actions:Array(33).fill({identifier:'reply',text:'Reply'})}), false)
-  assert.equal(Logic.notificationWithinLimits({...n,actions:[{identifier:'x'.repeat(257)}]}), false)
-  assert.equal(Logic.notificationWithinLimits({...n,actions:[{identifier:'reply',text:'x'.repeat(513)}]}), false)
+  const within = changes => Logic.notificationWithinLimits({...n, ...changes})
+  for (const [name, limit] of Object.entries({appName:256, appIcon:4096, summary:4096, body:16384, desktopEntry:512, image:12288})) {
+    assert.equal(within({[name]:'x'.repeat(limit)}), true, name + ' at its limit')
+    assert.equal(within({[name]:'x'.repeat(limit + 1)}), false, name + ' over its limit')
+  }
+  for (const [name, limit] of Object.entries({'image-path':4096, 'image_path':4096, 'omarchy-glyph':64, 'omarchy-exec-argv':8192, 'omarchy-actions':8192})) {
+    assert.equal(within({hints:{[name]:'x'.repeat(limit)}}), true, name + ' at its limit')
+    assert.equal(within({hints:{[name]:'x'.repeat(limit + 1)}}), false, name + ' over its limit')
+  }
+  const action = {identifier:'reply', text:'Reply'}
+  assert.equal(within({actions:Array(32).fill(action)}), true, '32 actions')
+  assert.equal(within({actions:Array(33).fill(action)}), false, '33 actions')
+  assert.equal(within({actions:[{identifier:'x'.repeat(256)}]}), true, 'identifier at its limit')
+  assert.equal(within({actions:[{identifier:'x'.repeat(257)}]}), false, 'identifier over its limit')
+  assert.equal(within({actions:[{identifier:'reply',text:'x'.repeat(512)}]}), true, 'text at its limit')
+  assert.equal(within({actions:[{identifier:'reply',text:'x'.repeat(513)}]}), false, 'text over its limit')
   const snapshot=Logic.snapshotOf({...n,appIcon:'x'.repeat(1000000),hints:{'image-path':'/'+'x'.repeat(1000000),'omarchy-exec-argv':'x'.repeat(1000000)}})
   assert.equal(snapshot.appIcon, ''); assert.equal(snapshot.image, ''); assert.equal(snapshot.execArgv, '')
 })
 
-test('history writes have cancellation keys but never expect a live-image result', () => {
-  const s=fixture()
-  s.helperProc={running:true, write() {}}; s.helperRestart={running:false, start() {}}; s.runningJob=null; s.nextJobId=0
-  load(s, 'runNextPopupFileJob')
+test('a history write reply is never read as an image result', () => {
+  const s = fixture()
+  const sent = withHelper(s), accepted = []
+  s.acceptNormalizedImages = result => accepted.push(result)
   s.put('{}', '1-1', () => {}, true)
-  s.runNextPopupFileJob()
-  assert.equal(s.runningImageWrite, false)
+  s.helperReplied(JSON.stringify({id:sent[0].id, ok:true, out:''}))
+  assert.deepEqual(accepted, [])
+  assert.equal(s.lastError, '')
+  // A popup write's reply is the image result.
+  s.put('{}', '1-2')
+  s.helperReplied(JSON.stringify({id:sent[1].id, ok:true, out:JSON.stringify({key:'1-2', version:1, sources:{}})}))
+  assert.equal(accepted.length, 1)
+  assert.equal(accepted[0].key, '1-2')
 })
 
 test('a sender closed during a DND write does not strand its callback', () => {
@@ -221,8 +268,41 @@ test('a history clear turns deferred archives into deletes so they cannot refill
   s.deferredMoves = {'1-1':'archive','2-2':'delete','300-3':'archive'}
   s.deleteDeferredArchives(key => Number(key.split('-')[0]) <= 100)
   assert.deepEqual({...s.deferredMoves}, {'1-1':'delete','2-2':'delete','300-3':'archive'})
-  const clear = source.slice(source.indexOf('  function clearHistory('), source.indexOf('\n  }', source.indexOf('  function clearHistory(')))
-  assert.ok(clear.indexOf('deleteDeferredArchives') < clear.indexOf('enqueueHelperJob("clear"'))
+  // The real clear converts every deferred archive and queues the clear.
+  s.liveKeys = {}; s.retainedHistory = {}; s.releaseHistoryAction = () => {}
+  load(s, 'clearHistory')
+  s.deferredMoves = {'4-4':'archive','5-5':'delete'}
+  assert.equal(s.clearHistory(), true)
+  assert.deepEqual({...s.deferredMoves}, {'4-4':'delete','5-5':'delete'})
+  assert.equal(s.popupFileQueue[s.popupFileQueue.length - 1].op, 'clear')
+})
+
+test('refused moves run as one archive and one delete batch once the queue drains', () => {
+  const s = fixture()
+  const sent = withHelper(s)
+  load(s, 'deferMove')
+  s.put('"busy"')
+  s.deferMove('1-1', 'archive'); s.deferMove('2-2', 'delete'); s.deferMove('3-3', 'archive')
+  s.runNextPopupFileJob()
+  assert.equal(sent.length, 1, 'a deferred move ran while a job was in flight')
+  s.helperReplied(JSON.stringify({id:sent[0].id, ok:true, out:''}))
+  assert.deepEqual([sent[1].op, sent[1].data], ['archive', {keys:['1-1', '3-3']}])
+  assert.equal(sent.length, 2)
+  s.helperReplied(JSON.stringify({id:sent[1].id, ok:true, out:''}))
+  assert.deepEqual([sent[2].op, sent[2].data], ['delete', {keys:['2-2']}])
+  s.helperReplied(JSON.stringify({id:sent[2].id, ok:true, out:''}))
+  assert.equal(sent.length, 3, 'a deferred move ran twice')
+  assert.deepEqual({...s.deferredMoves}, {})
+  // Bounded: 2048 distinct keys are kept, a new one past that is dropped, a kept one can still become a delete.
+  const b = fixture()
+  b.deferredMoves = {}
+  load(b, 'deferMove')
+  for (let i = 0; i < 2049; i++) b.deferMove('1-' + i, 'archive')
+  assert.equal(Object.keys(b.deferredMoves).length, 2048)
+  assert.equal(b.deferredMoves['1-2048'], undefined)
+  b.deferMove('1-0', 'delete')
+  assert.equal(b.deferredMoves['1-0'], 'delete')
+  assert.equal(Object.keys(b.deferredMoves).length, 2048)
 })
 
 test('a refused or failed history read never replays, so live popups keep their actions', () => {
@@ -247,20 +327,29 @@ test('a refused or failed history read never replays, so live popups keep their 
   assert.equal(replays, 1)
 })
 
-test('history clears and center releases report "busy" when the queue refuses them', () => {
-  const ipc = source.slice(source.indexOf('    function clear(): string {'), source.indexOf('    function dismissAll(): string {'))
-  assert.match(ipc, /clearHistory\(\) \? "ok" : "busy"/)
-  assert.match(source, /releaseHistoryKeys\(keys\) \? "ok" : "busy"/)
-  assert.match(source, /releaseHistoryBefore\(Number\(timestamp\)\) \? "ok" : "busy"/)
+test('history clears and center releases answer "ok", "invalid" and "busy" through the IPC', () => {
   const s = fixture()
-  for (const name of ['deleteDeferredArchives']) load(s, name)
   s.deferredMoves = {}; s.liveKeys = {}; s.retainedHistory = {}
   s.releaseHistoryAction = () => {}; s.removeKeys = () => {}
-  load(s, 'releaseHistoryKeys'); load(s, 'clearHistory')
-  assert.equal(s.releaseHistoryKeys(['1-1']), true)
+  for (const name of ['deleteDeferredArchives', 'releaseHistoryKeys', 'releaseHistoryBefore', 'clearHistory']) load(s, name)
+  const clear = loadIpc(s, 'clear'), releaseHistory = loadIpc(s, 'releaseHistory'), releaseHistoryBefore = loadIpc(s, 'releaseHistoryBefore')
+  assert.equal(clear(), 'ok')
+  assert.equal(releaseHistory('1-1'), 'ok')
+  assert.equal(releaseHistoryBefore('1000'), 'ok')
+  assert.equal(releaseHistoryBefore('1234567890123456'), 'ok', '16 digits')
+  // A malformed key or timestamp is refused before any work is queued.
+  const queued = s.popupFileQueue.length
+  for (const keys of ['../1', '1-1,', Array(101).fill('1-1').join(',')])
+    assert.equal(releaseHistory(keys), 'invalid', keys.slice(0, 20))
+  for (const timestamp of ['', '1e3', '-1', '12345678901234567'])
+    assert.equal(releaseHistoryBefore(timestamp), 'invalid', timestamp)
+  assert.equal(s.popupFileQueue.length, queued)
+  // A full queue refuses them: "busy", so the center retries.
+  s.popupFileQueue = []
   for (let i = 0; i < s.popupQueueLimit; i++) s.enqueueHelperJob('delete', {key: '9-' + i})
-  assert.equal(s.releaseHistoryKeys(['2-2']), false)
-  assert.equal(s.clearHistory(), false)
+  assert.equal(clear(), 'busy')
+  assert.equal(releaseHistory('2-2'), 'busy')
+  assert.equal(releaseHistoryBefore('1000'), 'busy')
 })
 
 test('a dismissal converts only popup writes queued after the last history barrier', () => {
