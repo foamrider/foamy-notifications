@@ -123,7 +123,7 @@ def entry():
     ]
 
 
-def wait(fn, seconds=5):
+def wait(fn, seconds=5, label="condition"):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         try:
@@ -132,7 +132,8 @@ def wait(fn, seconds=5):
         except (ValueError, subprocess.SubprocessError):
             pass
         time.sleep(0.05)
-    raise AssertionError((base / "runtime.log").read_text())
+    # Name the failed check before the long runtime log.
+    raise AssertionError("timed out: " + label + "\n" + (base / "runtime.log").read_text())
 
 
 def center_pokes():
@@ -145,7 +146,7 @@ def center_pokes():
 def refused_on(changed, loaded, expected):
     # The service must have read the new file before the save, or it would judge the old one.
     (config / "shell.json").write_text(json.dumps(changed))
-    wait(lambda: loaded(preferences()["settings"]))
+    wait(lambda: loaded(preferences()["settings"]), label="the service read the changed shell.json")
     before, writes = (config / "shell.json").read_bytes(), int(ipc("preferences-test", "writes"))
     assert save("showImages", False) == expected, preferences()
     assert (config / "shell.json").read_bytes() == before and int(ipc("preferences-test", "writes")) == writes, (
@@ -178,6 +179,12 @@ try:
     # Enabling duplicate grouping lifts the legacy browser override.
     assert save("groupDuplicates", True) == ""
     assert entry()["groupDuplicates"] is True and entry()["browserGrouping"] == "browser", entry()
+    # The service reloads the written file and pokes the center for it; wait for
+    # that reload, so its poke cannot land in the refused-save count below.
+    wait(
+        lambda: preferences()["settings"]["browserGrouping"] == "browser",
+        label="the service reloaded the grouping save",
+    )
     # An unchanged value is stored already: the host reports no change, the save succeeds.
     writes = int(ipc("preferences-test", "writes"))
     assert save("compact", False) == ""
@@ -187,13 +194,16 @@ try:
     before = (config / "shell.json").read_text()
     # The center shows "saving" until it is told the result, so it is told about
     # a refused save too, once (nothing is written, so no reload tells it either).
-    wait(lambda: int(ipc("preferences-test", "peerCalls")) == 0)
+    wait(lambda: int(ipc("preferences-test", "peerCalls")) == 0, label="no center call in flight")
     pokes = center_pokes()
     ipc("preferences-test", "refuse", "true")
     assert save("showImages", False) == "Could not save the setting"
     ipc("preferences-test", "refuse", "false")
     assert (config / "shell.json").read_text() == before
-    wait(lambda: center_pokes() > pokes and int(ipc("preferences-test", "peerCalls")) == 0)
+    wait(
+        lambda: center_pokes() > pokes and int(ipc("preferences-test", "peerCalls")) == 0,
+        label="the center heard the refused save",
+    )
     assert center_pokes() == pokes + 1, hostenv.calls(base)
     # Saving never adds a missing entry.
     (config / "shell.json").write_text(json.dumps({**stored, "plugins": [stored["plugins"][0]]}))
