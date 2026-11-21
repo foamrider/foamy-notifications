@@ -3,16 +3,41 @@ const assert = require('node:assert/strict');
 const P = require('../Preferences.js');
 const L = require('../NotificationLogic.js');
 const row = (id, extra={}) => ({originalId:id,timestamp:1000+id,app:'Chat',desktopEntry:'chat',summary:'Message',body:'Hello',appIcon:'chat',urgency:1,execArgv:'',actionsJson:'[]',...extra});
-test('X history removal defaults off and requires an explicit boolean',()=>{
- assert.equal(P.parse('{}').settings.closeButtonRemovesHistory,false)
- for(const value of [true,false]) assert.equal(P.parse(JSON.stringify({plugins:[{id:'foamy.notifications',closeButtonRemovesHistory:value}]})).settings.closeButtonRemovesHistory,value)
- for(const value of ['true',1,null]) assert.match(P.parse(JSON.stringify({plugins:[{id:'foamy.notifications',closeButtonRemovesHistory:value}]})).error,/Invalid closeButtonRemovesHistory/)
+const config = entry => JSON.stringify({plugins:[{id:'foamy.notifications',...entry}]});
+// Expected values come from the settings table in CONFIGURATION.md, not from Preferences.js.
+test('boolean settings accept true and false and reject other types',()=>{
+ assert.deepEqual(['closeButtonRemovesHistory','dndSilenceCritical','compact','showTimeoutIndicator','showImages','imageSize'].map(key=>P.parse('{}').settings[key]),[false,false,true,true,true,56]);
+ for(const key of ['groupDuplicates','closeButtonRemovesHistory','dndSilenceCritical','offerSnoozeWhenSharing','suppressFullscreen','fullscreenCritical','showImages','compact','showTimeoutIndicator','useBrowserFavicons']) {
+  for(const value of [true,false]) assert.equal(P.parse(config({[key]:value})).settings?.[key],value,`${key}: ${value}`);
+  for(const value of ['true',1,null]) {
+   const parsed=P.parse(config({[key]:value}));
+   assert.equal(parsed.settings,null,`${key}: ${JSON.stringify(value)} was taken`);
+   assert.match(parsed.error,new RegExp(`Invalid ${key}`));
+  }
+ }
 });
-test('invalid configuration retains a clear error instead of silently changing behavior',()=>{
+test('number settings take their documented whole-number range',()=>{
+ for(const [key,min,max] of [['lowTimeoutSec',1,120],['normalTimeoutSec',1,120],['criticalTimeoutSec',0,120],['maxVisible',1,10],['width',280,600],['restoreMaxAgeSec',0,3600],['maxWaitSec',1,3600],['imageSize',40,72]]) {
+  for(const value of [min,max]) assert.equal(P.parse(config({[key]:value})).settings?.[key],value,`${key}: ${value}`);
+  for(const value of [min-1,max+1,min+0.5,String(min)]) {
+   const parsed=P.parse(config({[key]:value}));
+   assert.equal(parsed.settings,null,`${key}: ${JSON.stringify(value)} was taken`);
+   assert.match(parsed.error,new RegExp(`Invalid ${key}`));
+  }
+ }
+});
+test('structured settings are checked: JSON, enums, named monitor, browser mappings',()=>{
  assert.match(P.parse('{').error,/SyntaxError/);
- assert.equal(P.parse(JSON.stringify({plugins:[{id:'foamy.notifications',maxVisible:0}]})).settings,null);
- assert.equal(P.parse(JSON.stringify({plugins:[{id:'foamy.notifications',monitor:'named'}]})).settings,null);
- assert.equal(P.parse(JSON.stringify({plugins:[{id:'foamy.notifications',suppressFullscreen:'false'}]})).settings,null);
+ const mapping={origin:'outlook.office.com',windowClass:'vivaldi-x'};
+ for(const entry of [{monitor:'named'},{monitor:'named',monitorName:''},{monitorName:'x'.repeat(129)},{monitorName:7},{monitor:'left'},{browserGrouping:'site'},
+  {browserMappings:mapping},{browserMappings:Array(33).fill(mapping)},{browserMappings:[{...mapping,origin:'a/b'}]},{browserMappings:[{...mapping,windowClass:''}]},
+  {browserMappings:[{...mapping,windowClass:'x'.repeat(257)}]},{browserMappings:[null]}])
+  assert.equal(P.parse(config(entry)).settings,null,JSON.stringify(entry).slice(0,80));
+ const named=P.parse(config({monitor:'named',monitorName:'x'.repeat(128)})).settings;
+ assert.deepEqual([named?.monitor,named?.monitorName.length],['named',128]);
+ assert.deepEqual(P.parse(config({browserMappings:[mapping]})).settings?.browserMappings,[mapping]);
+ assert.equal(P.parse(config({browserMappings:Array(32).fill({...mapping,windowClass:'x'.repeat(256)})})).settings?.browserMappings.length,32);
+ assert.equal(P.parse(config({browserGrouping:'none',monitor:'all'})).settings?.browserGrouping,'none');
 });
 test('normal reading times are bounded and critical persistence is explicit',()=>{
  const p=P.defaults();assert.equal(P.duration(p,1,0),8000);assert.equal(P.duration(p,2,0),0);
@@ -23,6 +48,7 @@ test('exact duplicates group while separate actions and senders remain distinct'
  assert.deepEqual(groups.map(g=>g.keys.length),[2,1]);assert.equal(groups[0].key,'1003-3');
  assert.equal(P.groups([row(2),row(1,{actionsJson:'[{"identifier":"reply","text":"Reply"}]'})],true).length,2);
  assert.equal(P.groups([row(2),row(1)],false).length,2);
+ assert.equal(P.groups([row(2,{image:'image://one'}),row(1,{image:'image://two'})],true).length,2);
 });
 test('monitor selection handles unplugging, pointer fallback and all outputs',()=>{
  const p=P.defaults(),names=['DP-1','eDP-1'];assert.deepEqual(P.targetNames(p,names,'DP-1','eDP-1'),['DP-1']);
@@ -43,35 +69,12 @@ test('sender markup never manufactures an image tag and command arguments stay s
   assert.ok(!/<(img|font|h1|a)\b/i.test(body(b)), b);
  assert.equal(body('<b>bold</b> &amp;amp; <i>it</i>\nnext'),'<b>bold</b> &amp; <i>it</i><br/>next');
  assert.equal(M.oneLine('Tom &amp;amp; Jerry <b>x</b>'),'Tom & Jerry x');
- assert.equal(L.parseExecArgv('echo unsafe'),null);assert.deepEqual(L.parseExecArgv('["printf","$(touch nope)"]'),['printf','$(touch nope)']);
+ // A click command runs as an argv, never through a shell; anything malformed runs nothing.
+ for(const bad of ['echo unsafe','','[]','{}','[1]','[""]','["-rf"]','["a\u0000b"]',JSON.stringify(Array(33).fill('ls')),JSON.stringify(['ls','x'.repeat(4097)])])
+  assert.equal(L.parseExecArgv(bad),null,bad.slice(0,60));
+ assert.deepEqual(L.parseExecArgv('["printf","$(touch nope)"]'),['printf','$(touch nope)']);
+ assert.deepEqual(L.parseExecArgv(JSON.stringify(['ls',...Array(31).fill('x'.repeat(4096))]))?.length,32);
 });
-
-test('shared image settings are optional and bounded',()=>{
- const config=e=>JSON.stringify({plugins:[{id:'foamy.notifications',...e}]});
- assert.equal(P.defaults().showImages,true);
- assert.equal(P.defaults().imageSize,56);
- assert.equal(P.parse(config({imageSize:73})).settings,null);
- assert.equal(P.parse(config({imageSize:39})).settings,null);
- assert.equal(P.parse(config({showImages:'true'})).settings,null);
- assert.equal(P.parse(config({showImages:false,imageSize:64})).settings.imageSize,64);
- assert.equal(P.groups([row(2,{image:'image://one'}),row(1,{image:'image://two'})],true).length,2);
-});
-
-test('compact defaults on and accepts only boolean overrides',()=>{
- const config=compact=>JSON.stringify({plugins:[{id:'foamy.notifications',compact}]});
- assert.equal(P.parse('{}').settings.compact,true);
- assert.equal(P.parse(config(false)).settings.compact,false);
- assert.equal(P.parse(config(true)).settings.compact,true);
- for(const invalid of ['false',0,null]) assert.match(P.parse(config(invalid)).error,/Invalid compact/);
-});
-
-test('timeout indicator defaults on and rejects non-boolean overrides',()=>{
- const config=showTimeoutIndicator=>JSON.stringify({plugins:[{id:'foamy.notifications',showTimeoutIndicator}]});
- assert.equal(P.parse('{}').settings.showTimeoutIndicator,true);
- assert.equal(P.parse(config(false)).settings.showTimeoutIndicator,false);
- for(const invalid of ['false',0,null]) assert.match(P.parse(config(invalid)).error,/Invalid showTimeoutIndicator/);
-});
-
 
 test('raw providers never render; explicit local image hints remain usable',()=>{
  const n={image:'image://qsimage/123',hints:{'image-path':'file:///tmp/avatar.png'}}
@@ -89,13 +92,6 @@ test('raw providers never render; explicit local image hints remain usable',()=>
   assert.equal(L.normalizedImage(bad,'/tmp/images/'),'')
 })
 
-
-test('DND critical silencing defaults off and rejects non-booleans',()=>{
- assert.equal(P.parse('{}').settings.dndSilenceCritical,false)
- const config=value=>JSON.stringify({plugins:[{id:'foamy.notifications',dndSilenceCritical:value}]})
- for(const value of [true,false]) assert.equal(P.parse(config(value)).settings.dndSilenceCritical,value)
- for(const value of ['true',1,null]) assert.match(P.parse(config(value)).error,/Invalid dndSilenceCritical/)
-})
 test('DND critical silencing overrides trusted critical alerts without changing normal action feedback',()=>{
  for(const appName of ['omarchy-action','notify-send','Chat']) {
   assert.equal(L.shouldBypassDnd({appName,urgency:2},2,true),false)
@@ -120,4 +116,13 @@ test('duplicates with different --action targets stay separate cards',()=>{
  const b={...base,originalId:2,timestamp:2,execActions:JSON.stringify([{label:'Open',argv:['mpv','/tmp/b.mp4']}])}
  assert.equal(P.groups([a,b],true,'browser',{browser:()=>false,hostname:()=>''}).length,2)
  assert.equal(P.groups([a,{...a,originalId:3,timestamp:3}],true,'browser',{browser:()=>false,hostname:()=>''}).length,1)
+});
+test('history replay lists live cards and history once each, newest first, without sender buttons, bounded',()=>{
+ const raw=[JSON.stringify({timestamp:3,originalId:3,summary:'c',actionsJson:'[{"identifier":"reply","text":"Reply"}]'}),
+  'not json',JSON.stringify({timestamp:2,originalId:2,summary:'b from history'}),JSON.stringify({timestamp:1,originalId:1,summary:'a'})].join('\n');
+ const live=[{timestamp:2,originalId:2,summary:'b on screen'}];
+ const rows=L.historyRows(raw,live,1,100);
+ assert.deepEqual(rows.map(r=>r.summary),['c','b on screen','a']);
+ assert.ok(rows.every(r=>r.actionsJson==='[]'),JSON.stringify(rows.map(r=>r.actionsJson)));
+ assert.deepEqual(L.historyRows(raw,live,1,2).map(r=>r.summary),['c','b on screen']);
 });
