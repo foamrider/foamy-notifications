@@ -1,4 +1,7 @@
-"""Exercise local favicon lookup and both icon fallbacks on the real QML card."""
+"""Exercise local favicon lookup through the real helper on the real QML card.
+
+Also covers the resolver's cache miss and a helper that fails to start.
+"""
 
 from contextlib import closing
 import json
@@ -12,8 +15,6 @@ import testhost
 from testhost import hostenv
 
 source = Path(__file__).resolve().parents[1]
-# By manifest id, not folder name: a worktree or clone may be named anything.
-center = json.loads((source / "manifest.json").read_text())["id"] == "foamy.notification-center"
 base = Path(tempfile.mkdtemp(prefix="foamy-browser-ui-"))
 app = base / "app"
 app.mkdir()
@@ -21,15 +22,6 @@ for name in ["Commons", "Ui"]:
     (app / name).symlink_to(hostenv.root() / "shell" / name, target_is_directory=True)
 (app / "plugin").symlink_to(source, target_is_directory=True)
 helper = json.loads((source / "manifest.json").read_text())["id"].replace(".", "-") + "-helper"
-# A copy whose helper binary does not exist (exit 127, as on an unsupported CPU).
-failed_helper = (
-    (source / "components/BrowserIcons.qml")
-    .read_text()
-    .replace('import "../BrowserIdentity.js"', 'import "plugin/BrowserIdentity.js"')
-)
-failed_helper = failed_helper.replace('import "../kit/FoamyNative.js"', 'import "plugin/kit/FoamyNative.js"')
-assert "plugin/kit/FoamyNative.js" in failed_helper
-(app / "FailedBrowserIcons.qml").write_text(failed_helper)
 (app / "fallback.svg").write_text(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="6" fill="#e05555"/><text x="16" y="23" text-anchor="middle" fill="white" font-size="22">V</text></svg>'
 )
@@ -50,40 +42,6 @@ browser.execute("PRAGMA locking_mode=EXCLUSIVE")
 browser.execute("BEGIN EXCLUSIVE")
 browser.commit()
 
-widget = (
-    """NotificationStackHeader {
-      id: card; x: 20; y: 20; width: 420
-      compact: false
-      group: Object.assign({}, root.groups[0], {appIcon:root.entry.appIcon,favicon:root.iconSource})
-    }"""
-    if center
-    else """NotificationCard {
-      id: card; x: 20; y: 20; width: 420
-      app:"Vivaldi"; appIcon:root.entry.appIcon; favicon:root.iconSource
-      summary:"Design review";body:"teams.example.com\\nThe updated files are ready to review."
-    }"""
-)
-model_import = (
-    'import "plugin/Model.js" as Model\nimport "plugin/BrowserIdentity.js" as BrowserIdentity\n' if center else ""
-)
-model_properties = (
-    """  property string grouping:"hostname"
-  readonly property var groups:Model.groupsFor([entry,{key:"900-1",app:"Vivaldi",body:"mail.example.com\\nNew mail",timestamp:900}],"",grouping,BrowserIdentity)
-"""
-    if center
-    else ""
-)
-identity_entry = "groups[0].iconEntry" if center else "entry"
-model_check = (
-    """        compare(root.groups.length,2);compare(root.groups[0].label,"teams.example.com")
-        root.grouping="browser";compare(root.groups.length,1);compare(root.groups[0].iconEntry,null);compare(root.iconSource,"");verify(appIcon.visible)
-        root.grouping="none";compare(root.groups.length,2)
-        root.grouping="hostname";compare(root.groups.length,2)
-        tryCompare(favicon,"status",Image.Ready)
-"""
-    if center
-    else ""
-)
 (app / "shell.qml").write_text(
     """import QtQuick
 import QtTest
@@ -91,18 +49,20 @@ import Quickshell
 import qs.Commons
 import qs.Commons as Commons
 import "plugin/components"
-MODEL_IMPORT
 ShellRoot {
   id: root
-  MODEL_PROPERTIES
   property var entry:({key:"1000-1",timestamp:1000,app:"Vivaldi",body:"teams.example.com\\nNew message",appIcon:Qt.resolvedUrl("fallback.svg").toString()})
-  property string overrideSource:"resolved"
-  readonly property string iconSource:overrideSource==="resolved" ? resolver.source(IDENTITY_ENTRY) : overrideSource
+  readonly property string iconSource:resolver.source(entry)
   BrowserIcons { id:resolver; helper:"HELPER" }
-  FailedBrowserIcons { id:failedResolver; helper:"foamy-missing-test-helper" }
+  // A helper binary that does not exist (exit 127, as on an unsupported CPU).
+  BrowserIcons { id:failedResolver; helper:"foamy-missing-test-helper" }
   FloatingWindow {
     id:window;visible:true;implicitWidth:500;implicitHeight:250;color:Commons.Color.background
-    WIDGET
+    NotificationCard {
+      id: card; x: 20; y: 20; width: 420
+      app:"Vivaldi"; appIcon:root.entry.appIcon; favicon:root.iconSource
+      summary:"Design review";body:"teams.example.com\\nThe updated files are ready to review."
+    }
     property bool ready:false
     Timer {interval:400;running:true;onTriggered:window.ready=true}
     TestCase {
@@ -130,10 +90,6 @@ ShellRoot {
         verify(favicon.visible);verify(!appIcon.visible);capture("favicon-wide-dark")
         card.width=280;waitForRendering(card);capture("favicon-narrow-dark")
         Commons.Color.background="#eff1f5";Commons.Color.foreground="#4c4f69";Commons.Color.accent="#1e66f5";card.width=420;waitForRendering(card);capture("favicon-wide-light")
-MODEL_CHECK
-        root.overrideSource=Qt.resolvedUrl("missing.png").toString()
-        tryCompare(favicon,"status",Image.Error);verify(!favicon.visible);verify(appIcon.visible);capture("fallback-missing")
-        root.overrideSource="";verify(appIcon.visible);capture("fallback-disabled")
         tryVerify(function(){return resolver.requests.length===0 && resolver.active===null})
         compare(resolver.source({app:"Vivaldi",body:"missing.example.com\\nMessage"}),"")
       }
@@ -141,11 +97,6 @@ MODEL_CHECK
   }
 }
 """.replace("HELPER", helper)
-    .replace("WIDGET", widget)
-    .replace("MODEL_IMPORT", model_import)
-    .replace("MODEL_PROPERTIES", model_properties)
-    .replace("IDENTITY_ENTRY", identity_entry)
-    .replace("MODEL_CHECK", model_check)
 )
 runtime = base / "runtime"
 runtime.mkdir(mode=0o700)

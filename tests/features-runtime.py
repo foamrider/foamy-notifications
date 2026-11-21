@@ -27,6 +27,11 @@ for name in ["Commons", "Ui"]:
     (app / name).symlink_to(host / "shell" / name, target_is_directory=True)
 shutil.copytree(source, app / "plugin", ignore=shutil.ignore_patterns(".git", "__pycache__"))
 service = (source / "Service.qml").read_text()
+# The copied code is cleared after 60 s; 300 ms here, so the test sees the clear.
+service = service.replace(
+    "    id: clipboardExpiry\n    interval: 60000\n", "    id: clipboardExpiry\n    interval: 300\n", 1
+)
+assert "    id: clipboardExpiry\n    interval: 300\n" in service, "the clipboard expiry timer moved"
 desktop = "--desktop" in sys.argv
 if desktop:
     # Retain the real layer surfaces and capture the sharing prompt after detection.
@@ -58,12 +63,20 @@ config.mkdir(parents=True)
 (config / "shell.json").write_text(json.dumps({"plugins": [{"id": "foamy.notifications", "dndSilenceCritical": True}]}))
 cli = base / "bin"
 cli.mkdir()
-# The helper uses actual stdin and exit statuses; it cannot touch the real clipboard.
-# The copy appears whole (renamed into place): the test reads it once it exists.
+# The clipboard script uses actual stdin and exit statuses; these stand-ins
+# cannot touch the real clipboard. Each wl-copy call is logged after it is done,
+# so the test reads a whole copy once its log line exists.
 (cli / "wl-copy").write_text(
-    '#!/bin/bash\n[[ ${1:-} == --sensitive ]] || exit 2\ncat > "$HOME/copied.part" && mv "$HOME/copied.part" "$HOME/copied"\n'
+    "#!/bin/bash\n"
+    "case ${1:-} in\n"
+    '  --sensitive) value=$(cat) && printf %s "$value" > "$HOME/copied" && echo "copy $value" >> "$HOME/clipboard.log" ;;\n'
+    '  --clear) : > "$HOME/copied" && echo clear >> "$HOME/clipboard.log" ;;\n'
+    "  *) exit 2 ;;\n"
+    "esac\n"
 )
-(cli / "wl-copy").chmod(0o755)
+(cli / "wl-paste").write_text('#!/bin/bash\ncat "$HOME/copied"\n')
+for name in ("wl-copy", "wl-paste"):
+    (cli / name).chmod(0o755)
 env = dict(
     os.environ,
     HOME=str(home),
@@ -119,7 +132,7 @@ def state():
     return json.loads(ipc("foamy.notifications", "state"))
 
 
-def wait(fn, seconds=5):
+def wait(fn, seconds=5, label="condition", detail=None):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         try:
@@ -128,7 +141,9 @@ def wait(fn, seconds=5):
         except (ValueError, subprocess.SubprocessError):
             pass
         time.sleep(0.05)
-    raise AssertionError((base / "runtime.log").read_text())
+    # Name the failed check and what it saw before the long runtime log.
+    seen = "\n" + detail() if detail else ""
+    raise AssertionError("timed out: " + label + seen + "\n" + (base / "runtime.log").read_text())
 
 
 def send(app, title, body="Message"):
@@ -146,9 +161,19 @@ try:
     send("Chat", "Verification code", "Use code 482913")
     wait(lambda: state()["popups"] == 1 and not state()["busy"])
     assert not any("482913" in p.read_text() for p in files()), "code leaked to persisted state"
+    # A code the card does not offer is never copied; the offered one is, and
+    # the expiry clears it from the clipboard again.
+    ipc("feature-test", "offer", "code", "111111")
     ipc("feature-test", "offer", "code", "482913")
-    wait(lambda: (home / "copied").exists())
-    assert (home / "copied").read_text() == "482913"
+    clipboard = home / "clipboard.log"
+    wait(
+        lambda: clipboard.exists() and clipboard.read_text().splitlines() == ["copy 482913", "clear"],
+        label="offered code copied once and cleared",
+        detail=lambda: "clipboard.log: " + (clipboard.read_text() if clipboard.exists() else "missing"),
+    )
+    wait(
+        lambda: json.loads(ipc("feature-test", "state"))["clipboard"] == "", label="card shows the clipboard as cleared"
+    )
     ipc("feature-test", "snooze")
     wait(lambda: state()["popups"] == 0 and not state()["busy"])
     send("Chat", "Held during snooze")
@@ -158,15 +183,26 @@ try:
     wait(lambda: state()["popups"] == 1 and not state()["busy"])
     ipc("notifications", "dismissAll")
     wait(lambda: state()["popups"] == 0 and not state()["busy"])
+    # Do not disturb and the snooze are saved and come back after a restart.
+    ipc("notifications", "setDnd", "on")
+    saved = home / ".local/state/foamy-notifications/state.json"
     wait(
         lambda: (
-            "app:Chat"
-            in json.loads((home / ".local/state/foamy-notifications/state.json").read_text()).get("snoozes", {})
-        )
+            "app:Chat" in json.loads(saved.read_text()).get("snoozes", {})
+            and json.loads(saved.read_text()).get("dnd") is True
+        ),
+        label="DND and snooze saved to state.json",
+        detail=lambda: "state.json: " + (saved.read_text() if saved.exists() else "missing"),
     )
     proc.stop()
     proc = start()
-    wait(lambda: "app:Chat" in state()["snoozes"], 30)
+    wait(
+        lambda: "app:Chat" in state()["snoozes"] and state()["doNotDisturb"],
+        30,
+        label="DND and snooze restored after restart",
+    )
+    ipc("notifications", "setDnd", "off")
+    wait(lambda: not state()["doNotDisturb"], label="DND turned off")
     ipc("feature-test", "shortSnooze")
     wait(lambda: not state()["snoozes"])
     send("Chat", "After snooze")
@@ -197,7 +233,7 @@ try:
     wait(lambda: any("Critical alert during snooze" in p.read_text() for p in files()) and not state()["busy"])
     assert state()["popups"] == 0
     print(
-        "PASS code copy through stdin and disk redaction; sender/global snooze, expiry and restart; private PipeWire sharing detection and opt-in prompt"
+        "PASS code copy through stdin, 60 s clipboard clear and disk redaction; sender/global snooze, expiry and restart; DND across restart; private PipeWire sharing detection and opt-in prompt"
     )
 finally:
     for child in [proc, pw]:

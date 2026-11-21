@@ -1,18 +1,28 @@
-"""Real popup intake and GPU rendering, isolated from the user's notification server."""
+"""Real popup image intake on a private notification server: a D-Bus image
+hint, the helper's conversion and the shipped card's Image, offscreen.
+--desktop renders on the live desktop instead (GPU captures, FOAMY_TEST_DESKTOP=1)."""
 
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import testhost
 from testhost import hostenv
 
 SOURCE = Path(__file__).resolve().parents[1]
-testhost.desktop_opt_in(__file__)
-testhost.session(__file__, 55)
+desktop = "--desktop" in sys.argv
+if desktop:
+    testhost.desktop_opt_in(__file__)
+# The helper converts images with ImageMagick 7 and checks them with file(1);
+# without them this test cannot check anything, so it must not read as a pass.
+if not (shutil.which("magick") and shutil.which("file")):
+    print("images-ui.py: needs ImageMagick 7 (magick) and file", file=sys.stderr)
+    raise SystemExit(2)
+testhost.session(__file__, 55, *(["--desktop"] if desktop else []))
 base = Path(tempfile.mkdtemp(prefix="foamy-popup-images-"))
 app = base / "app"
 app.mkdir()
@@ -96,14 +106,19 @@ env = dict(
     XDG_STATE_HOME=str(base / "state"),
     XDG_RUNTIME_DIR=str(runtime),
     PATH=str(cli) + ":" + os.environ["PATH"],
-    QT_QPA_PLATFORM="wayland",
+    QT_QPA_PLATFORM="wayland" if desktop else "offscreen",
     QT_QPA_PLATFORMTHEME="basic",
     QT_STYLE_OVERRIDE="Fusion",
 )
-env["WAYLAND_DISPLAY"] = str(Path(os.environ["XDG_RUNTIME_DIR"]) / os.environ["WAYLAND_DISPLAY"])
-for k in ["QT_QUICK_BACKEND", "DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
-    env.pop(k, None)
-testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"], display=True)
+if desktop:
+    env["WAYLAND_DISPLAY"] = str(Path(os.environ["XDG_RUNTIME_DIR"]) / os.environ["WAYLAND_DISPLAY"])
+    for k in ["QT_QUICK_BACKEND", "DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
+        env.pop(k, None)
+else:
+    env["QT_QUICK_BACKEND"] = "software"
+    for k in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
+        env.pop(k, None)
+testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"], display=desktop)
 # This test's own hyprctl and omarchy-shell come before the logging stubs.
 env["PATH"] = str(cli) + ":" + env["PATH"]
 picture = base / "picture.png"
@@ -213,8 +228,8 @@ def send(title, hints="{}", icon="foot", replace=0):
 
 def hide_released():
     # A raw-image notification is released on arrival (README), so its replacement is a
-    # new card. At maxVisible 1 that card would wait out the old one's 8 s timeout, which
-    # a pointer resting on this real window pauses; hide the old card instead.
+    # new card. At maxVisible 1 that card would wait out the old one's 8 s timeout (on
+    # the desktop a pointer resting on the window pauses it); hide the old card instead.
     subprocess.run(
         ["qs", "ipc", "-n", "-p", str(app), "call", "notifications", "dismissAll"],
         env=env,
@@ -231,12 +246,12 @@ def capture(name, width=520, light=False):
 
 
 try:
-    wait(
-        lambda: (
-            state()["title"] == "Restored file images"
-            and state()["image"]
-            and state()["image"]["status"] == 1
-            and state()["icon"]["status"] == 1
+    wait_state(
+        lambda s: (
+            s["title"] == "Restored file images"
+            and s["image"]
+            and s["image"]["status"] == 1
+            and s["icon"]["status"] == 1
         ),
         "legacy images normalized before restore",
     )
@@ -251,12 +266,12 @@ try:
     )
     wait(lambda: state()["count"] == 0, "restore dismissed")
     identifier = send("File images retained", "{'image-path': <'" + picture.as_uri() + "'>}", str(icon))
-    wait(
-        lambda: (
-            state()["title"] == "File images retained"
-            and state()["image"]
-            and state()["image"]["status"] == 1
-            and state()["icon"]["status"] == 1
+    wait_state(
+        lambda s: (
+            s["title"] == "File images retained"
+            and s["image"]
+            and s["image"]["status"] == 1
+            and s["icon"]["status"] == 1
         ),
         "normalized real popup images",
     )
@@ -266,25 +281,27 @@ try:
     for width, label in [(520, "wide"), (280, "narrow")]:
         for light, theme in [(False, "dark"), (True, "light")]:
             capture("images-" + label + "-" + theme, width, light)
-    # The dangerous provider is never requested; its native notification is released.
-    for alias in ["image-data", "image_data", "icon_data"]:
-        if alias != "image-data":
-            hide_released()
-        identifier = send(
-            "Raw buffer safely omitted " + alias,
-            "{'" + alias + "': <(4096, 4096, 16384, true, 8, 4, [byte 255])>}",
-            replace=identifier,
-        )
-        wait_state(
-            lambda s: (
-                s["title"] == "Raw buffer safely omitted " + alias
-                and s["image"]
-                and s["image"]["source"] == ""
-                and s["icon"]
-            ),
-            "truncated " + alias + " omitted",
-        )
-        assert state()["icon"]["source"].startswith("image://icon/"), state()
+    # The dangerous provider is never requested; its native notification is released,
+    # and the card keeps the sender's own icon. A file icon, because offscreen Qt has
+    # no icon theme. (Every raw-data alias reaches the same path: queue-runtime.py and
+    # policy.test.cjs.)
+    identifier = send(
+        "Raw buffer safely omitted",
+        "{'image-data': <(4096, 4096, 16384, true, 8, 4, [byte 255])>}",
+        str(icon),
+        replace=identifier,
+    )
+    wait_state(
+        lambda s: (
+            s["title"] == "Raw buffer safely omitted"
+            and s["image"]
+            and s["image"]["source"] == ""
+            and s["icon"]
+            and s["icon"]["status"] == 1
+        ),
+        "truncated image-data omitted, the sender's icon shown",
+    )
+    assert "-appIcon-" in state()["icon"]["source"] and state()["icon"]["source"].endswith(".png"), state()
     capture("images-raw-fallback", 280)
     hide_released()
     identifier = send(
@@ -315,10 +332,11 @@ try:
     unbound = [line for line in (base / "runtime.log").read_text().splitlines() if "ReferenceError" in line]
     assert not unbound, unbound[:3]
     print(
-        "PASS: actual popup file normalization, progressive JPEG icon, wide/narrow dark/light rendering, all raw-data aliases, truncated-buffer rejection, local-file fallback, replacements, rejected-image fallback"
+        "PASS: actual popup file normalization, progressive JPEG icon, wide/narrow dark/light rendering, truncated raw-buffer rejection, local-file fallback, replacements, rejected-image fallback"
     )
 finally:
     process.stop()
     log.close()
     print("Image captures:", app)
     print("Runtime log:", base / "runtime.log")
+    hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))

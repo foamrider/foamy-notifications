@@ -82,7 +82,6 @@ class Sandbox:
         self.path = [str(self.bin)]
         if tools:
             self.tools()
-        self.extra = {}
 
     def tools(self):
         """Puts the real `file` and `magick` on PATH (image conversion)."""
@@ -106,7 +105,6 @@ class Sandbox:
             "XDG_CONFIG_HOME": str(self.root / "config"),
             "XDG_CACHE_HOME": str(self.root / "cache"),
             "TMPDIR": str(self.tmp),
-            **self.extra,
         }
 
     @property

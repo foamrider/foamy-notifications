@@ -45,14 +45,39 @@ ShellRoot {
       count: 3
       timeoutMs: 8000; remainingMs: 8000
     }
+    // The first visible text that leaves the card, or a single-line text wider
+    // than its box (neither wrapped nor elided, so it spills); "" when all fit.
+    function overflow(item) {
+      for (var i = 0; i < item.children.length; i++) {
+        var child = item.children[i]
+        if (!child.visible || child.opacity <= 0 || child.width <= 0) continue
+        if (typeof child.text === "string" && typeof child.contentWidth === "number" && child.text.length) {
+          var at = child.mapToItem(card, 0, 0), name = JSON.stringify(child.text.slice(0, 40))
+          if (at.x < -0.5 || at.y < -0.5 || at.x + child.width > card.width + 0.5 || at.y + child.height > card.height + 0.5)
+            return name + " lies outside the card"
+          if (child.wrapMode === Text.NoWrap && child.elide === Text.ElideNone && child.contentWidth > child.width + 0.5)
+            return name + " is " + child.contentWidth + " px wide in a " + child.width + " px box"
+        }
+        var inner = window.overflow(child)
+        if (inner) return inner
+      }
+      return ""
+    }
+    // A throw inside a handler stops the chain and the run waits for its timeout: exit at once.
+    function fail(reason) {
+      console.log("FAIL: state " + step.index + ": " + reason)
+      Qt.exit(1)
+    }
     Timer {
       id: step
       interval: 500; running: true; repeat: false
       property int index: 0
       onTriggered: {
-        if (card.implicitHeight > 330) throw new Error("Card overflow")
+        if (card.implicitHeight > 330) return window.fail("card overflow: " + card.implicitHeight + " px")
+        var spill = window.overflow(card)
+        if (spill) return window.fail(spill)
         card.grabToImage(function(result) {
-          if (!result.saveToFile(Qt.resolvedUrl("capture-"+step.index+".png").toString().replace("file://",""))) throw new Error("Capture failed")
+          if (!result.saveToFile(Qt.resolvedUrl("capture-"+step.index+".png").toString().replace("file://",""))) return window.fail("capture failed")
           step.index++
           card.remainingMs = step.index % 3 === 0 ? 8000 : step.index % 3 === 1 ? 4000 : 1000
           if (step.index===1) { card.width=280; card.urgency=2; card.app="System";card.summary="Backup needs attention";card.body="Connect your backup drive to continue." }
@@ -112,4 +137,9 @@ testhost.make(base, app, env, display=desktop)
 status, output = testhost.run(command, env, base / "qs.log", 60)
 print(output)
 assert status == 0 and "PASS:" in output
+# A broken binding only logs a warning and still renders.
+for unexpected in ["TypeError", "ReferenceError", "Binding loop", "Unable to assign"]:
+    assert not any(unexpected in line for line in output.splitlines()), unexpected
+if not desktop:
+    hostenv.check(env, output, testhost.calls(base))
 print("Renders:", app)

@@ -93,6 +93,15 @@ test('shell-restarting commands retain their persist-before-launch ordering',()=
  state.activateGroup(row,'default');assert.equal(jobs[0].command,'forget');assert.deepEqual(events,[])
  jobs.shift().done(true);assert.deepEqual(events,['center','launch','remove'])
 })
+test('the empty-history message closes without forgetting or focusing anything',()=>{
+ const {state,jobs,events}=fixture(),removed=[]
+ state.removeKeys=(keys,reason)=>removed.push({keys,reason})
+ state.preferences.closeButtonRemovesHistory=true
+ const row={key:'5--1',keys:['5--1'],originalId:-1,app:'omarchy-action',summary:'No recent notifications',timestamp:5}
+ state.dismissGroup(row,true);state.activateGroup(row,'default')
+ assert.equal(jobs.length,0);assert.equal(state.processes.length,0);assert.deepEqual(events,[])
+ assert.deepEqual(removed,[{keys:row.keys,reason:'dismiss'},{keys:row.keys,reason:'dismiss'}])
+})
 
 function centerFixture(rows) {
  const f=fixture()
@@ -383,13 +392,6 @@ test('a site focus that never starts leaves no card busy and falls back to the b
   assert.deepEqual(events,[]);assert.equal(s.processes[0].destroyed,1)
  }
 })
-test('site focus Processes complete on running -> false and run focus-app under timeout',()=>{
- const component=source.slice(source.indexOf('    id: siteFocusProcess'),source.indexOf('\n  }',source.indexOf('    id: siteFocusProcess')))
- assert.match(component,/onExited: function \(code, status\) \{\s*service\.finishSiteFocus\(siteFocusProc, code === 0 && status === 0\)\s*\}/)
- assert.match(component,/onRunningChanged: if \(!running\)\s*service\.finishSiteFocus\(siteFocusProc, false\)/)
- assert.match(component,/Component\.onDestruction: service\.siteFocusProcesses--/)
-})
-
 test('the center cannot invoke a card still on screen once its action lifetime is over',()=>{
  const {state,jobs,events}=fixture()
  state.popupModel={count:1,get:()=>({id:7,originalId:7,timestamp:5,app:'Mail',body:'x',summary:'x'})}

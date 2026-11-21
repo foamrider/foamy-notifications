@@ -6,9 +6,10 @@
 #           image tests skip themselves without ImageMagick 7 and file)
 #   --fast  skip the Quickshell runtime tests
 # Without --ci the helper suites also run the aarch64 build when binfmt has
-# qemu-aarch64. images-ui and layer put real layer-shell popups on the live
-# desktop, so they run only when FOAMY_TEST_DESKTOP=1 asks for them (and a
-# Wayland session is there); the scripts refuse to start without it too.
+# qemu-aarch64. images-ui needs ImageMagick 7 and file. layer puts real
+# layer-shell popups on the live desktop, so it runs only when
+# FOAMY_TEST_DESKTOP=1 asks for it (and a Wayland session is there); the
+# script refuses to start without it too.
 set -uo pipefail
 cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." || exit 1
 ci=0 fast=0
@@ -60,12 +61,16 @@ run python3 tests/features-runtime.py
 run python3 tests/runtime.py
 run python3 tests/overflow-runtime.py
 run python3 tests/queue-runtime.py
-if [[ ${FOAMY_TEST_DESKTOP:-} != 1 ]]; then
-  skip "images-ui, layer: real layer-shell surfaces on the live desktop; set FOAMY_TEST_DESKTOP=1"
-elif [[ -z ${WAYLAND_DISPLAY:-} ]]; then
-  skip "images-ui, layer: no Wayland session"
-else
+if command -v magick >/dev/null && command -v file >/dev/null; then
   run python3 tests/images-ui.py
+else
+  skip "images-ui: needs ImageMagick 7 and file"
+fi
+if [[ ${FOAMY_TEST_DESKTOP:-} != 1 ]]; then
+  skip "layer: real layer-shell surfaces on the live desktop; set FOAMY_TEST_DESKTOP=1"
+elif [[ -z ${WAYLAND_DISPLAY:-} ]]; then
+  skip "layer: no Wayland session"
+else
   run python3 tests/layer.py
 fi
 exit $status

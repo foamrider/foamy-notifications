@@ -13,6 +13,14 @@ test('offers detect codes and meeting links without mistaking origins or build n
  assert.equal(features.offers({app:'Vivaldi',summary:'Meeting',body:'<a href="https://teams.microsoft.com">Teams</a>\nJoin https://meet.google.com/abc-defg-hij'}).meeting,true)
  assert.equal(features.offers({app:'Chat',summary:'Verification &lt;b&gt;482913&lt;/b&gt;',body:''}).code,'482913')
  assert.equal(features.offers({app:'Chat',summary:'OTP &#52;&#56;&#50;&#57;&#49;&#51;',body:''}).code,'482913')
+ // A product name, a build number and a year are not codes; an alphanumeric code is.
+ assert.equal(features.offers({app:'Terminal',summary:'Claude Code finished',body:'Build 4821 passed'}).code,'')
+ assert.equal(features.offers({app:'Chat',summary:'Verification code',body:'Valid until 2026'}).code,'')
+ assert.equal(features.offers({app:'Chat',summary:'Use code A9F3K2',body:''}).code,'A9F3K2')
+ // A plain link drops the sentence's period; a link with credentials is not offered.
+ const link=features.offers({app:'Mail',summary:'Review',body:'See https://example.com/pr/1.'})
+ assert.equal(link.link,'https://example.com/pr/1');assert.equal(link.meeting,false)
+ assert.equal(features.offers({app:'Mail',summary:'Review',body:'See https://user:pw@example.com/'}).link,'')
 })
 test('redaction keeps identity but removes secrets from every persisted string and image hint',()=>{
  const row={timestamp:123,originalId:2,app:'482913',appIcon:'/tmp/482913.png',summary:'Your verification code',body:'482913',execArgv:'["open","482913"]',image:'/tmp/482913.png',actionsJson:'[]'}
@@ -47,7 +55,12 @@ test('source snooze archives matching cards and preserves unrelated cards and DN
  assert.equal(state.isQuiet({app:'omarchy-action',urgency:2}),false)
  state.resumeSnoozes();assert.equal(state.isQuiet(rows[0]),false)
  assert.equal(state.snoozeSource('app:Chat',-1),'invalid')
- state.preferences.dndSilenceCritical=true;state.snoozeSource('*',30)
- assert.equal(state.shouldArchiveSilenced({app:'notify-send',urgency:2}),true)
- assert.equal(state.shouldArchiveSilenced({app:'notify-send',urgency:2,transient:true}),false)
+ // At most 128 snoozed sources: a new one is refused, an existing one renews.
+ state.snoozes={}
+ for(let i=0;i<128;i++) state.snoozes['app:App'+i]=Date.now()+60000
+ assert.equal(state.snoozeSource('app:New',30),'full')
+ assert.equal(state.snoozeSource('app:App0',30),'ok')
+ // A card with an action in progress is not hidden by a snooze.
+ state.snoozes={};hidden.length=0;state.busyKeys={'1-1':true}
+ assert.equal(state.snoozeSource('app:Chat',15),'ok');assert.deepEqual(hidden,[])
 })

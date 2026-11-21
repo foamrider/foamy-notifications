@@ -38,6 +38,13 @@ stall = base / "stall"
 started = base / "started"
 context_stall = base / "context-stall"
 context_started = base / "context-started"
+# Holds how many more serve jobs the worker dies on, without a reply.
+crash = base / "crash"
+# While it exists, every context query fails at once.
+context_fail = base / "context-fail"
+# One "start <time>" or "crash <time>" line per event; CLOCK_MONOTONIC is
+# system-wide, so the times of different worker processes compare.
+serve_events = base / "serve-events"
 # Stall selected writes/context queries, not startup restoration. The timeout also protects failed tests.
 helper.write_text(
     "#!"
@@ -54,9 +61,26 @@ def stall(flag, started, seconds):
     while Path(flag).exists() and time.monotonic() < deadline:
         time.sleep(.02)
     return not Path(flag).exists()
+def event(kind):
+    with open(SERVE_EVENTS, 'a') as stream:
+        stream.write(kind + ' ' + repr(time.monotonic()) + '\\n')
+def crash_now():
+    try:
+        left = int(Path(CRASH).read_text())
+    except (OSError, ValueError):
+        return False
+    if left <= 0:
+        return False
+    Path(CRASH).write_text(str(left - 1))
+    return True
 if sys.argv[1:] == ['serve']:
+    event('start')
     worker = subprocess.Popen([real, 'serve'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     for line in sys.stdin.buffer:
+        # Die like a crashed helper: no reply, no output; the real worker sees EOF and exits.
+        if crash_now():
+            event('crash')
+            os._exit(1)
         try:
             job = json.loads(line)
         except ValueError:
@@ -69,10 +93,15 @@ if sys.argv[1:] == ['serve']:
         sys.stdout.buffer.write(worker.stdout.readline()); sys.stdout.flush()
     worker.stdin.close()
     sys.exit(worker.wait())
+if sys.argv[1:] == ['context'] and Path(CONTEXT_FAIL).exists():
+    sys.exit(1)
 if sys.argv[1:] == ['context'] and not stall(CONTEXT_STALL, CONTEXT_STARTED, 15):
     print('foamy.notifications: test worker stall timed out', file=sys.stderr); sys.exit(1)
 os.execv(real, [real] + sys.argv[1:])
-""".replace("CONTEXT_STALL", repr(str(context_stall)))
+""".replace("CONTEXT_FAIL", repr(str(context_fail)))
+    .replace("SERVE_EVENTS", repr(str(serve_events)))
+    .replace("CRASH", repr(str(crash)))
+    .replace("CONTEXT_STALL", repr(str(context_stall)))
     .replace("CONTEXT_STARTED", repr(str(context_started)))
     .replace("STALL", repr(str(stall)))
     .replace("STARTED", repr(str(started)))
@@ -201,6 +230,12 @@ def send_buffer(title, alias="image-data", replace=0, file_hint=""):
     ).unpack()[0]
 
 
+def serve_events_after_first_crash():
+    events = [line.split() for line in serve_events.read_text().splitlines()] if serve_events.exists() else []
+    kinds = [kind for kind, _ in events]
+    return [(kind, float(at)) for kind, at in events[kinds.index("crash") :]] if "crash" in kinds else []
+
+
 def rss():
     return int(
         next(
@@ -243,6 +278,12 @@ try:
     send("Oversized replacement", "x" * 5000, ident)
     wait(lambda: state()["tracked"] == 0, "oversized replacement releases live source")
     assert state()["queuedJobs"] == 0
+    # The card stays, and the oversized icon is never stored, not even cut.
+    wait(lambda: not state()["busy"], "oversized replacement settles")
+    refused = state()
+    assert refused["popups"] == 1 and refused["lastError"] == "Notification update exceeds sender limits", refused
+    saved = [json.loads(p.read_text()) for p in (base / "state/foamy-notifications/popups").glob("*-*.json")]
+    assert [entry["appIcon"] for entry in saved] == ["foot"], saved
     ipc("notifications", "dismissAll")
     wait(lambda: not state()["busy"], "old popup cleanup")
     started.unlink()
@@ -372,6 +413,67 @@ try:
         "Raw replacement awaiting context",
         "Raw initial awaiting context",
     }, files
+    # A context query that fails still delivers the card and reports the failure.
+    context_fail.touch()
+    send("Context failure delivers")
+    wait(
+        lambda: (
+            state()["pending"] == 0
+            and not state()["busy"]
+            and state()["lastError"] == "Cannot query monitor state; notifications use the last known monitor"
+            and "Context failure delivers"
+            in {
+                json.loads(p.read_text())["summary"] for p in (base / "state/foamy-notifications/popups").glob("*.json")
+            }
+        ),
+        "a failed context query delivers the card",
+    )
+    context_fail.unlink()
+    # A helper that really dies: the job in flight fails once and is not
+    # replayed, restarts back off (1 s, then 2 s, never a 1 Hz loop), and the
+    # cards still show while persistence is down.
+    ipc("notifications", "dismissAll")
+    ipc("notifications", "clear")
+    cfg["plugins"][0]["suppressFullscreen"] = False
+    (config / "shell.json").write_text(json.dumps(cfg))
+    wait(
+        lambda: not state()["settings"]["suppressFullscreen"] and not state()["busy"] and state()["popups"] == 0,
+        "crash test setup",
+    )
+    crash.write_text("2")
+    # The history read is the job in flight when the helper dies first; the
+    # first popup write after the restart kills it again.
+    ipc("notifications", "showHistory")
+    for i in (1, 2, 3):
+        send("Crash " + str(i))
+    wait(
+        lambda: len(serve_events_after_first_crash()) == 4 and not state()["busy"] and state()["popups"] == 3,
+        "the helper restarts after two crashes",
+        15,
+    )
+    events = serve_events_after_first_crash()
+    assert [kind for kind, _ in events] == ["crash", "start", "crash", "start"], events
+    assert events[1][1] - events[0][1] >= 0.9, ("restarted too soon after the first crash", events)
+    assert events[3][1] - events[2][1] >= 1.8, ("the restart delay did not double", events)
+    # Failed once, no replay: only the three new cards are on screen.
+    assert state()["popups"] == 3, state()
+    log.flush()
+    read_failures = (base / "runtime.log").read_text().count("foamy.notifications: Could not read notification history")
+    assert read_failures == 1, read_failures
+    send("After crash")
+    wait(
+        lambda: (
+            "After crash"
+            in {
+                json.loads(p.read_text())["summary"] for p in (base / "state/foamy-notifications/popups").glob("*.json")
+            }
+        ),
+        "persistence works again after the restart",
+        12,
+    )
+    ipc("notifications", "dismissAll")
+    ipc("notifications", "clear")
+    wait(lambda: not state()["busy"], "crash test cleanup")
     assert process.exit_status() is None
     log.flush()
     output = (base / "runtime.log").read_text()
@@ -381,7 +483,7 @@ try:
     for unexpected in ["Invalid notification image result", "callback failed", "ReferenceError", "TypeError", "ERROR"]:
         assert not any(unexpected in line for line in lines), output
     print(
-        "PASS: real stalled-worker DND/popup floods, byte/count plateaus, cancellation, oversized intake/replacement rejection, cleanup, raw-pixel release/retention replacements, primitive context backlog and recovery"
+        "PASS: real stalled-worker DND/popup floods, byte/count plateaus, cancellation, oversized intake/replacement rejection, cleanup, raw-pixel release/retention replacements, primitive context backlog and recovery, failed context query, helper crash with restart backoff"
     )
     print(
         "DND plateau:",
@@ -403,6 +505,8 @@ try:
 finally:
     stall.unlink(missing_ok=True)
     context_stall.unlink(missing_ok=True)
+    crash.unlink(missing_ok=True)
+    context_fail.unlink(missing_ok=True)
     process.stop()
     log.close()
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))

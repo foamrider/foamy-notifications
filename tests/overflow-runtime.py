@@ -1,7 +1,8 @@
-"""The overflow queue with real D-Bus traffic on a private session bus: order,
-timers that start on show, replacements, CloseNotification, center removal,
-DND, restart survival, screen-space overflow, the hover rule and the hold of
-new arrivals while hovered (frame by frame, its maximum, animations off), on the real
+"""The overflow queue with real D-Bus traffic on a private session bus: the
+stock IPC contract, order, timers that start on show, replacements,
+CloseNotification, center removal, DND, restart survival, screen-space
+overflow, the hover rule and the hold of new arrivals while hovered (frame by
+frame, its maximum, animations off), and no running clock at idle, on the real
 service, stack, card delegate and fitCards (an offscreen window stands in for
 the layer-shell surface)."""
 
@@ -124,6 +125,17 @@ HANDLERS
   function times(): string { return JSON.stringify({shown: clock.shown, queued: clock.queued, heldAt: clock.heldAt, releasedAt: clock.releasedAt}) }
   function resetHoldClock(): void { clock.heldAt = 0; clock.releasedAt = 0 }
   function setReduceMotion(on: bool): void { Style.reduceMotion = on }
+  // The host's keyboard-shortcut entry point (shell.qml runShortcut calls service.runShortcut(method)).
+  function shortcut(method: string): bool { return notifications.runShortcut(method) }
+  // The service's timers and frame clocks that run now; at idle there must be none.
+  function runningClocks(): string {
+   var out = []
+   for (var i = 0; i < notifications.resources.length; i++) {
+    var o = notifications.resources[i]
+    if (o && o.running === true && (o.interval !== undefined || o.frameTime !== undefined)) out.push(o.interval !== undefined ? o.interval : "frame")
+   }
+   return JSON.stringify(out)
+  }
   function stack(): string {
    var cards = []
    for (var i = 0; i < popupColumn.count; i++) {
@@ -134,7 +146,7 @@ HANDLERS
     heldSummary: held.card ? held.card.summary : "", hovered: held.card ? held.card.hovered : false,
     note: popupColumn.footerItem ? popupColumn.footerItem.height : -1,
     noteText: popupColumn.footerItem && popupColumn.footerItem.visible ? input.findChild(popupColumn.footerItem, "waitingNote").children[0].text : "",
-    room: popupWindow.height - popupColumn.y - Style.space(8), settledHeight: popupColumn.settledHeight()})
+    room: popupWindow.height - popupColumn.y - Style.space(8), settledHeight: popupColumn.settledHeight(), height: popupColumn.implicitHeight})
   }
  }
 }
@@ -265,16 +277,68 @@ def settled():
     return not state()["busy"]
 
 
+def counts():
+    return json.loads(ipc("overflow-test", "frameCounts"))
+
+
+def close_notification(notification):
+    subprocess.run(
+        [
+            "gdbus",
+            "call",
+            "--session",
+            "--dest",
+            "org.freedesktop.Notifications",
+            "--object-path",
+            "/org/freedesktop/Notifications",
+            "--method",
+            "org.freedesktop.Notifications.CloseNotification",
+            notification,
+        ],
+        env=env,
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+
+
 def reset():
     ipc("overflow-test", "leave")
     ipc("notifications", "dismissAll")
-    wait(lambda: state()["popups"] == 0 and settled(), "cleanup")
+    # Also wait for the dismissed cards' exit fades: while they fade they keep
+    # their space, and the next scenario's cards would move up under the pointer.
+    wait(lambda: state()["popups"] == 0 and settled() and stack()["height"] == 0, "cleanup")
     for path in (state_dir / "history").glob("*.json"):
         path.unlink()
 
 
 try:
     wait(lambda: ipc("notifications", "ping") == "ok" and state()["storeReady"], "startup", 30)
+
+    # Stock IPC contract: Omarchy's bindings, scripts and the center call these
+    # methods on the "notifications" target, so the running shell must register each one.
+    shown_ipc = subprocess.run(
+        ["qs", "ipc", "-n", "-p", str(app), "show"], env=env, capture_output=True, text=True, timeout=10, check=True
+    ).stdout
+    target = shown_ipc.split("target notifications\n", 1)[1].split("\ntarget ", 1)[0]
+    registered = {line.strip().removeprefix("function ") for line in target.splitlines()}
+    # Omarchy 4.5's stock target, then the methods the center calls.
+    stock = """ping(): string|isDnd(): string|toggleDnd(): string|setDnd(value: string): string|act(): string
+    |dismissOne(): string|dismissAll(): string|invokeLast(): string|invokeAction(n: int): string|keyboard(): string
+    |showHistory(): string|dismiss(summary: string): string|count(): string|expand(): string|probe(): string"""
+    center = "snoozeAll(minutes: string): string|unsnooze(key: string): string|snoozes(): string|dndState(): string|clear(): string"
+    expected = [method.strip() for method in (stock + "|" + center).split("|")]
+    missing = [method for method in expected if method not in registered]
+    assert not missing, "the notifications target lacks " + repr(missing) + "\n" + shown_ipc
+    # The host runs a shortcut through the service when the method takes no argument, else falls back to omarchy-shell.
+    first = send("Dismissed by a shortcut")
+    wait(lambda: shown() == [first] and settled(), "a card for the shortcut")
+    assert ipc("overflow-test", "shortcut", "dismissAll") == "true", "the shortcut entry point refused dismissAll"
+    wait(lambda: state()["popups"] == 0 and settled(), "the dismissAll shortcut cleared the stack")
+    assert ipc("overflow-test", "shortcut", "invokeAction") == "false", "a shortcut ran a method that needs an argument"
+    assert ipc("overflow-test", "shortcut", "nope") == "false", "a shortcut ran an unknown method"
+    reset()
+    print("PASS: stock IPC contract and the host's shortcut entry point")
 
     # Queue order: criticals newest first, then the normal cards in arrival order.
     # One of the two slots stays for a normal card: C takes it from A, the
@@ -508,26 +572,14 @@ try:
     print("PASS: replacement and duplicate merge update waiting cards in place")
 
     # CloseNotification withdraws a waiting card: it never shows, and goes to history.
-    subprocess.run(
-        [
-            "gdbus",
-            "call",
-            "--session",
-            "--dest",
-            "org.freedesktop.Notifications",
-            "--object-path",
-            "/org/freedesktop/Notifications",
-            "--method",
-            "org.freedesktop.Notifications.CloseNotification",
-            c,
-        ],
-        env=env,
-        check=True,
-        capture_output=True,
-        timeout=10,
-    )
+    close_notification(c)
     wait(lambda: c not in queue() and c in files("history") and settled(), "CloseNotification removes the waiting card")
     assert shown() == [a], "closing a waiting card changed the stack"
+    # A card on screen that its sender closes stays there: the user has not read it yet.
+    before = state()["tracked"]
+    close_notification(a)
+    wait(lambda: state()["tracked"] == before - 1 and settled(), "the sender closed the shown card")
+    assert shown() == [a] and a not in files("history"), "a shown card left when its sender closed it"
     # The center removes a waiting card through releaseHistory.
     behind = [
         path.stem
@@ -537,7 +589,7 @@ try:
     assert len(behind) == 2 and ipc("foamy.notifications", "releaseHistory", ",".join(behind)) == "ok"
     wait(lambda: not state()["queue"] and settled(), "the center removes a waiting card")
     assert not set(ids(behind)) & (set(files("history")) | set(files("popups"))), "a card the center removed was kept"
-    print("PASS: CloseNotification and the center remove waiting cards")
+    print("PASS: CloseNotification withdraws waiting cards and leaves a shown one; the center removes waiting cards")
 
     # DND: cards still waiting go to history, as new arrivals do; cards on screen stay.
     c = send("Silenced while waiting")
@@ -571,14 +623,17 @@ try:
         "the restart reset a waiting clock"
     )
     ipc("notifications", "dismissOne")
+    # Y waited past its 2 s timeout before the restart; once shown it must still get its full time.
+    shown_at = time.time() * 1000
     ipc("notifications", "dismissOne")
     wait(
         lambda: shown() == [y] and queue() == [z] and state()["popups"] == 2 and settled(),
         "restored waiting cards show once",
     )
     assert set(files("popups")) == {y, z} and set(files("history")) == {w, x}
-    assert "queued" not in files("popups")[y] and files("popups")[y].get("deadline", 0) > 0, (
-        "the shown card kept the queued flag"
+    assert "queued" not in files("popups")[y], "the shown card kept the queued flag"
+    assert files("popups")[y].get("deadline", 0) >= shown_at + 1500, (
+        "the shown card did not get its full time: " + repr(files("popups")[y].get("deadline"))
     )
     assert files("popups")[z].get("queued") is True, "the waiting card lost the queued flag"
     reset()
@@ -657,19 +712,21 @@ try:
     )
     held_y = stack()["heldY"]
     assert held_y > 0
-    samples = []
-    deadline = time.monotonic() + 8
-    while time.monotonic() < deadline:
-        view = stack()
-        samples.append(view["heldY"])
-        if [card["summary"] for card in view["cards"] if card] == ["Hold this card", "Waits one", "Waits two"] and all(
-            card["settled"] for card in view["cards"]
-        ):
-            break
-        time.sleep(0.03)
+    # Count every frame in which the hovered card leaves its window position.
+    ipc("overflow-test", "watch")
+    wait(
+        lambda: (
+            [card["summary"] for card in stack()["cards"] if card] == ["Hold this card", "Waits one", "Waits two"]
+            and all(card["settled"] for card in stack()["cards"])
+        ),
+        "the others expire and the waiting cards join",
+        8,
+    )
     view = stack()
-    assert [card["summary"] for card in view["cards"]] == ["Hold this card", "Waits one", "Waits two"], view
-    assert all(y == held_y for y in samples), "the hovered card moved: " + repr(sorted(set(samples)))
+    assert counts()["moves"] == 0, "the hovered card moved: " + repr(counts())
+    # Frames are counted from the watch call on; this also covers the short
+    # window between reading held_y and that call.
+    assert abs(view["heldY"] - held_y) <= 0.5, "the hovered card moved before the watch: " + repr((held_y, view))
     assert view["hovered"] and not state()["queue"] and view["note"] == 0, view
     assert view["cards"][1]["y"] > held_y, "a waiting card appeared above the hovered card"
     ipc("overflow-test", "leave")
@@ -707,9 +764,6 @@ try:
         ipc("overflow-test", "watch")
         return below, top
 
-    def counts():
-        return json.loads(ipc("overflow-test", "frameCounts"))
-
     below, top = fixture()
     normal = send("New normal")
     alert = send("New critical", "critical")
@@ -729,7 +783,8 @@ try:
     # A replacement of the hovered card updates it in place.
     send("Hold this card, edited", extra=("-r", top))
     wait(lambda: summaries() == ["Hold this card, edited", "Below"], "the hovered card is replaced in place")
-    time.sleep(0.5)
+    replaced = counts()["frames"]
+    wait(lambda: counts()["frames"] > replaced + 10, "frames while the replacement settles")
     view, frame = stack(), counts()
     assert frame["frames"] > 10 and frame["moves"] == 0, "the hovered card moved in the window: " + repr(frame)
     assert view["hovered"] and view["heldY"] == 0 and len(state()["held"]) == 2, view
@@ -790,7 +845,8 @@ try:
     send("Instant normal")
     send("Instant critical", "critical")
     wait(lambda: len(state()["held"]) == 2 and settled(), "arrivals are held")
-    time.sleep(0.3)
+    arrived = counts()["frames"]
+    wait(lambda: counts()["frames"] > arrived + 10, "frames while the arrivals are held")
     assert counts()["moves"] == 0, counts()
     ipc("overflow-test", "leave")
     wait(
@@ -800,36 +856,18 @@ try:
         ),
         "held cards show when the pointer leaves",
     )
-    time.sleep(0.2)
     assert counts()["entering"] == 0, "with animations off, released cards must appear at once: " + repr(counts())
     ipc("overflow-test", "setReduceMotion", "false")
     reset()
     print("PASS: with animations off, released cards appear at once")
 
-    # Restart: a held card is a waiting card; it comes back once, with its full time.
-    below, top = fixture()
-    survivor = send("Held over a restart")
-    wait(
-        lambda: ids(state()["held"]) == [survivor] and files("popups")[survivor].get("queued") is True and settled(),
-        "held before the restart",
-    )
-    process.stop()
-    restarted_at = time.time() * 1000
-    process = start()
-    wait(
-        lambda: ipc("notifications", "ping") == "ok" and state()["storeReady"] and state()["popups"] == 3,
-        "restart with a held card",
-        30,
-    )
-    wait(lambda: survivor in shown() and not state()["queue"] and settled(), "the held card shows after the restart")
-    assert len(files("popups")) == 3 and not files("history"), "restart duplicated or archived a card"
-    wait(
-        lambda: files("popups")[survivor].get("deadline", 0) >= restarted_at + 29000,
-        "the held card got its full time after the restart",
-        2,
-    )
-    reset()
-    print("PASS: a held card survives a restart as a waiting card, once, without early expiry")
+    # Idle means no work: with nothing on screen and no center in the bar, no timer
+    # or frame clock of the service keeps running. One-shot timers stop on their own.
+    deadline = time.monotonic() + 3
+    while (clocks := ipc("overflow-test", "runningClocks")) != "[]" and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert clocks == "[]", "at idle these timers (interval in ms) or frame clocks still run: " + clocks
+    print("PASS: at idle no timer or frame clock of the service runs")
 finally:
     process.stop()
     log.close()

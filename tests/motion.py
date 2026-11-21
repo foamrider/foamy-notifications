@@ -80,7 +80,9 @@ ShellRoot {
   property var pinned:null
   property real pinnedY:0
   property int pinnedMoves:0
+  property int frames:0
   FrameAnimation {running:true;onTriggered:{
+   window.frames++
    if (window.pinned && Math.abs(window.pinned.mapToItem(popupColumn,0,0).y-window.pinnedY)>0.5) window.pinnedMoves++
    if (window.tracked) {
     var y=window.tracked.mapToItem(popupColumn,0,0).y
@@ -141,10 +143,16 @@ ShellRoot {
     var middleY=at(middle),bottomY=at(bottom)
     check(middleY>0&&bottomY>middleY,"three stacked cards")
     mouseMove(middle,100,20);tryCompare(popupColumn,"holdPositions",true)
-    // A card above the pointer expires: the hovered card and the ones below stay put.
+    // A card above the pointer expires: the hovered card and the ones below stay
+    // put on every frame of its exit fade, not only once it has ended.
+    window.pinned=middle;window.pinnedY=middleY;window.pinnedMoves=0
     popupColumn.groups=[row("3-2","Middle"),row("3-3","Bottom")]
-    tryCompare(top,"retired",true);wait(500)
-    check(at(middle)===middleY,"hovered card stays under the pointer");check(at(bottom)===bottomY,"cards below stay put")
+    tryCompare(top,"retired",true)
+    tryVerify(function(){return top.opacity===0||window.pinnedMoves>0},3000)
+    // Some frames more: a card let go after its fade would start sliding up here.
+    var faded=window.frames;tryVerify(function(){return window.frames>faded+10||window.pinnedMoves>0},3000)
+    check(window.pinnedMoves===0,"hovered card stays under the pointer on every frame");check(at(bottom)===bottomY,"cards below stay put")
+    window.pinned=null
     // Closing the hovered card moves the cards below it up, while the expired
     // card above still holds its space.
     popupColumn.groups=[row("3-3","Bottom")]
