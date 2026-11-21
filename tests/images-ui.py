@@ -339,3 +339,4 @@ finally:
     log.close()
     print("Image captures:", app)
     print("Runtime log:", base / "runtime.log")
+    hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))

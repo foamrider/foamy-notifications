@@ -1,4 +1,7 @@
-"""Exercise local favicon lookup and both icon fallbacks on the real QML card."""
+"""Exercise local favicon lookup through the real helper on the real QML card.
+
+Also covers the resolver's cache miss and a helper that fails to start.
+"""
 
 from contextlib import closing
 import json
