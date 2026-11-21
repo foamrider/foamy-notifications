@@ -203,7 +203,9 @@ class HelperTest(unittest.TestCase):
         )
         self.assertEqual((first["id"], first["ok"], second["id"], second["ok"]), (1, False, 2, True))
         self.assertNotIn("reason", first)
-        self.assertLess(time.monotonic() - started, 10)
+        # The serve timeout above is 10 s; this bound fails a deadline that grew
+        # well past 3 s and leaves room for qemu start-up and a loaded machine.
+        self.assertLess(time.monotonic() - started, 7)
         # The pid file proves the fake ran; it was killed and reaped, not left behind.
         with self.assertRaises(ProcessLookupError):
             os.kill(int(pid_file.read_text()), 0)
