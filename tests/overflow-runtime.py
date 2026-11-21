@@ -589,7 +589,7 @@ try:
     assert len(behind) == 2 and ipc("foamy.notifications", "releaseHistory", ",".join(behind)) == "ok"
     wait(lambda: not state()["queue"] and settled(), "the center removes a waiting card")
     assert not set(ids(behind)) & (set(files("history")) | set(files("popups"))), "a card the center removed was kept"
-    print("PASS: CloseNotification and the center remove waiting cards")
+    print("PASS: CloseNotification withdraws waiting cards and leaves a shown one; the center removes waiting cards")
 
     # DND: cards still waiting go to history, as new arrivals do; cards on screen stay.
     c = send("Silenced while waiting")
@@ -724,6 +724,9 @@ try:
     )
     view = stack()
     assert counts()["moves"] == 0, "the hovered card moved: " + repr(counts())
+    # Frames are counted from the watch call on; this also covers the short
+    # window between reading held_y and that call.
+    assert abs(view["heldY"] - held_y) <= 0.5, "the hovered card moved before the watch: " + repr((held_y, view))
     assert view["hovered"] and not state()["queue"] and view["note"] == 0, view
     assert view["cards"][1]["y"] > held_y, "a waiting card appeared above the hovered card"
     ipc("overflow-test", "leave")
