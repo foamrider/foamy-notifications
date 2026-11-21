@@ -275,6 +275,4 @@ preview/Preview.qml: missing-property: Member "barSize" not found on type "QObje
 preview/Preview.qml: unqualified: Unqualified access | selected: preview.previewState === "keyboard" && index === 0
 preview/Preview.qml: unqualified: Unqualified access | timestamp: preview.now
 preview/Preview.qml: unqualified: Unqualified access | width: stack.width
-tests/tst_card.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var button of [copy, link]) {
 tests/tst_card.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var button of buttons) {
-tests/tst_card.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var label = findChild(button, "notificationFooterLabel")
