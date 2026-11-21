@@ -93,6 +93,15 @@ test('shell-restarting commands retain their persist-before-launch ordering',()=
  state.activateGroup(row,'default');assert.equal(jobs[0].command,'forget');assert.deepEqual(events,[])
  jobs.shift().done(true);assert.deepEqual(events,['center','launch','remove'])
 })
+test('the empty-history message closes without forgetting or focusing anything',()=>{
+ const {state,jobs,events}=fixture(),removed=[]
+ state.removeKeys=(keys,reason)=>removed.push({keys,reason})
+ state.preferences.closeButtonRemovesHistory=true
+ const row={key:'5--1',keys:['5--1'],originalId:-1,app:'omarchy-action',summary:'No recent notifications',timestamp:5}
+ state.dismissGroup(row,true);state.activateGroup(row,'default')
+ assert.equal(jobs.length,0);assert.equal(state.processes.length,0);assert.deepEqual(events,[])
+ assert.deepEqual(removed,[{keys:row.keys,reason:'dismiss'},{keys:row.keys,reason:'dismiss'}])
+})
 
 function centerFixture(rows) {
  const f=fixture()
