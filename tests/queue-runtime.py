@@ -413,7 +413,7 @@ try:
         "Raw replacement awaiting context",
         "Raw initial awaiting context",
     }, files
-    # A context query that fails still delivers the card, on the last known monitor.
+    # A context query that fails still delivers the card and reports the failure.
     context_fail.touch()
     send("Context failure delivers")
     wait(

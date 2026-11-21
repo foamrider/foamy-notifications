@@ -104,11 +104,8 @@ test('coalescing and cancellation preserve callback, read and cleanup barriers',
 
 test('a helper reply hands its failure reason to the job', () => {
   const s = fixture()
-  const sent = [], done = []
-  s.helperProc = {running:true, write(line) { sent.push(JSON.parse(line)) }}; s.helperRestart = {running:false, start() {}}
-  s.runningJob = null; s.nextJobId = 0; s.acceptNormalizedImages = () => {}
-  load(s, 'runNextPopupFileJob'); load(s, 'helperReplied')
-  s.deferredMoves = {}; s.popupFileQueue = [{op:'focus', payload:'{}', done:(...args) => done.push(args)}]
+  const sent = withHelper(s), done = []
+  s.popupFileQueue = [{op:'focus', payload:'{}', done:(...args) => done.push(args)}]
   s.runNextPopupFileJob()
   s.helperReplied(JSON.stringify({id:sent[0].id, ok:false, out:'', error:'x', reason:'browser'}))
   assert.deepEqual(done, [[false, '', 'browser']])
@@ -116,10 +113,7 @@ test('a helper reply hands its failure reason to the job', () => {
 
 test('draining a write releases its pending slot and bytes; a read remains a barrier', () => {
   const s = fixture()
-  const sent = []
-  s.helperProc = {running:true, write(line) { sent.push(JSON.parse(line)) }}; s.helperRestart = {running:false, start() {}}
-  s.runningJob = null; s.nextJobId = 0; s.acceptNormalizedImages = () => {}
-  load(s, 'runNextPopupFileJob'); load(s, 'helperReplied')
+  const sent = withHelper(s)
   s.put('"first"'); s.enqueueHistoryRead(); s.put('"last"', '1-2')
   s.runNextPopupFileJob()
   assert.equal(sent[0].data, 'first')
@@ -339,7 +333,7 @@ test('history clears and center releases answer "ok", "invalid" and "busy" throu
   assert.equal(releaseHistoryBefore('1234567890123456'), 'ok', '16 digits')
   // A malformed key or timestamp is refused before any work is queued.
   const queued = s.popupFileQueue.length
-  for (const keys of ['../1', '1-1,', Array(101).fill('1-1').join(',')])
+  for (const keys of ['../1', '1-1,', '1-1x', '1-1/../x', Array(101).fill('1-1').join(',')])
     assert.equal(releaseHistory(keys), 'invalid', keys.slice(0, 20))
   for (const timestamp of ['', '1e3', '-1', '12345678901234567'])
     assert.equal(releaseHistoryBefore(timestamp), 'invalid', timestamp)
