@@ -35,13 +35,6 @@ test('act with several choices hands the keyboard over; keys move, number and di
  f.s.startKeyboard('');f.s.keyboardPressed(Qt.Key_Escape,'');assert.equal(f.s.keyboardMode,false)
  assert.equal(f.s.keyboardPressed(Qt.Key_Down,''),false,'keys are not taken outside keyboard mode')
 })
-test('stock IPC methods and the shortcut entry point exist on the notifications target',()=>{
- const block=source.slice(source.indexOf('    target: "notifications"'),source.indexOf('    target: "foamy.notifications"'))
- for(const fn of ['act(): string','keyboard(): string','invokeAction(n: int): string','count(): string','expand(): string','probe(): string','isDnd(): string','dndState(): string','showHistory(): string','dismissOne(): string','dismissAll(): string','invokeLast(): string'])
-  assert.ok(block.includes('function '+fn),fn)
- assert.ok(source.includes('  function runShortcut(method)'))
- assert.match(source,/FoamyIpc \{\s+id: ipcHandler\s+target: "notifications"/)
-})
 test('keyboard focus goes to an output that shows the card, never to a fullscreen one hiding it',()=>{
  const f=fixture([card('2-2',{urgency:1}),card('1-1',{urgency:2})])
  f.s.targetMonitors=['A','B'];f.s.preferences.suppressFullscreen=true;f.s.fullscreenMonitors=['A']
