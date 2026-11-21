@@ -363,7 +363,8 @@ python3 tests/runtime.py
 # restart survival, screen space, the hover rule and the hold while hovered,
 # plus the stock IPC contract and no running timer at idle:
 python3 tests/overflow-runtime.py
-# Stalled-worker floods, raw 4 MiB buffers, replacements and context backlog:
+# Stalled-worker floods, raw 4 MiB buffers, replacements, context backlog,
+# a failing context query, and a helper that dies and restarts with backoff:
 python3 tests/queue-runtime.py
 # Center preference saves through the host API (shell.updateEntryInline):
 python3 tests/preferences-runtime.py
@@ -396,7 +397,8 @@ FOAMY_TEST_DESKTOP=1 python3 tests/features-runtime.py --desktop
 FOAMY_TEST_DESKTOP=1 tests/validate.sh
 ```
 
-The render test uses the real card with synthetic data at wide and narrow widths.
+The render test uses the real card with synthetic data at wide and narrow widths,
+and fails when a text leaves the card or spills out of its box, or a binding error is logged.
 The runtime and queue tests use the installed PyGObject/Gio bindings to send raw
 pixel buffers without command-line size limits. They exercise actual notification
 D-Bus traffic on a private bus and temporary home directory. Qt's offscreen platform cannot create layer-shell surfaces, so
