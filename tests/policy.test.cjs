@@ -70,7 +70,7 @@ test('sender markup never manufactures an image tag and command arguments stay s
  assert.equal(body('<b>bold</b> &amp;amp; <i>it</i>\nnext'),'<b>bold</b> &amp; <i>it</i><br/>next');
  assert.equal(M.oneLine('Tom &amp;amp; Jerry <b>x</b>'),'Tom & Jerry x');
  // A click command runs as an argv, never through a shell; anything malformed runs nothing.
- for(const bad of ['echo unsafe','','[]','{}','[1]','[""]','["-rf"]','["a\u0000b"]',JSON.stringify(Array(33).fill('ls')),JSON.stringify(['ls','x'.repeat(4097)])])
+ for(const bad of ['echo unsafe','','[]','{}','[1]','[""]','["-rf"]',JSON.stringify(['a\u0000b']),JSON.stringify(Array(33).fill('ls')),JSON.stringify(['ls','x'.repeat(4097)])])
   assert.equal(L.parseExecArgv(bad),null,bad.slice(0,60));
  assert.deepEqual(L.parseExecArgv('["printf","$(touch nope)"]'),['printf','$(touch nope)']);
  assert.deepEqual(L.parseExecArgv(JSON.stringify(['ls',...Array(31).fill('x'.repeat(4096))]))?.length,32);
@@ -105,7 +105,7 @@ test('omarchy-actions hint becomes up to three structured --action buttons, numb
  const snap=L.snapshotOf({id:7,summary:'Recording saved',hints:{'omarchy-actions':hint},actions:[{identifier:'reply',text:'Reply'},{identifier:'settings',text:'Settings'}]},1);
  assert.deepEqual(JSON.parse(snap.execActions).map(a=>a.label),['Open','Omacut']);
  assert.deepEqual(L.deeds(snap,{codes:'123456',link:''}).map(d=>d.kind+':'+d.value),['exec:0','exec:1','action:reply','code:123456','action:settings']);
- for(const bad of ['[]','[{"label":"x","argv":["-rf"]}]','[{"label":" ","argv":["ls"]}]',JSON.stringify(Array(4).fill({label:'x',argv:['ls']})),'[{"label":"x","argv":["a\u0000b"]}]'])
+ for(const bad of ['[]','[{"label":"x","argv":["-rf"]}]','[{"label":" ","argv":["ls"]}]',JSON.stringify(Array(4).fill({label:'x',argv:['ls']})),JSON.stringify([{label:'x',argv:['a\u0000b']}])])
   assert.equal(L.parseExecActions(bad),null,bad);
  assert.equal(L.popupEntry({...snap,execActions:'garbage'},1).execActions,'');
  assert.equal(L.popupEntry(snap,1).execActions,snap.execActions);
