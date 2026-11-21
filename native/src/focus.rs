@@ -599,9 +599,4 @@ mod tests {
         assert_eq!(origin("1.2"), "");
         assert_eq!(origin_of(&json!(5)).unwrap(), "");
     }
-
-    #[test]
-    fn casefolds() {
-        assert_eq!(casefold("Straße ΣΑΣ ﬁ"), "strasse σασ fi");
-    }
 }

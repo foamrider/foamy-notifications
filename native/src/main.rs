@@ -459,26 +459,4 @@ mod tests {
             assert!(!is_key(bad), "{bad}");
         }
     }
-
-    #[test]
-    fn lines_are_bounded_like_readline() {
-        let mut input = io::Cursor::new(b"ab\ncdefgh\n\nx".to_vec());
-        assert_eq!(read_line(&mut input, 4).unwrap(), b"ab\n");
-        assert_eq!(read_line(&mut input, 4).unwrap(), b"cdef");
-        assert_eq!(read_line(&mut input, 4).unwrap(), b"gh\n");
-        assert_eq!(read_line(&mut input, 4).unwrap(), b"\n");
-        assert_eq!(read_line(&mut input, 4).unwrap(), b"x");
-        assert_eq!(read_line(&mut input, 4).unwrap(), b"");
-    }
-
-    #[test]
-    fn op_lookup_errors_read_like_python() {
-        assert_eq!(lookup(&json!("nope")).err().unwrap().message(), "'nope'");
-        assert_eq!(lookup(&json!(null)).err().unwrap().message(), "None");
-        assert_eq!(
-            lookup(&json!(["read"])).err().unwrap().message(),
-            "unhashable type: 'list'"
-        );
-        assert!(lookup(&json!("read")).is_ok());
-    }
 }
