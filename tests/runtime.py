@@ -1558,8 +1558,13 @@ try:
         "indicator setting updates live",
     )
     send("Hidden indicator still expires", ("-u", "normal"))
-    wait_for(lambda: state()["popups"] == 1 and countdown()["present"], "disabled indicator popup visible")
-    assert not countdown()["enabled"] and countdown()["progress"] == 0, "the turned-off timeout line still shows"
+
+    def line_hidden():
+        # One snapshot: an expired card reads as hidden too, so it must be present.
+        line = countdown()
+        return line["present"] and not line["enabled"] and line["progress"] == 0
+
+    wait_for(lambda: state()["popups"] == 1 and line_hidden(), "the turned-off timeout line still shows")
     wait_for(lambda: state()["popups"] == 0, "disabled indicator retains normal expiry")
     settings.update({"groupDuplicates": False, "criticalTimeoutSec": 0})
     (config / "shell.json").write_text(json.dumps(cfg))
