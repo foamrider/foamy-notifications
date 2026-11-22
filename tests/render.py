@@ -143,3 +143,4 @@ for unexpected in ["TypeError", "ReferenceError", "Binding loop", "Unable to ass
 if not desktop:
     hostenv.check(env, output, testhost.calls(base))
 print("Renders:", app)
+testhost.passed(base, app.glob("*.png"))

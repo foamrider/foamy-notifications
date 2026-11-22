@@ -398,6 +398,12 @@ FOAMY_TEST_DESKTOP=1 python3 tests/features-runtime.py --desktop
 FOAMY_TEST_DESKTOP=1 tests/validate.sh
 ```
 
+The render, browser-ui, motion and images-ui tests (and layer and
+features-runtime `--desktop`) save PNG captures of what they draw, as visual
+evidence. After a pass they keep only these captures, in the folder they
+print, and remove the rest of their directory in `/tmp`. After a failure they
+keep everything, for diagnosis.
+
 The render test uses the real card with synthetic data at wide and narrow widths,
 and fails when a text leaves the card or spills out of its box, or a binding error is logged.
 The runtime and queue tests use the installed PyGObject/Gio bindings to send raw

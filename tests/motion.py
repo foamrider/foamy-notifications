@@ -313,3 +313,4 @@ print(output)
 print("Motion captures:", app)
 hostenv.check(env, output)
 assert status == 0 and "MOTION_RESULT 10 passed 0 failed" in output
+testhost.passed(base, app.glob("*.png"))

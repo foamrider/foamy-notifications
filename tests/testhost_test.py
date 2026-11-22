@@ -1,7 +1,11 @@
 """testhost.session(), started the way the runtime tests start: neither its
 private bus nor the test it runs gets what points at the live desktop
-session, and the bus starts no service, unless a desktop test opts in."""
+session, and the bus starts no service, unless a desktop test opts in.
+testhost.passed() at the end of a visual test that passed: only its PNG
+captures stay, and what the run's links point to is never touched."""
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -9,6 +13,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+import testhost
 
 TESTS = Path(__file__).resolve().parent
 # Starts like a runtime test (testhost.session at the top). Inside, it saves
@@ -116,6 +122,80 @@ class SessionTest(unittest.TestCase):
         self.assertIn("FOAMY_TEST_DESKTOP=1", result.stderr)
         self.assertFalse(self.out.exists(), "the test ran without the opt-in")
         self.assertFalse(self.started.exists())
+
+
+class PassedTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix="foamy-notifications-passed-test-")
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        # The user's files that a run links to: the plugin checkout and the host shell.
+        self.outside = {
+            "checkout/preview.png": b"README picture",
+            "checkout/components/NotificationCard.qml": b"Item {}",
+            "shell/Commons/Color.qml": b"QtObject {}",
+        }
+        for name, data in self.outside.items():
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_bytes(data)
+        # A run directory as the visual tests leave it. Captures lie in the
+        # app folder beside the links (render, browser-ui, motion,
+        # images-ui) or in a copy of the plugin beside its own PNG (layer).
+        self.base = Path(tempfile.mkdtemp(prefix="foamy-notifications-run-", dir=self.root))
+        self.app = self.base / "app"
+        files = {
+            "qs.log": b"log",
+            "runtime/bus": b"",
+            "stub-bin/hyprctl": b"#!/bin/sh\n",
+            "home/.local/state/foamy-notifications/images/1-image.png": b"converted image, not a capture",
+            "app/shell.qml": b"ShellRoot {}",
+            "app/avatar.svg": b"<svg/>",
+            "app/capture-0.png": b"first capture",
+            "app/capture-1.png": b"second capture",
+            "app/copy/Service.qml": b"Item {}",
+            "app/copy/preview.png": b"README picture",
+            "app/copy/entrance.png": b"entrance capture",
+        }
+        for name, data in files.items():
+            (self.base / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.base / name).write_bytes(data)
+        (self.app / "plugin").symlink_to(self.root / "checkout", target_is_directory=True)
+        (self.app / "Commons").symlink_to(self.root / "shell/Commons", target_is_directory=True)
+
+    def passed(self, captures):
+        with contextlib.redirect_stdout(io.StringIO()):
+            testhost.passed(self.base, captures)
+
+    def left(self):
+        """Every entry still in the run directory; links are listed, not followed."""
+        found = []
+        for folder, dirs, files in os.walk(self.base):
+            found += [str(Path(folder, name).relative_to(self.base)) for name in dirs + files]
+        return sorted(found)
+
+    def assertOutsideUntouched(self):
+        self.assertEqual(
+            {name: (self.root / name).read_bytes() for name in self.outside if (self.root / name).exists()},
+            self.outside,
+            "removing the run reached the files its links point to",
+        )
+
+    def test_a_pass_keeps_only_the_png_captures(self):
+        self.passed([*self.app.glob("*.png"), self.app / "copy/entrance.png"])
+        self.assertOutsideUntouched()
+        self.assertEqual(
+            self.left(),
+            ["app", "app/capture-0.png", "app/capture-1.png", "app/copy", "app/copy/entrance.png"],
+            "a passing run keeps its PNG captures and nothing else",
+        )
+        self.assertEqual((self.app / "capture-1.png").read_bytes(), b"second capture")
+        self.assertEqual((self.app / "copy/entrance.png").read_bytes(), b"entrance capture")
+
+    def test_a_pass_without_its_captures_leaves_nothing(self):
+        # layer.py names its captures, but a run can pass without taking them.
+        self.passed([self.app / "copy/exit.png"])
+        self.assertFalse(self.base.exists(), "a passing run without captures left its directory")
+        self.assertOutsideUntouched()
 
 
 if __name__ == "__main__":

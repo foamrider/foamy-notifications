@@ -124,3 +124,4 @@ finally:
 print(output)
 print("Browser captures:", app)
 assert status == 0 and "BROWSER_UI 3 passed 0 failed" in output
+testhost.passed(base, app.glob("*.png"))
