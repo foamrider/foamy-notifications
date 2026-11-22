@@ -340,9 +340,11 @@ try:
     ipc("notifications", "dismissAll")
     wait(lambda: not state()["busy"] and state()["popups"] == 0, "old popup cleanup")
     # A sender may withdraw a notification right after updating it, without
-    # waiting for the reply, so both calls reach the shell in one turn of its
-    # event loop. The card keeps a valid update, still refuses an oversized
-    # one as a whole, and tells the sender once that it closed.
+    # waiting for the reply, so both calls usually reach the shell in one turn
+    # of its event loop. The card keeps a valid update, still refuses an
+    # oversized one as a whole, and tells the sender once that it closed:
+    # reason 3 for its CloseNotification, or 2 when a loaded machine let the
+    # shell refuse the oversized update in an earlier turn, which releases it.
     closed = []
     subscription = bus.signal_subscribe(
         None,
@@ -353,9 +355,9 @@ try:
         Gio.DBusSignalFlags.NONE,
         lambda _connection, _sender, _path, _interface, _member, parameters: closed.append(parameters.unpack()),
     )
-    for title, icon, hints, kept in [
-        ("Updated before close", "foot", {}, ("Updated before close", "foot")),
-        ("Oversized before close", "x" * 5000, {}, ("Before close", "foot")),
+    for title, icon, hints, kept, reasons in [
+        ("Updated before close", "foot", {}, ("Updated before close", "foot"), (3,)),
+        ("Oversized before close", "x" * 5000, {}, ("Before close", "foot"), (2, 3)),
     ]:
         ident = send("Before close")
         wait(lambda: not state()["busy"] and state()["popups"] == 1, "card before close")
@@ -368,16 +370,17 @@ try:
         assert [(entry["summary"], entry["appIcon"]) for entry in saved] == [kept], saved
         while GLib.MainContext.default().iteration(False):
             pass
-        assert [reason for closed_id, reason in closed if closed_id == ident] == [3], closed
+        closes = [reason for closed_id, reason in closed if closed_id == ident]
+        assert len(closes) == 1 and closes[0] in reasons, closed
         ipc("notifications", "dismissAll")
         wait(lambda: not state()["busy"] and state()["popups"] == 0, "withdrawn card cleanup")
     # All three can even reach the shell before the first popup insert, which
     # waits for the end of its event loop turn: this sender names the new
     # notification before the reply, as the server numbers them in order. The
     # saved card keeps the update, or the first text when the update is refused.
-    for title, icon, kept in [
-        ("Updated before insert", "foot", ("Updated before insert", "foot")),
-        ("Oversized before insert", "x" * 5000, ("Before insert", "foot")),
+    for title, icon, kept, reasons in [
+        ("Updated before insert", "foot", ("Updated before insert", "foot"), (3,)),
+        ("Oversized before insert", "x" * 5000, ("Before insert", "foot"), (2, 3)),
     ]:
         ident += 1
         notify_then_close(ident, title, icon, {}, first="Before insert")
@@ -393,7 +396,8 @@ try:
         assert [(entry["summary"], entry["appIcon"]) for entry in saved] == [kept], saved
         while GLib.MainContext.default().iteration(False):
             pass
-        assert [reason for closed_id, reason in closed if closed_id == ident] == [3], closed
+        closes = [reason for closed_id, reason in closed if closed_id == ident]
+        assert len(closes) == 1 and closes[0] in reasons, closed
         ipc("notifications", "dismissAll")
         wait(lambda: not state()["busy"] and state()["popups"] == 0, "withdrawn card cleanup")
     bus.signal_unsubscribe(subscription)
