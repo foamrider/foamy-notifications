@@ -1,4 +1,5 @@
-"""Exercise the shipped popup delegate's animations on an isolated Qt surface."""
+"""Exercise the shipped popup delegate's animations, and the menu state it keeps
+across updates, on an isolated Qt surface."""
 
 import os
 from pathlib import Path
@@ -53,7 +54,7 @@ ShellRoot {
   property string clipboardCopiedKey: ""
   property string clipboardSecret: ""
   function stopKeyboard() {}
-  function deedsFor(group) { return [] }
+  function deedsFor(group) { return JSON.parse(group.actionsJson).map(function(a) { return {kind:"action",value:a.identifier,text:a.text} }) }
   function offersFor(row) { return {codes:"", link:"", meeting:false} }
   function popupImageFor(row, role) { return "" }
   function featureAction(group, kind, value) {}
@@ -256,6 +257,22 @@ ShellRoot {
     mouseMove(window.contentItem,490,250)
     tryVerify(function(){return at(hovered)===0},3000,"leaving the stack closes the gap above")
    }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
+   // A duplicate joining the group changes the card's entry but not its actions:
+   // an open "More actions" menu stays open. New actions from the sender close it.
+   function test_open_menu_survives_a_duplicate(){try{
+    var actions=[{identifier:"reply",text:"Reply"},{identifier:"read",text:"Mark read"},{identifier:"archive",text:"Archive"}]
+    var first=row("7-1","Menu");first.actionsJson=JSON.stringify(actions)
+    popupColumn.groups=[first];tryCompare(popupColumn,"count",1)
+    tryVerify(function(){return popupColumn.itemAtIndex(0)!==null})
+    var card=popupColumn.itemAtIndex(0),more=findChild(card,"moreActionsButton")
+    tryVerify(function(){return more.visible})
+    mouseClick(more);verify(card.actionsExpanded)
+    popupColumn.groups=[Object.assign({},first,{keys:["7-1","7-2"]})];tryCompare(card,"count",2)
+    compare(popupColumn.itemAtIndex(0),card)
+    check(card.actionsExpanded,"a duplicate closed the open menu")
+    popupColumn.groups=[Object.assign({},first,{keys:["7-1","7-2"],actionsJson:JSON.stringify(actions.slice(0,2))})]
+    tryVerify(function(){return !card.actionsExpanded},3000,"new actions close the menu")
+   }catch(e){console.log("MOTION_FAILURE",e.message,e.stack);throw e}}
    function test_removal_during_entrance(){
     popupColumn.groups=[row("2-2","Short lived")];tryCompare(popupColumn,"count",1)
     tryVerify(function(){return popupColumn.itemAtIndex(0)!==null})
@@ -295,4 +312,4 @@ status, output = testhost.run(
 print(output)
 print("Motion captures:", app)
 hostenv.check(env, output)
-assert status == 0 and "MOTION_RESULT 9 passed 0 failed" in output
+assert status == 0 and "MOTION_RESULT 10 passed 0 failed" in output

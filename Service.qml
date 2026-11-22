@@ -3327,6 +3327,10 @@ Item {
           id: card
           required property string entryJson
           readonly property var modelData: JSON.parse(entryJson)
+          // Any change to the group gives a new modelData; the string only
+          // changes with the actions, so an open "More actions" menu stays
+          // open when, for example, a duplicate joins the group.
+          readonly property string actionsJson: modelData.actionsJson || "[]"
           property bool retired: false
           property real entranceOffset: 0
           transform: Translate {
@@ -3386,7 +3390,7 @@ Item {
           urgency: modelData.urgency
           timestamp: modelData.timestamp
           count: modelData.keys.length
-          actions: JSON.parse(modelData.actionsJson || "[]")
+          actions: JSON.parse(actionsJson)
           offers: service.offersFor(modelData)
           copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
           snoozeAvailable: true
