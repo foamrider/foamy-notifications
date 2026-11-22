@@ -11,7 +11,7 @@ function fixture() {
   notifyCenter:()=>events.push('center'),centerActionsChanged(){state.pokes++},removeKeys:()=>events.push('remove'),scheduleRebuild(){},Util:{execArgv:()=>events.push('launch')}})
  state.service=state
  state.actionNow=()=>state.now
- for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','centerRow','centerButtons','centerActionList','invokeCenterAction','expireCenterActions','activateGroup','activateSender','siteFocusCandidate','regexLiteral','focusSiteWindow','finishSiteFocus','siteRowFocus','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives']) {
+ for(const name of ['cancelPendingWrites','retainHistoryAction','releaseHistoryAction','releaseHistoryKeys','releaseHistoryBefore','invokeLiveAction','invokeCenterDefault','centerRow','centerButtons','centerActionList','invokeCenterAction','expireCenterActions','activateGroup','activateSender','siteFocusCandidate','regexLiteral','focusSiteWindow','finishSiteFocus','siteRowFocus','dismissGroup','commitHandled','finishAction','pruneHandledKeys','deleteDeferredArchives','runExecAction']) {
   const start=source.indexOf(`  function ${name}(`)
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),state)
  }
@@ -403,4 +403,23 @@ test('the center cannot invoke a card still on screen once its action lifetime i
  assert.deepEqual(events,[]);assert.equal(jobs.length,0)
  state.now=4+state.centerActionLifetime
  assert.equal(state.invokeCenterDefault('5-7'),'invoked');assert.deepEqual(events,['invoke'])
+})
+test('an Omarchy --action button runs exactly when the card shows it',()=>{
+ const argv=['mpv','/tmp/a b.mp4']
+ for(const [name,entry,shown] of [
+  ['argv as a list',{label:'Open',argv},true],
+  ['argv as a JSON string',{label:'Open',argv:JSON.stringify(argv)},true],
+  ['label blank in its first 256 characters',{label:' '.repeat(256)+'Open',argv},false]]) {
+  const {state,jobs,events,row}=fixture()
+  row.execActions=JSON.stringify([entry])
+  assert.equal(state.NotificationLogic.deeds(row,{}).filter(d=>d.kind==='exec').length,shown?1:0,name)
+  state.runExecAction(row,0)
+  if(shown) {
+   assert.equal(jobs.length,1,name);jobs.shift().done(true)
+   assert.deepEqual(events,['center','launch','remove'],name)
+  } else {
+   assert.equal(jobs.length,0,name);assert.deepEqual(events,[],name)
+   assert.equal(state.actionErrors['1-1'],'This action is no longer available.',name)
+  }
+ }
 })

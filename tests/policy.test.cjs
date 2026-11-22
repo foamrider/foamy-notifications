@@ -62,7 +62,7 @@ test('snapshots keep primitive live actions and restore never exposes dead callb
  assert.equal(L.popupEntry(snap,1).actionsJson,'[]');assert.equal(L.popupEntry(snap,1).desktopEntry,'app');
 });
 test('sender markup never manufactures an image tag and command arguments stay structured',()=>{
- const M=require('./qml-js.cjs')('Markup.js'), body=(b)=>M.render(L.sanitizeBody(b,'Chat',''));
+ const M=require('./qml-js.cjs')('Markup.js'), body=(b)=>M.render(L.sanitizeBody(b,''));
  assert.equal(body('<img src="https://example.invalid/x">'),'');
  // Stock 4.5 allowlist: unknown tags survive as escaped text, never as live markup.
  for(const b of ['<im<img src="x">g src="x">','<x\n<img src="x">','<font color="#000">hidden</font>','<h1>big</h1>','<a href="https://x.test">link</a>'])
@@ -88,6 +88,12 @@ test('raw providers never render; explicit local image hints remain usable',()=>
  assert.equal(L.themeIcon('org.example.App'),'org.example.App')
  const normalized='file:///tmp/images/1000-1-image-'+ 'a'.repeat(64)+'.png'
  assert.equal(L.normalizedImage(normalized,'/tmp/images/'),normalized)
+ // XDG_STATE_HOME or HOME with a trailing slash; the helper's URI has single slashes.
+ assert.equal(L.normalizedImage(normalized,'/tmp//images/'),normalized)
+ // The helper keeps exactly two leading slashes, as pathlib does, and folds three or more into one.
+ const twoSlashes=normalized.replace('file:///','file:////')
+ assert.equal(L.normalizedImage(twoSlashes,'//tmp/images/'),twoSlashes)
+ assert.equal(L.normalizedImage(normalized,'///tmp/images/'),normalized)
  for(const bad of ['file:///tmp/original.jpg','image://qsimage/123',normalized.replace('1000-1','../1000-1'),normalized+'.jpg'])
   assert.equal(L.normalizedImage(bad,'/tmp/images/'),'')
 })

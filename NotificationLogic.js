@@ -1,10 +1,3 @@
-function isChromiumDerived(app, appIcon) {
-  var source = (String(app || "") + "\n" + String(appIcon || "")).toLowerCase()
-  return source.indexOf("chrom") >= 0 || source.indexOf("brave") >= 0 ||
-         source.indexOf("vivaldi") >= 0 || source.indexOf("microsoft-edge") >= 0 ||
-         source.indexOf("opera") >= 0
-}
-
 // True when a `<...>` run is an image tag, so the name is read the way Qt's
 // parser reads it: after the `<`, the leading run of letters and digits.
 //
@@ -79,10 +72,12 @@ function stripImageTags(text) {
 
 // The card renders Markup.render(sanitizeBody(…)) (stock 4.5 allowlist
 // semantics, see Markup.js). sanitizeBody only drops image tags and a
-// Chromium-family sender's leading origin label before that.
-function sanitizeBody(body, app, appIcon) {
+// Chromium-family sender's leading origin label before that. `browser` is
+// BrowserIdentity.browser() of the card, so the sender is told by whole names,
+// never by a browser name inside an app name or a file path.
+function sanitizeBody(body, browser) {
   var text = stripImageTags(String(body || ""))
-  if (!isChromiumDerived(app, appIcon)) return text
+  if (!browser || browser === "firefox") return text
 
   return text
     .replace(/^\s*<a\b[^>]*>\s*(?:https?:\/\/|www\.)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:\/[^<\s]*)?\s*<\/a>\s*/i, "")
@@ -188,7 +183,8 @@ function parseExecArgv(value) {
 
 // The omarchy-actions hint (4.5 `omarchy-notification-send --action label prog … --with`):
 // up to three buttons, each a label and an argv held to the click's rules.
-// Same structural validation as stock Security.parseExecActions.
+// The one parser for these buttons: the card draws and the button runs what
+// it returns.
 function parseExecActions(value) {
   var text = String(value || "")
   if (!text || text.length > 8192) return null
@@ -263,8 +259,13 @@ function themeIcon(value) {
 }
 
 // Only the helper's content-addressed PNGs may cross into the popup renderer.
+// The helper writes the URI from a path normalized as pathlib does it, so
+// repeated slashes (a trailing slash in XDG_STATE_HOME or HOME) count as one
+// here, except exactly two leading slashes, which pathlib keeps.
 function normalizedImage(value, imagesDir) {
-  var prefix = "file://" + String(imagesDir || "").split("/").map(encodeURIComponent).join("/")
+  var dir = String(imagesDir || "")
+  var root = /^\/\/(?!\/)/.test(dir) ? "/" : ""
+  var prefix = "file://" + root + dir.replace(/\/+/g, "/").split("/").map(encodeURIComponent).join("/")
   var source = String(value || "")
   if (!imagesDir || source.indexOf(prefix) !== 0) return ""
   return /^[0-9]+-[0-9]+-(appIcon|image)-[a-f0-9]{64}\.png$/.test(source.slice(prefix.length)) ? source : ""
@@ -781,7 +782,6 @@ function historyRows(raw, liveRows, normalUrgency, limit) {
 
 if (typeof module !== "undefined") {
   module.exports = {
-    isChromiumDerived: isChromiumDerived,
     sanitizeBody: sanitizeBody,
     shouldBypassDnd: shouldBypassDnd,
     isEphemeralApp: isEphemeralApp,

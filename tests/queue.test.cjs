@@ -165,6 +165,24 @@ test('a refused popup write reports the limit; a history-only cancel ends the hi
   assert.equal(done, 1, 'a cancelled write completed twice')
 })
 
+test('a refused rewrite keeps the image result of the write still queued for the same card', () => {
+  const s = fixture()
+  s.imagesDir='/tmp/images/'; s.nextImageWriteVersion=0; s.imageWriteVersions={}; s.waitingKeys={}; s.shownDeadlines={}; s.normalizedImages={}
+  s.isRestoredRow = () => false
+  const row={originalId:1,timestamp:1000,app:'Chat',appIcon:'foot',image:'file:///tmp/shot.png',summary:'First',body:'hello'}
+  s.popupModel={count:1,get() { return row }}
+  for (const name of ['persistPopupFile', 'acceptNormalizedImages', 'popupImageFor']) load(s, name)
+  assert.equal(s.persistPopupFile(row), true)
+  const first = JSON.parse(s.popupFileQueue[0].payload)
+  // An in-place update of the text only, too large for the queue: the first write still runs.
+  row.body='\0'.repeat(25000)
+  assert.equal(s.persistPopupFile(row), false)
+  assert.equal(s.popupFileQueue.length, 1)
+  const normalized='file:///tmp/images/1000-1-image-'+'a'.repeat(64)+'.png'
+  s.acceptNormalizedImages({key:'1000-1', version:first.imageVersion, sources:first.sources, appIcon:'foot', image:normalized})
+  assert.equal(s.popupImageFor(row, 'image'), normalized, 'the queued write\'s image was dropped')
+})
+
 test('intake takes every field, hint and action at its limit, rejects one more, and drops oversized replacement values whole', () => {
   const n={appName:'Chat',appIcon:'chat',summary:'Hi',body:'Hello',desktopEntry:'chat',hints:{},actions:[]}
   assert.equal(Logic.notificationWithinLimits(n), true)
@@ -268,6 +286,33 @@ test('a history clear turns deferred archives into deletes so they cannot refill
   s.deferredMoves = {'4-4':'archive','5-5':'delete'}
   assert.equal(s.clearHistory(), true)
   assert.deepEqual({...s.deferredMoves}, {'4-4':'delete','5-5':'delete'})
+  assert.equal(s.popupFileQueue[s.popupFileQueue.length - 1].op, 'clear')
+})
+
+test('a history clear the queue refuses changes nothing; once it has room the clear does all of it', () => {
+  const s = fixture()
+  let dismissed = 0, cancelled = 0
+  s.centerActionsChanged = () => {}
+  s.liveKeys = {1:'1000-1'}; s.liveRefs = {1:{tracked:true, dismiss() { dismissed++ }}}
+  s.retainedHistory = {'1000-1':{originalId:1, timestamp:1000}}
+  s.deferredMoves = {'2000-2':'archive'}
+  for (const name of ['deleteDeferredArchives', 'releaseHistoryAction', 'clearHistory']) load(s, name)
+  // A sender flood fills the queue with jobs a clear cannot cancel.
+  for (let i = 0; i < s.popupQueueLimit; i++) s.enqueueHelperJob('delete', {key:'9-' + i})
+  assert.equal(s.clearHistory(), false)
+  assert.deepEqual(Object.keys(s.retainedHistory), ['1000-1'], 'the center lost an action')
+  assert.equal(dismissed, 0)
+  assert.deepEqual({...s.deferredMoves}, {'2000-2':'archive'})
+  // A silenced notification's history write waits in the last slot: the clear
+  // cancels it, which makes the room the clear needs.
+  s.popupFileQueue = s.popupFileQueue.slice(0, -1)
+  s.put('{}', '1000-1', ok => { if (!ok) cancelled++ }, true)
+  assert.equal(s.clearHistory(), true)
+  assert.equal(cancelled, 1)
+  assert.equal(s.popupFileQueue.filter(job => job.historyWrite).length, 0)
+  assert.deepEqual(Object.keys(s.retainedHistory), [])
+  assert.equal(dismissed, 1)
+  assert.deepEqual({...s.deferredMoves}, {'2000-2':'delete'})
   assert.equal(s.popupFileQueue[s.popupFileQueue.length - 1].op, 'clear')
 })
 

@@ -1,6 +1,6 @@
 //! Paths as Python's `pathlib` spelled them (`str(Path(x))`, `.parent`,
-//! `.name`, `.as_uri()`), the helper's state directories, and the
-//! `file://` parsing of `local_image`.
+//! `.name`), their `file://` URIs as the card spells them, the helper's
+//! state directories, and the `file://` parsing of `local_image`.
 
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -106,8 +106,10 @@ impl PyPath {
         }
     }
 
-    /// `path.as_uri()`: `file://` and the path percent-encoded except
-    /// `A-Za-z0-9_.-~/`; a relative path has none.
+    /// `file://` and the path percent-encoded except `A-Za-z0-9_.-~!'()*/`,
+    /// the characters `encodeURIComponent` keeps: the card accepts an image
+    /// only under its `encodeURIComponent` spelling of the images directory.
+    /// A relative path has none.
     pub fn as_uri(&self) -> Result<String, crate::Error> {
         if !self.is_absolute() {
             return Err(crate::Error::Value(
@@ -116,7 +118,7 @@ impl PyPath {
         }
         let mut uri = String::from("file://");
         for &byte in &self.0 {
-            if byte.is_ascii_alphanumeric() || b"_.-~/".contains(&byte) {
+            if byte.is_ascii_alphanumeric() || b"_.-~!'()*/".contains(&byte) {
                 uri.push(byte as char);
             } else {
                 uri.push_str(&format!("%{byte:02X}"));
@@ -164,11 +166,12 @@ fn passwd_home() -> Option<Vec<u8>> {
     )
 }
 
-/// `$XDG_STATE_HOME` (used as is when set) or `~/.local/state`.
+/// `$XDG_STATE_HOME`, or `~/.local/state` when it is unset or empty (the
+/// XDG rule, and the directory Service.qml reads).
 pub fn state_home() -> Result<PyPath, crate::Error> {
     match std::env::var_os("XDG_STATE_HOME") {
-        Some(dir) => Ok(PyPath::from_os(&dir)),
-        None => Ok(home()?.join(".local").join("state")),
+        Some(dir) if !dir.is_empty() => Ok(PyPath::from_os(&dir)),
+        _ => Ok(home()?.join(".local").join("state")),
     }
 }
 
@@ -256,6 +259,10 @@ mod tests {
         assert_eq!(
             PyPath::new("/a b/ü~%:".as_bytes()).as_uri().unwrap(),
             "file:///a%20b/%C3%BC~%25%3A"
+        );
+        assert_eq!(
+            PyPath::new(b"/a!'()*b/[x]@$").as_uri().unwrap(),
+            "file:///a!'()*b/%5Bx%5D%40%24"
         );
         assert_eq!(PyPath::new(b"//a/b").as_uri().unwrap(), "file:////a/b");
         assert!(PyPath::new(b"a").as_uri().is_err());

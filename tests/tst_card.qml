@@ -70,10 +70,12 @@ Item {
       card.remainingMs = 0
       card.compact = true
       card.app = "Test"
+      card.desktopEntry = ""
       card.showImages = true
       card.imageSize = 56
       card.width = 420
       card.summary = "Test title"
+      card.body = "Test message"
       card.busy = false
       card.image = ""
       card.appIcon = ""
@@ -272,6 +274,63 @@ Item {
       verify(icon.visible)
       card.favicon = ""
       verify(icon.visible)
+    }
+    // Chromium-family browsers put the site's origin on the first body line;
+    // the card drops it only for them, never for an app whose name or icon
+    // path merely contains a browser name.
+    function test_leading_origin_is_dropped_only_for_a_browser_data() {
+      return [
+        {
+          tag: "chromium browser",
+          app: "Vivaldi",
+          appIcon: "",
+          body: "living-room.local is ready",
+          shown: "is ready"
+        },
+        {
+          tag: "chromium browser link",
+          app: "Google Chrome",
+          appIcon: "",
+          body: "<a href=\"https://living-room.local/\">living-room.local</a> is ready",
+          shown: "is ready"
+        },
+        {
+          tag: "browser name inside an app name",
+          app: "Cooperate",
+          appIcon: "",
+          body: "living-room.local is ready",
+          shown: "living-room.local is ready"
+        },
+        {
+          tag: "browser name inside an icon path",
+          app: "Notes",
+          appIcon: Qt.resolvedUrl("operator/icon.svg").toString(),
+          body: "living-room.local is ready",
+          shown: "living-room.local is ready"
+        },
+        {
+          tag: "browser name inside an icon name",
+          app: "Notes",
+          appIcon: "chromatic",
+          body: "living-room.local is ready",
+          shown: "living-room.local is ready"
+        },
+        {
+          tag: "browser known by its desktop entry",
+          app: "Microsoft Edge",
+          appIcon: "",
+          desktopEntry: "microsoft-edge",
+          body: "living-room.local is ready",
+          shown: "is ready"
+        }
+      ]
+    }
+    function test_leading_origin_is_dropped_only_for_a_browser(data) {
+      card.app = data.app
+      card.appIcon = data.appIcon
+      card.desktopEntry = data.desktopEntry || ""
+      card.body = data.body
+      compare(findChild(card, "notificationBody").text, data.shown)
     }
     function test_timeout_indicator_is_bounded_optional_and_does_not_resize() {
       waitForRendering(card)

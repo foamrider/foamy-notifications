@@ -12,9 +12,9 @@ How the lists are made:
 
 ## `foamy-notifications-helper`
 
-- `bin/aarch64/foamy-notifications-helper`: sha256 `840b6cabe8940dee04912f1e5f0a261a9023bca4b46a25a033c356d2291981cf`
-- `bin/x86_64/foamy-notifications-helper`: sha256 `db5be223b1dadf96e66f6bb71bd90206b7e7dd76dc2666e2caa0fada238b96fa`
-- `native/native.pin`: source `14a66f44eb4ebf8b58412b136e49ff6df85f2aa567201442704c29e0d4c4a024`, toolchain 1.99.1
+- `bin/aarch64/foamy-notifications-helper`: sha256 `45eddc745377af856eb8a0deb38dc360aae33a0f1a86ff3e568c958345023643`
+- `bin/x86_64/foamy-notifications-helper`: sha256 `063e921dbc4e19ab58d848455879efd2e7828edced6e459180c425343cbfb5e6`
+- `native/native.pin`: source `ac074e687430b4b2ad4d09e25aa0b803e5e934cc62f473ab967ed3169ff7ac5c`, toolchain 1.99.1
 
 ### Crates linked into `foamy-notifications-helper`
 

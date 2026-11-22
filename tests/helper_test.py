@@ -2,14 +2,26 @@
 
 import json
 import os
+import subprocess
 import sys
 import time
 import unittest
+from pathlib import Path
 
-from helperproc import Sandbox
+from helperproc import Sandbox, prefix
 
 LIMIT = 131072
 FOCUS = 'hl.dsp.focus({ window = "address:'
+QML_JS = Path(__file__).with_name("qml-js.cjs")
+
+
+def card_image(uri, images_dir):
+    """What the card's NotificationLogic.normalizedImage keeps of an image URI."""
+    script = "process.stdout.write(require(process.argv[1])('NotificationLogic.js').normalizedImage(process.argv[2], process.argv[3]))"
+    result = subprocess.run(
+        ["node", "-e", script, str(QML_JS), uri, images_dir], capture_output=True, text=True, timeout=10, check=True
+    )
+    return result.stdout
 
 
 class HelperTest(unittest.TestCase):
@@ -72,18 +84,36 @@ class HelperTest(unittest.TestCase):
 
     def test_link_origins_use_the_url_host_only(self):
         self.assertOrigin("https://Teams.Microsoft.com/chat?x=1", "teams.microsoft.com")
-        self.assertOrigin("<A HREF='https://user@teams.microsoft.com:443/x'>Teams</A> hi", "teams.microsoft.com")
+        self.assertOrigin("<A HREF='https://teams.microsoft.com/x'>Teams</A> hi", "teams.microsoft.com")
         self.assertOrigin(
             '<a class="x" href="https://first.example/" data="2" href="https://teams.microsoft.com/">t</a>',
             "teams.microsoft.com",
         )
         self.assertOrigin("  \n https://teams.microsoft.com", "teams.microsoft.com")
+        # A ">" inside the quoted href does not end the link.
+        self.assertOrigin('<a href="https://x.example/?a>b">t</a>', "x.example")
+        # Leading space is what JavaScript's trim() removes, as in BrowserIdentity.hostname.
+        self.assertOrigin("\ufeffteams.microsoft.com\nHi", "teams.microsoft.com")
+        self.assertNoOrigin("\x1cteams.microsoft.com\nHi")
+        self.assertNoOrigin("\x85teams.microsoft.com\nHi")
         for edge in ["chrome", "msedge", "brave"]:
             clients = [{"class": edge + "-teams.microsoft.com__-Default", "address": "0x21"}]
             self.assertEqual(self.focused({"app": "Chromium", "body": "teams.microsoft.com"}, clients), "0x21")
         self.assertNoOrigin('<abbr href="https://teams.microsoft.com/">x</abbr>')
         self.assertNoOrigin('<a href="https://teams.microsoft.com/"')
         self.assertNoOrigin("ftp://teams.microsoft.com/")
+        # Only a plain hostname is a site identity, as BrowserIdentity.hostname decides.
+        for body in [
+            "<A HREF='https://user@teams.microsoft.com:443/x'>Teams</A> hi",
+            "https://user@teams.microsoft.com/x",
+            "https://teams.microsoft.com:443/x",
+            "https://teams.microsoft.com@evil.invalid/",
+            "https://[::1]:80/",
+            "https://[::1/",
+            "https://[nope]/",
+        ]:
+            with self.subTest(body=body):
+                self.assertNoOrigin(body)
 
     def test_sender_is_not_a_regex_or_dispatch_expression(self):
         self.assertEqual(self.focused({"app": ".*"}, [{"class": "anything", "address": "0x1"}]), "none")
@@ -133,6 +163,39 @@ class HelperTest(unittest.TestCase):
             {"class": "vivaldi-teams.microsoft.com__-Profile_1", "address": "0x11"},
         ]
         self.assertEqual(self.focused({"app": "Chat", "body": "teams.microsoft.com\nMessage"}, clients), "0x10")
+
+    def test_browser_names_count_only_as_whole_words(self):
+        # A native app whose name only contains a browser name keeps its own window.
+        for app in [
+            "Ledger Live",
+            "Chromecast Controller",
+            "Cooperate",
+            "Bravery",
+            "Knowledge Base",
+            "Vivaldify",
+            "Edge Impulse",
+        ]:
+            with self.subTest(app=app):
+                clients = [{"class": app, "address": "0x30"}]
+                self.assertEqual(self.focused({"app": app, "body": "ledger.com\nUpdate ready"}, clients), "0x30")
+        clients = [
+            {"class": "chrome-teams.microsoft.com__-Default", "address": "0x31"},
+            {"class": "msedge-teams.microsoft.com__-Default", "address": "0x32"},
+            {"class": "brave-teams.microsoft.com__-Default", "address": "0x33"},
+            {"class": "vivaldi-teams.microsoft.com__-Default", "address": "0x34"},
+        ]
+        for app, address in [
+            ("Google Chrome", "0x31"),
+            ("chromium-browser", "0x31"),
+            ("Microsoft Edge", "0x32"),
+            ("msedge", "0x32"),
+            ("Brave Browser", "0x33"),
+            ("Vivaldi", "0x34"),
+        ]:
+            with self.subTest(app=app):
+                window = [client for client in clients if client["address"] == address]
+                self.assertEqual(self.focused({"app": app, "body": "teams.microsoft.com\nHi"}, window), address)
+        self.assertEqual(self.miss({"app": "Opera", "body": "teams.microsoft.com\nHi"}, clients), "browser")
 
     def test_app_matching_desktop_entry_substring_and_agent_windows(self):
         clients = [
@@ -239,6 +302,20 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(self.box.run("forget", {"keys": ["1-1"] * 101}).returncode, 1)
         self.assertEqual(self.box.run("forget", {}).returncode, 1)
         self.assertFalse((self.box.root / "nope").exists())
+
+    def test_empty_state_home_means_the_default(self):
+        # Service reads ~/.local/state when XDG_STATE_HOME is empty; the helper must write there too.
+        env = dict(self.box.env, XDG_STATE_HOME="")
+        row = {"timestamp": 1000, "originalId": 3, "summary": "Hello"}
+        for op, data in [("serve", ""), ("write", json.dumps({"entry": row}))]:
+            result = subprocess.run(
+                prefix() + [op], input=data.encode(), capture_output=True, env=env, timeout=10, cwd=self.box.root
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+        base = self.box.home / ".local/state/foamy-notifications"
+        self.assertEqual(json.loads((base / "popups/1000-3.json").read_text())["summary"], "Hello")
+        self.assertEqual(base.stat().st_mode & 0o777, 0o700)
+        self.assertFalse((self.box.root / "foamy-notifications").exists())
 
     def test_handled_journal_keeps_the_newest_thousand(self):
         self.box.base.mkdir(parents=True)
@@ -641,6 +718,45 @@ class HelperTest(unittest.TestCase):
         moved = self.box.images / "900-2-image"
         self.assertTrue(moved.exists())
         self.assertEqual(self.box.saved("900-2", history=True)["image"], moved.as_uri())
+
+    def test_image_uris_match_the_card_prefix_for_any_state_path(self):
+        # The card shows a converted image only under the prefix that
+        # NotificationLogic.normalizedImage builds from Service's imagesDir.
+        image = "1000-1-image-" + "a" * 64 + ".png"
+        root = str(self.box.root)
+        # A trailing slash gives Service a double slash that the helper's path
+        # does not have. pathlib keeps exactly two leading slashes and folds
+        # three or more into one.
+        for state_home in [
+            root + "/st!'()* ate",
+            root + "/tilstand ø",
+            root + "/trailing/",
+            "/" + root + "/two",
+            "//" + root + "/three",
+        ]:
+            with self.subTest(state_home=state_home):
+                old = Path(state_home) / "omarchy/notifications"
+                (old / "images").mkdir(parents=True)
+                (old / "images" / image).write_bytes(b"png")
+                (old / "1000-1.json").write_text(
+                    json.dumps(
+                        {
+                            "timestamp": 1000,
+                            "originalId": 1,
+                            "summary": "Live",
+                            "image": (old / "images" / image).as_uri(),
+                        }
+                    )
+                )
+                env = dict(self.box.env, XDG_STATE_HOME=state_home)
+                result = subprocess.run(
+                    prefix() + ["migrate"], input=b"{}", capture_output=True, env=env, timeout=10, cwd=self.box.root
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                uri = json.loads((Path(state_home) / "foamy-notifications/popups/1000-1.json").read_text())["image"]
+                self.assertTrue(uri.endswith("/" + image), uri)
+                # Service.qml: stateDir is XDG_STATE_HOME + "/foamy-notifications/", imagesDir adds "images/".
+                self.assertEqual(card_image(uri, state_home + "/foamy-notifications/images/"), uri)
 
 
 if __name__ == "__main__":
