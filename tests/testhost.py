@@ -7,9 +7,11 @@ harness, and apply its isolation and private Omarchy tree through make().
 """
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 KIT = Path(os.environ.get("FOAMY_KIT") or Path.home() / "GitHub/Personal/foamy-kit")
@@ -28,6 +30,71 @@ FOCUS_APP = (
 
 
 DESKTOP_OPT_IN = "FOAMY_TEST_DESKTOP"
+# What points at the live desktop session. A test that runs on the live
+# desktop on purpose keeps DESKTOP: the display, the compositor and the
+# session's runtime directory, which holds the Wayland socket. No test keeps
+# the rest: the session's bus, logind's names for the session and its seat,
+# the user's agents and credentials, the audio servers, the terminal and
+# multiplexer around the caller, and the service manager that started it.
+DESKTOP = (
+    "WAYLAND_DISPLAY",
+    "WAYLAND_SOCKET",
+    "DISPLAY",
+    "XAUTHORITY",
+    "HYPRLAND_INSTANCE_SIGNATURE",
+    "XDG_RUNTIME_DIR",
+)
+LIVE_SESSION = DESKTOP + (
+    "DBUS_SESSION_BUS_ADDRESS",
+    "DBUS_STARTER_ADDRESS",
+    "DBUS_STARTER_BUS_TYPE",
+    "XDG_SESSION_ID",
+    "XDG_SESSION_PATH",
+    "XDG_SEAT",
+    "XDG_SEAT_PATH",
+    "XDG_VTNR",
+    "XDG_ACTIVATION_TOKEN",
+    "DESKTOP_STARTUP_ID",
+    "WINDOWID",
+    "SSH_AUTH_SOCK",
+    "SSH_AGENT_PID",
+    "GPG_AGENT_INFO",
+    "GNOME_KEYRING_CONTROL",
+    "KRB5CCNAME",
+    "PULSE_SERVER",
+    "PULSE_RUNTIME_PATH",
+    "PULSE_COOKIE",
+    "PIPEWIRE_REMOTE",
+    "PIPEWIRE_RUNTIME_DIR",
+    "TMUX",
+    "TMUX_PANE",
+    "ALACRITTY_SOCKET",
+    "NOTIFY_SOCKET",
+    "LISTEN_FDS",
+    "LISTEN_FDNAMES",
+    "LISTEN_PID",
+    "JOURNAL_STREAM",
+    "INVOCATION_ID",
+    "MANAGERPID",
+    "MANAGERPIDFDID",
+    "SYSTEMD_EXEC_PID",
+)
+# session()'s bus has no service directories, as the kit harness's private
+# bus: it starts no host service (desktop portals, keyring, input method)
+# that would run with the user's home and reach the live session.
+BUS_CONFIG = """<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:dir={folder}</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+"""
 
 
 def desktop_opt_in(script):
@@ -76,22 +143,51 @@ def calls(base):
     return "\n".join(hostenv.calls(base))
 
 
-def session(script, timeout, *args):
+def passed(base):
+    """The end of a run that passed: remove the run's own directory `base`
+    (made by tempfile.mkdtemp), so that passing runs leave nothing in /tmp,
+    whose quota the tests of all agents share. A failed run never gets here
+    and keeps its directory for diagnosis. shutil.rmtree removes the links
+    in it (to the plugin and the host shell); it does not follow them."""
+    shutil.rmtree(base)
+    print("Passed; removed", base)
+
+
+def session(script, timeout, *args, display=False):
     """Run the test on a private session bus. Outside (no `--inside`): re-runs
     `script --inside *args` under dbus-run-session and exits with its status;
     after `timeout` seconds it stops the whole run with SIGTERM (SIGKILL 10 s
-    later). Inside: SIGTERM raises SystemExit, so the test's `finally` stops
-    the qs it started; a killed wrapper used to leave it running."""
+    later). The bus starts no service (BUS_CONFIG), and neither it nor the
+    test gets LIVE_SESSION; the test gets a private XDG_RUNTIME_DIR instead.
+    A test that runs on the live desktop on purpose passes `display=True`
+    and keeps DESKTOP; that needs FOAMY_TEST_DESKTOP=1. Inside: SIGTERM raises
+    SystemExit, so the test's `finally` stops the qs it started; a killed
+    wrapper used to leave it running."""
     if "--inside" in sys.argv:
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
         return
-    inner = hostenv.ProcessGroup(["dbus-run-session", "--", sys.executable, str(script), "--inside", *args])
-    try:
-        code = inner.wait(timeout)
-        if code is None:
-            print(f"{Path(script).name}: no result within {timeout} s, stopping it", file=sys.stderr, flush=True)
-            code = 124
-    finally:
-        # The whole group, also what the run left behind when it ended.
-        inner.stop(grace=10)
+    if display:
+        desktop_opt_in(script)
+    with tempfile.TemporaryDirectory(prefix="foamy-notifications-session-") as folder:
+        env = {
+            name: value
+            for name, value in os.environ.items()
+            if name not in LIVE_SESSION or (display and name in DESKTOP)
+        }
+        if not display:
+            runtime = Path(folder) / "runtime"
+            runtime.mkdir(mode=0o700)
+            env["XDG_RUNTIME_DIR"] = str(runtime)
+        config = Path(folder) / "bus.conf"
+        config.write_text(BUS_CONFIG.format(folder=folder))
+        command = ["dbus-run-session", f"--config-file={config}", "--", sys.executable, str(script), "--inside", *args]
+        inner = hostenv.ProcessGroup(command, env=env)
+        try:
+            code = inner.wait(timeout)
+            if code is None:
+                print(f"{Path(script).name}: no result within {timeout} s, stopping it", file=sys.stderr, flush=True)
+                code = 124
+        finally:
+            # The whole group, also what the run left behind when it ended.
+            inner.stop(grace=10)
     raise SystemExit(code)

@@ -11,7 +11,7 @@ import testhost
 from testhost import hostenv
 
 testhost.desktop_opt_in(__file__)
-testhost.session(__file__, 90)
+testhost.session(__file__, 90, display=True)
 base = Path(tempfile.mkdtemp(prefix="foamy-native-motion-"))
 app = base / "app"
 app.mkdir()

@@ -22,7 +22,7 @@ if desktop:
 if not (shutil.which("magick") and shutil.which("file")):
     print("images-ui.py: needs ImageMagick 7 (magick) and file", file=sys.stderr)
     raise SystemExit(2)
-testhost.session(__file__, 55, *(["--desktop"] if desktop else []))
+testhost.session(__file__, 55, *(["--desktop"] if desktop else []), display=desktop)
 base = Path(tempfile.mkdtemp(prefix="foamy-popup-images-"))
 app = base / "app"
 app.mkdir()
@@ -38,7 +38,7 @@ delegate = (
     service[start:end]
     .replace("NotificationCard {", "Cards.NotificationCard {")
     .replace("service.", "notifications.")
-    .replace("popupWindow.screen.name", '"TEST"')
+    .replace("popupWindow.screen", '({ name: "TEST" })')
 )
 (app / "plugin/Service.qml").write_text(service[: service.index("  Variants {")] + "}\n")
 (app / "shell.qml").write_text(
@@ -103,7 +103,9 @@ env = dict(
     HOME=str(home),
     XDG_CONFIG_HOME=str(home / ".config"),
     XDG_CACHE_HOME=str(base / "cache"),
-    XDG_STATE_HOME=str(base / "state"),
+    # Spelled with a "." part and a trailing slash, which the helper drops
+    # (pathlib): the card must use the helper's spelling of its images directory.
+    XDG_STATE_HOME=str(base) + "/./state/",
     XDG_RUNTIME_DIR=str(runtime),
     PATH=str(cli) + ":" + os.environ["PATH"],
     QT_QPA_PLATFORM="wayland" if desktop else "offscreen",

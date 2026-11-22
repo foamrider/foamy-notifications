@@ -13,7 +13,7 @@ from testhost import hostenv
 
 if "--desktop" in sys.argv:
     testhost.desktop_opt_in(__file__)
-testhost.session(__file__, 60, *sys.argv[1:])
+testhost.session(__file__, 60, *sys.argv[1:], display="--desktop" in sys.argv)
 source = Path(__file__).resolve().parents[1]
 base = Path(tempfile.mkdtemp(prefix="foamy-features-runtime-"))
 app = base / "app"
@@ -242,3 +242,6 @@ finally:
     log.close()
     print("Evidence:", base)
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))
+# A desktop run is made for its capture (sharing.png), so it keeps it.
+if not desktop:
+    testhost.passed(base)

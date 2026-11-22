@@ -27,7 +27,7 @@ for name in ("Markup.js", "BrowserIdentity.js"):
 s = (source / "Service.qml").read_text()
 start = s.index("NotificationCard {", s.index("delegate: NotificationCard {", s.index("  Variants {")))
 end = s.index("\n      }\n    }\n  }", start)
-delegate = s[start:end].replace("service.", "fixture.").replace("popupWindow.screen.name", '"TEST-1"')
+delegate = s[start:end].replace("service.", "fixture.").replace("popupWindow.screen", '({ name: "TEST-1" })')
 (app / "shell.qml").write_text(
     """import QtQuick
 import QtTest

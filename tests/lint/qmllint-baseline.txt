@@ -113,70 +113,7 @@ Service.qml: missing-property: Member "sizeHorizontal" not found on type "QObjec
 Service.qml: missing-property: Member "sizeVertical" not found on type "QObject" | readonly property int defaultBarSize: barVertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
 Service.qml: uncreatable-type: Type PanelWindow is not creatable. | PanelWindow {
 Service.qml: uncreatable-type: Type PanelWindow is not creatable. | PanelWindow {
-Service.qml: unqualified: Unqualified access | Component.onCompleted: service.sharingPromptHeight = implicitHeight
-Service.qml: unqualified: Unqualified access | Component.onCompleted: service.siteFocusProcesses++
-Service.qml: unqualified: Unqualified access | Component.onDestruction: delete service.hoveredKeys[registeredHoverKey]
-Service.qml: unqualified: Unqualified access | Component.onDestruction: service.holdArrivals(popupColumn, false)
-Service.qml: unqualified: Unqualified access | Component.onDestruction: service.siteFocusProcesses--
-Service.qml: unqualified: Unqualified access | ListView.delayRemove: exitFade.running || popupColumn.holdsRemoval(card)
-Service.qml: unqualified: Unqualified access | anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen 
-Service.qml: unqualified: Unqualified access | anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen 
-Service.qml: unqualified: Unqualified access | anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen 
-Service.qml: unqualified: Unqualified access | appIcon: service.popupImageFor(modelData, "appIcon")
-Service.qml: unqualified: Unqualified access | busy: !!service.busyKeys[modelData.key]
-Service.qml: unqualified: Unqualified access | compact: service.preferences.compact
-Service.qml: unqualified: Unqualified access | copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
-Service.qml: unqualified: Unqualified access | copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
-Service.qml: unqualified: Unqualified access | deeds: service.deedsFor(modelData)
-Service.qml: unqualified: Unqualified access | delete service.hoveredKeys[next]
-Service.qml: unqualified: Unqualified access | delete service.hoveredKeys[registeredHoverKey]
-Service.qml: unqualified: Unqualified access | error: service.actionErrors[modelData.key] || ""
-Service.qml: unqualified: Unqualified access | event.accepted = service.keyboardPressed(event.key, event.text)
-Service.qml: unqualified: Unqualified access | groups: service.displayGroups.filter(function (group) {
-Service.qml: unqualified: Unqualified access | image: service.popupImageFor(modelData, "image")
-Service.qml: unqualified: Unqualified access | imageSize: service.preferences.imageSize
-Service.qml: unqualified: Unqualified access | offers: service.offersFor(modelData)
-Service.qml: unqualified: Unqualified access | onCardClicked: service.sharingOfferHandled = true
-Service.qml: unqualified: Unqualified access | onCloseRequested: service.sharingOfferHandled = true
-Service.qml: unqualified: Unqualified access | onHideRequested: service.sharingOfferHandled = true
-Service.qml: unqualified: Unqualified access | onImplicitHeightChanged: service.sharingPromptHeight = implicitHeight
 Service.qml: unqualified: Unqualified access | pending: pendingNotifications.length,
-Service.qml: unqualified: Unqualified access | readonly property bool selected: service.targetMonitors.indexOf(screen.name) >= 0
-Service.qml: unqualified: Unqualified access | readonly property bool takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name
-Service.qml: unqualified: Unqualified access | readonly property bool takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name
-Service.qml: unqualified: Unqualified access | readonly property var placement: NotificationLogic.popupPlacement(service.barPosition, service.barClearance, Style.gapsOut)
-Service.qml: unqualified: Unqualified access | readonly property var placement: NotificationLogic.popupPlacement(service.barPosition, service.barClearance, Style.gapsOut)
-Service.qml: unqualified: Unqualified access | remainingMs: showTimeoutIndicator ? service.remainingFor(modelData) : 0
-Service.qml: unqualified: Unqualified access | return service.showsGroupOn(popupWindow.screen.name, group)
-Service.qml: unqualified: Unqualified access | selected: service.keyboardMode && service.keyboardKey === modelData.key
-Service.qml: unqualified: Unqualified access | selected: service.keyboardMode && service.keyboardKey === modelData.key
-Service.qml: unqualified: Unqualified access | service.activateGroup(modelData, "default")
-Service.qml: unqualified: Unqualified access | service.activateGroup(modelData, identifier)
-Service.qml: unqualified: Unqualified access | service.dismissGroup(modelData, false)
-Service.qml: unqualified: Unqualified access | service.dismissGroup(modelData, true)
-Service.qml: unqualified: Unqualified access | service.featureAction(modelData, kind, value)
-Service.qml: unqualified: Unqualified access | service.finishSiteFocus(siteFocusProc, code === 0 && status === 0)
-Service.qml: unqualified: Unqualified access | service.finishSiteFocus(siteFocusProc, false)
-Service.qml: unqualified: Unqualified access | service.holdArrivals(popupColumn, holdPositions)
-Service.qml: unqualified: Unqualified access | service.hoveredKeys[next] = hovered
-Service.qml: unqualified: Unqualified access | service.limitToFit(popupColumn.count - 1)
-Service.qml: unqualified: Unqualified access | service.resetFit()
-Service.qml: unqualified: Unqualified access | service.scheduleRebuild()
-Service.qml: unqualified: Unqualified access | service.sharingOfferHandled = true
-Service.qml: unqualified: Unqualified access | service.snoozeSource("*", 30)
-Service.qml: unqualified: Unqualified access | service.stopKeyboard()
-Service.qml: unqualified: Unqualified access | service.stopKeyboard()
-Service.qml: unqualified: Unqualified access | service.stopKeyboard()
-Service.qml: unqualified: Unqualified access | service.stopKeyboard()
-Service.qml: unqualified: Unqualified access | service.stopKeyboard()
-Service.qml: unqualified: Unqualified access | showImages: service.preferences.showImages
-Service.qml: unqualified: Unqualified access | showTimeoutIndicator: service.preferences.showTimeoutIndicator
-Service.qml: unqualified: Unqualified access | timeoutMs: service.durationFor(modelData.urgency, modelData.expireTimeout)
-Service.qml: unqualified: Unqualified access | top: service.barClearance + Style.space(8)
-Service.qml: unqualified: Unqualified access | var next = popupWindow.screen.name + "|" + modelData.key
-Service.qml: unqualified: Unqualified access | waiting: service.waitingGroups.length
-Service.qml: unqualified: Unqualified access | width: Math.max(1, Math.min(Style.space(service.preferences.width), popupWindow.width - anchors.rightMargin - Style.space(8)))
-Service.qml: unqualified: Unqualified access | width: popupColumn.width
 Service.qml: unqualified: unknown grouped property scope margins. | margins {
 Service.qml: unresolved-type: Type margins is used but it is not resolved | margins {
 components/BrowserIcons.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < Math.min(rows.length, 128) && queue.length < 128; i++) {

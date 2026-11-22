@@ -1,5 +1,9 @@
 // Notification service for the omarchy shell.
 
+// The popup windows, their stack delegate and the site-focus Process use the
+// service's ids; binding them to this file lets qmllint check those reads.
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
@@ -546,6 +550,9 @@ Item {
       delete retainedHistory[previousKey]
     liveRefs[snapshot.originalId] = notification
     liveKeys[snapshot.originalId] = NotificationLogic.imageStem(snapshot)
+    // True while the first popup insert below waits for the end of this event
+    // loop turn: until it runs, an update has no row to go to.
+    var insertPending = false
     // Guard the delete: a newer notification may have reused this originalId
     // (freedesktop replaces_id) and taken over the map slot.
     notification.closed.connect(function () {
@@ -555,11 +562,20 @@ Item {
       // event loop, before the deferred refresh has run. Apply the update now,
       // while the object can still be read. The server is releasing it, so a
       // refused update must not untrack it here: that reports the close twice.
-      // (Raw pixels never wait: imageChanged detaches them at once.)
-      if (NotificationLogic.notificationWithinLimits(notification))
-        service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
-      else
+      // (Raw pixels never wait: imageChanged detaches them at once.) Before
+      // the first insert there is no row yet; the insert inserts `snapshot`
+      // and cannot read the object any more, so the update goes into it.
+      var updated = null
+      if (!NotificationLogic.notificationWithinLimits(notification))
         service.reportPersistenceError("Notification update exceeds sender limits")
+      else if (insertPending)
+        updated = NotificationLogic.replacementSnapshot(notification, snapshot.originalId, snapshot.timestamp)
+      else
+        service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
+      if (updated && NotificationLogic.popupRowChanged(snapshot, updated)) {
+        Object.assign(snapshot, updated)
+        service.persistPopupFile(snapshot)
+      }
       delete service.liveRefs[snapshot.originalId]
       delete service.liveKeys[snapshot.originalId]
       var closedKey = NotificationLogic.imageStem(snapshot)
@@ -607,7 +623,9 @@ Item {
     watchForUpdates(notification, snapshot)
     // Qt.callLater avoids "QV4::Object::insertMember" crashes when a
     // Repeater is mid-incubation while we mutate its model.
+    insertPending = true
     Qt.callLater(function () {
+      insertPending = false
       var place = removePopupsByOriginalId(snapshot.originalId, NotificationLogic.popupFileName(snapshot))
       popupModel.insert(0, snapshot)
       service.inheritPlace(snapshot, place)
@@ -3270,13 +3288,16 @@ Item {
       id: popupWindow
       required property var modelData
       screen: modelData
-      readonly property bool selected: service.targetMonitors.indexOf(screen.name) >= 0
+      // An output can go away (a display that sleeps or is unplugged) before
+      // Variants destroys its window, whose screen is null until then: that
+      // window selects nothing, shows nothing and takes no keyboard.
+      readonly property bool selected: !!screen && service.targetMonitors.indexOf(screen.name) >= 0
       // Keep the surface mapped until the final card finishes fading out.
       visible: selected && (popupColumn.groups.length > 0 || popupColumn.implicitHeight > 0)
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
       // The output that actually shows the selected card owns the keyboard.
-      readonly property bool takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name
+      readonly property bool takesKeyboard: service.keyboardMode && !!screen && service.keyboardScreen === screen.name
       WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
@@ -3314,12 +3335,12 @@ Item {
         id: popupColumn
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen ? service.sharingPromptHeight + Style.space(8) : 0)
+        anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && !!popupWindow.screen && popupWindow.screen.name === service.sharingPromptScreen ? service.sharingPromptHeight + Style.space(8) : 0)
         anchors.rightMargin: popupWindow.placement.margins.right + Style.space(8)
         width: Math.max(1, Math.min(Style.space(service.preferences.width), popupWindow.width - anchors.rightMargin - Style.space(8)))
         spacing: Style.space(8)
         groups: service.displayGroups.filter(function (group) {
-          return service.showsGroupOn(popupWindow.screen.name, group)
+          return !!popupWindow.screen && service.showsGroupOn(popupWindow.screen.name, group)
         })
         waiting: service.waitingGroups.length
         onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)
@@ -3416,7 +3437,7 @@ Item {
           function publishHover() {
             if (!modelData)
               return
-            var next = popupWindow.screen.name + "|" + modelData.key
+            var next = (popupWindow.screen ? popupWindow.screen.name : "") + "|" + modelData.key
             // A duplicate can change the representative key without replacing this card.
             if (registeredHoverKey && registeredHoverKey !== next)
               delete service.hoveredKeys[registeredHoverKey]

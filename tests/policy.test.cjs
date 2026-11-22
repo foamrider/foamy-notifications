@@ -98,6 +98,15 @@ test('raw providers never render; explicit local image hints remain usable',()=>
   assert.equal(L.normalizedImage(bad,'/tmp/images/'),'')
 })
 
+// The helper looks a copied file up by its destination as pathlib spells it
+// (native/src/paths.rs): without "." parts and repeated slashes.
+test('a sender file is copied to the images directory as the helper spells it',()=>{
+ const copy='/tmp/state/foamy-notifications/images/1000-1-image'
+ const persisted=L.persistablePopup({timestamp:1000,originalId:1,image:'file:///tmp/avatar.png'},'/tmp/./state//foamy-notifications/images/')
+ assert.deepEqual(persisted.copies,[{from:'/tmp/avatar.png',to:copy}])
+ assert.equal(persisted.entry.image,'file://'+copy)
+})
+
 test('DND critical silencing overrides trusted critical alerts without changing normal action feedback',()=>{
  for(const appName of ['omarchy-action','notify-send','Chat']) {
   assert.equal(L.shouldBypassDnd({appName,urgency:2},2,true),false)
