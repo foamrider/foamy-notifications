@@ -88,6 +88,8 @@ test('raw providers never render; explicit local image hints remain usable',()=>
  assert.equal(L.themeIcon('org.example.App'),'org.example.App')
  const normalized='file:///tmp/images/1000-1-image-'+ 'a'.repeat(64)+'.png'
  assert.equal(L.normalizedImage(normalized,'/tmp/images/'),normalized)
+ // XDG_STATE_HOME or HOME with a trailing slash; the helper's URI has single slashes.
+ assert.equal(L.normalizedImage(normalized,'/tmp//images/'),normalized)
  for(const bad of ['file:///tmp/original.jpg','image://qsimage/123',normalized.replace('1000-1','../1000-1'),normalized+'.jpg'])
   assert.equal(L.normalizedImage(bad,'/tmp/images/'),'')
 })

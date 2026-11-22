@@ -259,8 +259,10 @@ function themeIcon(value) {
 }
 
 // Only the helper's content-addressed PNGs may cross into the popup renderer.
+// The helper writes the URI from a normalized path, so repeated slashes (a
+// trailing slash in XDG_STATE_HOME or HOME) count as one here.
 function normalizedImage(value, imagesDir) {
-  var prefix = "file://" + String(imagesDir || "").split("/").map(encodeURIComponent).join("/")
+  var prefix = "file://" + String(imagesDir || "").replace(/\/+/g, "/").split("/").map(encodeURIComponent).join("/")
   var source = String(value || "")
   if (!imagesDir || source.indexOf(prefix) !== 0) return ""
   return /^[0-9]+-[0-9]+-(appIcon|image)-[a-f0-9]{64}\.png$/.test(source.slice(prefix.length)) ? source : ""
