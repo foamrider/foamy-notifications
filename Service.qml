@@ -1,5 +1,9 @@
 // Notification service for the omarchy shell.
 
+// The popup windows, their stack delegate and the site-focus Process use the
+// service's ids; binding them to this file lets qmllint check those reads.
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
@@ -3284,13 +3288,16 @@ Item {
       id: popupWindow
       required property var modelData
       screen: modelData
-      readonly property bool selected: service.targetMonitors.indexOf(screen.name) >= 0
+      // An output can go away (a display that sleeps or is unplugged) before
+      // Variants destroys its window, whose screen is null until then: that
+      // window selects nothing, shows nothing and takes no keyboard.
+      readonly property bool selected: !!screen && service.targetMonitors.indexOf(screen.name) >= 0
       // Keep the surface mapped until the final card finishes fading out.
       visible: selected && (popupColumn.groups.length > 0 || popupColumn.implicitHeight > 0)
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
       // The output that actually shows the selected card owns the keyboard.
-      readonly property bool takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name
+      readonly property bool takesKeyboard: service.keyboardMode && !!screen && service.keyboardScreen === screen.name
       WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
@@ -3328,12 +3335,12 @@ Item {
         id: popupColumn
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screen.name === service.sharingPromptScreen ? service.sharingPromptHeight + Style.space(8) : 0)
+        anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && !!popupWindow.screen && popupWindow.screen.name === service.sharingPromptScreen ? service.sharingPromptHeight + Style.space(8) : 0)
         anchors.rightMargin: popupWindow.placement.margins.right + Style.space(8)
         width: Math.max(1, Math.min(Style.space(service.preferences.width), popupWindow.width - anchors.rightMargin - Style.space(8)))
         spacing: Style.space(8)
         groups: service.displayGroups.filter(function (group) {
-          return service.showsGroupOn(popupWindow.screen.name, group)
+          return !!popupWindow.screen && service.showsGroupOn(popupWindow.screen.name, group)
         })
         waiting: service.waitingGroups.length
         onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)
@@ -3430,7 +3437,7 @@ Item {
           function publishHover() {
             if (!modelData)
               return
-            var next = popupWindow.screen.name + "|" + modelData.key
+            var next = (popupWindow.screen ? popupWindow.screen.name : "") + "|" + modelData.key
             // A duplicate can change the representative key without replacing this card.
             if (registeredHoverKey && registeredHoverKey !== next)
               delete service.hoveredKeys[registeredHoverKey]

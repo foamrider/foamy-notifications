@@ -38,7 +38,7 @@ delegate = (
     service[start:end]
     .replace("NotificationCard {", "Cards.NotificationCard {")
     .replace("service.", "notifications.")
-    .replace("popupWindow.screen.name", '"TEST"')
+    .replace("popupWindow.screen", '({ name: "TEST" })')
 )
 (app / "plugin/Service.qml").write_text(service[: service.index("  Variants {")] + "}\n")
 (app / "shell.qml").write_text(

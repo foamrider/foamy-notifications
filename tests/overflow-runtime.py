@@ -2,9 +2,10 @@
 stock IPC contract, order, timers that start on show, replacements,
 CloseNotification, center removal, DND, restart survival, screen-space
 overflow, the hover rule and the hold of new arrivals while hovered (frame by
-frame, its maximum, animations off), and no running clock at idle, on the real
-service, stack, card delegate and fitCards (an offscreen window stands in for
-the layer-shell surface)."""
+frame, its maximum, animations off), an output that goes away, and no running
+clock at idle, on the real service, stack, card delegate, fitCards and the
+window's output bindings (an offscreen window stands in for the layer-shell
+surface)."""
 
 import json
 import os
@@ -44,14 +45,14 @@ def extract(start, end, after=0):
 delegate = extract("NotificationCard {", "\n      }\n    }\n  }", windows.index("delegate: NotificationCard {"))
 fit = extract("      function fitCards() {", "      Item {")
 handlers = extract("        onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)", "        delegate:")
+# What the window and its stack read from the window's output.
+selected = extract("      readonly property bool selected:", "\n")
+keyboard = extract("      readonly property bool takesKeyboard:", "\n")
+groups = extract("        groups: service.displayGroups.filter(", "        waiting:")
 
 
 def local(text):
-    return (
-        text.replace("NotificationCard {", "Cards.NotificationCard {")
-        .replace("service.", "notifications.")
-        .replace("popupWindow.screen.name", '"TEST-1"')
-    )
+    return text.replace("NotificationCard {", "Cards.NotificationCard {").replace("service.", "notifications.")
 
 
 (app / "shell.qml").write_text(
@@ -66,12 +67,15 @@ import "plugin/kit"
 ShellRoot {
  Plugin.Service { id: notifications }
  FloatingWindow { id: testWindow; visible: true; implicitWidth: 500; implicitHeight: 900; color: "#17171c"
- // Stands in for the layer-shell window: its height is the screen's.
+ // Stands in for the layer-shell window: its height is the screen's, and
+ // `screen` is its output, null once that output has gone away.
  Item { id: popupWindow; width: 500; height: 900
-  readonly property bool selected: true
+  property var screen: ({ name: "TEST-1" })
+SELECTED
+KEYBOARD
 FIT
   Cards.NotificationStack { id: popupColumn; x: 20; y: 20; width: 420; spacing: 8
-   groups: notifications.displayGroups
+GROUPS
    waiting: notifications.waitingGroups.length
 HANDLERS
    delegate: DELEGATE
@@ -116,6 +120,9 @@ HANDLERS
  IpcHandler {
   target: "overflow-test"
   function setHeight(height: int): void { popupWindow.height = height }
+  // The window's output goes away ("") or comes back.
+  function setScreen(name: string): void { popupWindow.screen = name ? { name: name } : null }
+  function windowState(): string { return JSON.stringify({ selected: popupWindow.selected, keyboard: popupWindow.takesKeyboard, groups: popupColumn.groups.length }) }
   function hover(index: int): void { held.card = popupColumn.itemAtIndex(index); input.mouseMove(held.card, 100, 20) }
   function leave(): void { input.mouseMove(testWindow.contentItem, 490, 890) }
   // Start counting frames from the held card's window position now.
@@ -150,7 +157,10 @@ HANDLERS
   }
  }
 }
-""".replace("FIT", local(fit))
+""".replace("SELECTED", local(selected))
+    .replace("KEYBOARD", local(keyboard))
+    .replace("GROUPS", local(groups))
+    .replace("FIT", local(fit))
     .replace("HANDLERS", local(handlers))
     .replace("DELEGATE", local(delegate))
 )
@@ -279,6 +289,10 @@ def settled():
 
 def counts():
     return json.loads(ipc("overflow-test", "frameCounts"))
+
+
+def window_state():
+    return json.loads(ipc("overflow-test", "windowState"))
 
 
 def close_notification(notification):
@@ -860,6 +874,26 @@ try:
     ipc("overflow-test", "setReduceMotion", "false")
     reset()
     print("PASS: with animations off, released cards appear at once")
+
+    # An output can go away (a display that sleeps or is unplugged) before
+    # Variants destroys its window, whose screen is null until then: that
+    # window shows no card, takes no keyboard and logs no binding error.
+    card = send("Output goes away")
+    wait(lambda: shown() == [card] and summaries() == ["Output goes away"] and settled(), "a card on the output")
+    assert ipc("notifications", "keyboard") == "on"
+    wait(lambda: window_state() == {"selected": True, "keyboard": True, "groups": 1}, "the output owns the keyboard")
+    logged = len((base / "runtime.log").read_text())
+    ipc("overflow-test", "setScreen", "")
+    wait(
+        lambda: window_state() == {"selected": False, "keyboard": False, "groups": 0} and stack()["height"] == 0,
+        "the window of an output that went away shows nothing",
+    )
+    errors = [line for line in (base / "runtime.log").read_text()[logged:].splitlines() if "Error" in line]
+    assert not errors, errors[:3]
+    ipc("overflow-test", "setScreen", "TEST-1")
+    assert ipc("notifications", "keyboard") == "off"
+    reset()
+    print("PASS: the window of an output that went away shows no card, takes no keyboard and logs no binding error")
 
     # Idle means no work: with nothing on screen and no center in the bar, no timer
     # or frame clock of the service keeps running. One-shot timers stop on their own.
