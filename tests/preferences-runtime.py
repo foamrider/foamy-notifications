@@ -232,3 +232,4 @@ finally:
     log.close()
     print("Evidence:", base)
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))
+testhost.passed(base)

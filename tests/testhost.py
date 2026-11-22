@@ -7,6 +7,7 @@ harness, and apply its isolation and private Omarchy tree through make().
 """
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -74,6 +75,16 @@ def run(argv, env, log, timeout):
 def calls(base):
     """The stubs' log as one string, for hostenv.check()."""
     return "\n".join(hostenv.calls(base))
+
+
+def passed(base):
+    """The end of a run that passed: remove the run's own directory `base`
+    (made by tempfile.mkdtemp), so that passing runs leave nothing in /tmp,
+    whose quota the tests of all agents share. A failed run never gets here
+    and keeps its directory for diagnosis. shutil.rmtree removes the links
+    in it (to the plugin and the host shell); it does not follow them."""
+    shutil.rmtree(base)
+    print("Passed; removed", base)
 
 
 def session(script, timeout, *args):

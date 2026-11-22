@@ -622,3 +622,4 @@ finally:
     log.close()
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))
     print("Runtime log:", base / "runtime.log")
+testhost.passed(base)
