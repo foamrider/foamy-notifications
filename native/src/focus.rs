@@ -72,9 +72,10 @@ pub fn hypr(what: &str) -> Result<Value, Error> {
     pyjson::loads(&output.stdout).map_err(Error::Value)
 }
 
-/// Python's `str.isspace()` (and the regex `\s`).
+/// JavaScript's `\s` and `trim()` set, which `BrowserIdentity.hostname`
+/// uses: Unicode White_Space without U+0085, plus U+FEFF.
 fn is_space(c: char) -> bool {
-    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
+    (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
 /// `str.casefold()`: Unicode lowercase plus the full case foldings that
@@ -230,10 +231,9 @@ fn class_of(client: &Value) -> Result<String, Error> {
     Ok(casefold(&py_str(client.get("class").unwrap_or(&json!("")))))
 }
 
-/// The app-name words of a Chromium-family sender.
-const BROWSERS: [&str; 7] = [
-    "chrome", "chromium", "vivaldi", "brave", "edge", "msedge", "opera",
-];
+/// The app-name words of a Chromium-family sender. Edge is also the two
+/// words "microsoft edge"; "edge" alone is a common word in app names.
+const BROWSERS: [&str; 6] = ["chrome", "chromium", "vivaldi", "brave", "msedge", "opera"];
 
 fn miss(reason: &'static str, message: &'static str) -> Error {
     Error::Focus { reason, message }
@@ -245,11 +245,14 @@ pub fn select_window(data: &Map<String, Value>, clients: &Value) -> Result<Strin
     let app = casefold(&py_str(data.get("app").unwrap_or(&empty)));
     let entry = py_str(data.get("desktopEntry").unwrap_or(&empty));
     let desktop = casefold(entry.strip_suffix(".desktop").unwrap_or(&entry));
-    // Whole words, as BrowserIdentity.js matches them: "Ledger Live" or
-    // "Cooperate" are native apps, not browsers.
-    let browser = app
+    // Whole words, as BrowserIdentity.js matches them: "Ledger Live",
+    // "Cooperate" or "Edge Impulse" are native apps, not browsers.
+    let words: Vec<&str> = app
         .split(|c: char| !c.is_ascii_alphanumeric())
-        .any(|word| BROWSERS.contains(&word));
+        .filter(|word| !word.is_empty())
+        .collect();
+    let browser = words.iter().any(|word| BROWSERS.contains(word))
+        || words.windows(2).any(|pair| pair == ["microsoft", "edge"]);
     let origin = if browser {
         origin_of(data.get("body").unwrap_or(&empty))
     } else {
@@ -528,9 +531,11 @@ mod tests {
     fn origins() {
         assert_eq!(origin("teams.microsoft.com\nAlex"), "teams.microsoft.com");
         assert_eq!(
-            origin(" \u{1c}TEAMS.Microsoft.COM \r\nx"),
+            origin(" \u{a0}\u{feff}TEAMS.Microsoft.COM \r\nx"),
             "teams.microsoft.com"
         );
+        assert_eq!(origin("\u{1c}teams.microsoft.com"), "");
+        assert_eq!(origin("\u{85}teams.microsoft.com"), "");
         assert_eq!(
             origin("<a href=\"https://Teams.Microsoft.com/\">t</a>"),
             "teams.microsoft.com"
@@ -541,6 +546,10 @@ mod tests {
             "b.example"
         );
         assert_eq!(origin("https://h.example?q#f"), "h.example");
+        assert_eq!(
+            origin("<a href=\"https://x.example/?a>b\">t</a>"),
+            "x.example"
+        );
         // Only a plain hostname is a site, as BrowserIdentity.hostname decides.
         assert_eq!(origin("<a href=\"https://a>b.example/\">"), "");
         assert_eq!(origin("<a\thref='http://x.example:80/'>"), "");
@@ -573,5 +582,11 @@ mod tests {
         };
         assert_eq!(pick("Ledger Live"), "0x1");
         assert_eq!(pick("Google-Chrome"), "0x2");
+        assert_eq!(pick("Microsoft  Edge"), "0x2");
+        let native = json!({"app": "Edge Impulse", "body": "ledger.com\nUpdate"});
+        assert!(matches!(
+            select_window(native.as_object().unwrap(), &clients),
+            Err(Error::Focus { reason: "none", .. })
+        ));
     }
 }

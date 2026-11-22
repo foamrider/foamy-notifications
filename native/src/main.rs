@@ -68,8 +68,9 @@
 //!   Prints `{"migrated": true, "moved": n}` or `{"migrated": false}`.
 //! - `focus {app, desktopEntry, body, mappings}`: reads `hyprctl -j clients`
 //!   and picks exactly one window: for a Chromium-family sender (an app
-//!   name with the word `chrome`, `chromium`, `vivaldi`, `brave`, `edge`,
-//!   `msedge` or `opera`) whose body starts with a hostname line or a link
+//!   name with the word `chrome`, `chromium`, `vivaldi`, `brave`, `msedge`
+//!   or `opera`, or the words `microsoft edge`) whose body starts with a
+//!   hostname line or a link
 //!   to a plain hostname (no credentials, port or IP address), the
 //!   `mappings` window class or a
 //!   `chrome-|vivaldi-|msedge-|brave-<origin>__*` class; otherwise the

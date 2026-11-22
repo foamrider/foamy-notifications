@@ -90,6 +90,12 @@ class HelperTest(unittest.TestCase):
             "teams.microsoft.com",
         )
         self.assertOrigin("  \n https://teams.microsoft.com", "teams.microsoft.com")
+        # A ">" inside the quoted href does not end the link.
+        self.assertOrigin('<a href="https://x.example/?a>b">t</a>', "x.example")
+        # Leading space is what JavaScript's trim() removes, as in BrowserIdentity.hostname.
+        self.assertOrigin("\ufeffteams.microsoft.com\nHi", "teams.microsoft.com")
+        self.assertNoOrigin("\x1cteams.microsoft.com\nHi")
+        self.assertNoOrigin("\x85teams.microsoft.com\nHi")
         for edge in ["chrome", "msedge", "brave"]:
             clients = [{"class": edge + "-teams.microsoft.com__-Default", "address": "0x21"}]
             self.assertEqual(self.focused({"app": "Chromium", "body": "teams.microsoft.com"}, clients), "0x21")
@@ -160,7 +166,15 @@ class HelperTest(unittest.TestCase):
 
     def test_browser_names_count_only_as_whole_words(self):
         # A native app whose name only contains a browser name keeps its own window.
-        for app in ["Ledger Live", "Chromecast Controller", "Cooperate", "Bravery", "Knowledge Base", "Vivaldify"]:
+        for app in [
+            "Ledger Live",
+            "Chromecast Controller",
+            "Cooperate",
+            "Bravery",
+            "Knowledge Base",
+            "Vivaldify",
+            "Edge Impulse",
+        ]:
             with self.subTest(app=app):
                 clients = [{"class": app, "address": "0x30"}]
                 self.assertEqual(self.focused({"app": app, "body": "ledger.com\nUpdate ready"}, clients), "0x30")
