@@ -22,7 +22,7 @@ if desktop:
 if not (shutil.which("magick") and shutil.which("file")):
     print("images-ui.py: needs ImageMagick 7 (magick) and file", file=sys.stderr)
     raise SystemExit(2)
-testhost.session(__file__, 55, *(["--desktop"] if desktop else []))
+testhost.session(__file__, 55, *(["--desktop"] if desktop else []), display=desktop)
 base = Path(tempfile.mkdtemp(prefix="foamy-popup-images-"))
 app = base / "app"
 app.mkdir()
