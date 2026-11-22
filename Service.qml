@@ -3384,6 +3384,7 @@ Item {
           width: popupColumn.width
           app: modelData.app
           appIcon: service.popupImageFor(modelData, "appIcon")
+          desktopEntry: modelData.desktopEntry || ""
           favicon: modelData.favicon || ""
           image: service.popupImageFor(modelData, "image")
           compact: service.preferences.compact

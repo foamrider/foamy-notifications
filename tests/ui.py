@@ -81,4 +81,4 @@ status, output = testhost.run(
 print(output)
 hostenv.check(env, output, testhost.calls(base))
 # completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
-assert status == 0 and "UI_RESULT 26 passed 0 failed" in output
+assert status == 0 and "UI_RESULT 27 passed 0 failed" in output

@@ -70,6 +70,7 @@ Item {
       card.remainingMs = 0
       card.compact = true
       card.app = "Test"
+      card.desktopEntry = ""
       card.showImages = true
       card.imageSize = 56
       card.width = 420
@@ -313,12 +314,21 @@ Item {
           appIcon: "chromatic",
           body: "living-room.local is ready",
           shown: "living-room.local is ready"
+        },
+        {
+          tag: "browser known by its desktop entry",
+          app: "Microsoft Edge",
+          appIcon: "",
+          desktopEntry: "microsoft-edge",
+          body: "living-room.local is ready",
+          shown: "is ready"
         }
       ]
     }
     function test_leading_origin_is_dropped_only_for_a_browser(data) {
       card.app = data.app
       card.appIcon = data.appIcon
+      card.desktopEntry = data.desktopEntry || ""
       card.body = data.body
       compare(findChild(card, "notificationBody").text, data.shown)
     }

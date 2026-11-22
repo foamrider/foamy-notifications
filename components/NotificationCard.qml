@@ -17,6 +17,7 @@ Rectangle {
   LayoutMirroring.childrenInherit: true
   property string app: ""
   property string appIcon: ""
+  property string desktopEntry: ""
   property string favicon: ""
   readonly property string faviconSource: favicon.indexOf("file://") === 0 ? favicon : ""
   property string image: ""
@@ -359,7 +360,8 @@ Rectangle {
             // Stock 4.5 Markup semantics: decode, escape all, allow b/i/u/s/em/strong/br only.
             text: Markup.render(Logic.sanitizeBody(root.body, BrowserIdentity.browser({
               app: root.app,
-              appIcon: root.appIcon
+              appIcon: root.appIcon,
+              desktopEntry: root.desktopEntry
             })))
             textFormat: Text.StyledText
             font.family: root.fontFamily
