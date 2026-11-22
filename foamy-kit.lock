@@ -2,7 +2,7 @@
 # Hashes are of each file's body (the file without its stamp line);
 # notices and REVIEW.md are hashed whole. tests/kit-check.sh verifies them.
 version 0.13.1
-source b0c6407fe7a018ef9ed5042c0e15a7d398c6a522
+source f9a44b24e683873a48029faf32064b54e1338fea
 components FoamyI18n,FoamyIpc,FoamyMotion,FoamyNative,FoamyPalette,FoamyPeerIpc,FoamyStyle
 5079c3e4ecd2ca5399dff48f64327729d8e84916a4c73fbcb9e0491b16014990  .github/workflows/checks.yml
 98bd9e4430551129a6f4c309ee8ba59b66514db5ca1d4c5b7151ec308f6d632b  .github/workflows/verify-native.yml
@@ -33,7 +33,7 @@ cf0b20d80e1ca52f5fef9b2474c3e9d7b7ddf43dafcd3535e9561c686ecfc7bc  kit/rust/foamy
 111a50e13415ed5ca0fee6b226b655db8cf67ea266fcfd485e01cbe0c03f7b05  kit/rust/foamy-helper/src/io.rs
 73862c7252172ee54653b1b930230968453c70abe394aec1e1e3e8bde42b5c2d  kit/rust/foamy-helper/src/json.rs
 2031c896c17cb22f18bf68cedd06b6e6db13ddeea700850d743f7de891e80797  kit/rust/foamy-helper/src/lib.rs
-ebfadf5a33e10c001e6c9d83e0c02ea3f79003807fc4b0ecc655d7427bac54a2  kit/rust/foamy-helper/src/lock.rs
+387ef6393870794e0ec529e45f91dc207ae9d38fb517ba711658df7298cb8e7f  kit/rust/foamy-helper/src/lock.rs
 8cc6c7d05a7d5fc2795b19a3d3f2765f574272ea3ee097027293c3d5f5cccf5a  kit/rust/foamy-helper/src/net.rs
 f33c8ff3e6f096dfbeb42f3bf5ddadd2834b7359f021da210ad8f0bea9c30cf3  kit/rust/foamy-helper/src/process.rs
 177670beb2ecd87d0f3dbcc74c67741990f779b2f1ccd15afce3f6f1893d318e  kit/rust/foamy-helper/src/sandbox.rs
