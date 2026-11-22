@@ -165,6 +165,24 @@ test('a refused popup write reports the limit; a history-only cancel ends the hi
   assert.equal(done, 1, 'a cancelled write completed twice')
 })
 
+test('a refused rewrite keeps the image result of the write still queued for the same card', () => {
+  const s = fixture()
+  s.imagesDir='/tmp/images/'; s.nextImageWriteVersion=0; s.imageWriteVersions={}; s.waitingKeys={}; s.shownDeadlines={}; s.normalizedImages={}
+  s.isRestoredRow = () => false
+  const row={originalId:1,timestamp:1000,app:'Chat',appIcon:'foot',image:'file:///tmp/shot.png',summary:'First',body:'hello'}
+  s.popupModel={count:1,get() { return row }}
+  for (const name of ['persistPopupFile', 'acceptNormalizedImages', 'popupImageFor']) load(s, name)
+  assert.equal(s.persistPopupFile(row), true)
+  const first = JSON.parse(s.popupFileQueue[0].payload)
+  // An in-place update of the text only, too large for the queue: the first write still runs.
+  row.body='\0'.repeat(25000)
+  assert.equal(s.persistPopupFile(row), false)
+  assert.equal(s.popupFileQueue.length, 1)
+  const normalized='file:///tmp/images/1000-1-image-'+'a'.repeat(64)+'.png'
+  s.acceptNormalizedImages({key:'1000-1', version:first.imageVersion, sources:first.sources, appIcon:'foot', image:normalized})
+  assert.equal(s.popupImageFor(row, 'image'), normalized, 'the queued write\'s image was dropped')
+})
+
 test('intake takes every field, hint and action at its limit, rejects one more, and drops oversized replacement values whole', () => {
   const n={appName:'Chat',appIcon:'chat',summary:'Hi',body:'Hello',desktopEntry:'chat',hints:{},actions:[]}
   assert.equal(Logic.notificationWithinLimits(n), true)

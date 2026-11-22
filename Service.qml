@@ -1747,7 +1747,6 @@ Item {
     var safeSnapshot = Features.redact(placed)
     var persistable = NotificationLogic.persistablePopup(safeSnapshot, imagesDir)
     var version = ++nextImageWriteVersion
-    imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
     var accepted = enqueueHelperJob("write", {
       entry: persistable.entry,
       copies: persistable.copies,
@@ -1757,8 +1756,11 @@ Item {
         image: String(safeSnapshot.image || "")
       }
     }, null, NotificationLogic.imageStem(snapshot))
-    if (!accepted)
-      delete imageWriteVersions[NotificationLogic.imageStem(snapshot)]
+    // Only an accepted write claims the card's image version: after a refused
+    // one, the result of an earlier write still queued for this card stays
+    // valid. The helper replies later, never inside enqueueHelperJob.
+    if (accepted)
+      imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
     return accepted
   }
 
