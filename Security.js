@@ -33,23 +33,3 @@ function hostOf(raw) {
   var u=safeHttpUrl(raw), m=u.match(/^https?:\/\/([^/:?#]+)/)
   return m ? m[1] : ''
 }
-// The omarchy-actions hint, as stock 4.5 validates it (see NotificationLogic.parseExecActions).
-function parseExecActions(value) {
-  var text = String(value || "")
-  if (!text || text.length > 8192) return null
-  var parsed
-  try { parsed = JSON.parse(text) } catch (e) { return null }
-  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 3) return null
-  var out = []
-  for (var i = 0; i < parsed.length; i++) {
-    var entry = parsed[i]
-    if (!entry || typeof entry !== "object" || typeof entry.label !== "string" || !Array.isArray(entry.argv)) return null
-    var argv = entry.argv
-    if (argv.length === 0 || argv.length > 32 || typeof argv[0] !== "string" || !argv[0] || argv[0].charAt(0) === "-") return null
-    for (var j = 0; j < argv.length; j++)
-      if (typeof argv[j] !== "string" || argv[j].length > 4096 || argv[j].indexOf("\u0000") >= 0) return null
-    if (!entry.label.trim()) return null
-    out.push({ label: entry.label.slice(0, 256), argv: argv.slice() })
-  }
-  return out
-}

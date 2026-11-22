@@ -312,7 +312,7 @@ Item {
   // An omarchy-notification-send --action button. Its argv runs like the click
   // command: handling is persisted first, because the command may restart the shell.
   function runExecAction(group, index) {
-    var actions = Security.parseExecActions(group.execActions)
+    var actions = NotificationLogic.parseExecActions(group.execActions)
     if (!actions || !(index >= 0 && index < actions.length)) {
       finishAction(group.key, "This action is no longer available.")
       return

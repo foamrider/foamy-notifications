@@ -183,7 +183,8 @@ function parseExecArgv(value) {
 
 // The omarchy-actions hint (4.5 `omarchy-notification-send --action label prog … --with`):
 // up to three buttons, each a label and an argv held to the click's rules.
-// Same structural validation as stock Security.parseExecActions.
+// The one parser for these buttons: the card draws and the button runs what
+// it returns.
 function parseExecActions(value) {
   var text = String(value || "")
   if (!text || text.length > 8192) return null
