@@ -258,14 +258,22 @@ function themeIcon(value) {
   return /^[A-Za-z0-9_.-]+$/.test(String(value || "")) ? String(value) : ""
 }
 
-// Only the helper's content-addressed PNGs may cross into the popup renderer.
-// The helper writes the URI from a path normalized as pathlib does it, so
-// repeated slashes (a trailing slash in XDG_STATE_HOME or HOME) count as one
-// here, except exactly two leading slashes, which pathlib keeps.
+// A directory as the helper spells it (pathlib, native/src/paths.rs
+// PyPath::new), with one trailing slash: repeated slashes count as one and
+// "." parts drop, but exactly two leading slashes and ".." parts stay.
+// Service joins XDG_STATE_HOME or HOME into its paths as they are, so a
+// trailing slash or a "." part there would otherwise differ.
+function helperDir(dir) {
+  var text = String(dir || "")
+  var root = /^\/\/(?!\/)/.test(text) ? "//" : text.charAt(0) === "/" ? "/" : ""
+  var parts = text.split("/").filter(function (part) { return part !== "" && part !== "." })
+  return root + parts.join("/") + (parts.length ? "/" : "")
+}
+
+// Only the helper's content-addressed PNGs may cross into the popup renderer,
+// under its spelling of the images directory.
 function normalizedImage(value, imagesDir) {
-  var dir = String(imagesDir || "")
-  var root = /^\/\/(?!\/)/.test(dir) ? "/" : ""
-  var prefix = "file://" + root + dir.replace(/\/+/g, "/").split("/").map(encodeURIComponent).join("/")
+  var prefix = "file://" + helperDir(imagesDir).split("/").map(encodeURIComponent).join("/")
   var source = String(value || "")
   if (!imagesDir || source.indexOf(prefix) !== 0) return ""
   return /^[0-9]+-[0-9]+-(appIcon|image)-[a-f0-9]{64}\.png$/.test(source.slice(prefix.length)) ? source : ""
@@ -450,7 +458,8 @@ function persistablePopup(entry, imagesDir) {
     if (!value) continue
     var source = localImageFile(value)
     if (source) {
-      var copy = String(imagesDir || "") + imageStem(e) + "-" + role
+      // The helper finds the file to copy by this path in its own spelling.
+      var copy = helperDir(imagesDir) + imageStem(e) + "-" + role
       if (source !== copy) copies.push({ from: source, to: copy })
       out[role] = "file://" + copy
     } else if (value.indexOf("image://") === 0) {

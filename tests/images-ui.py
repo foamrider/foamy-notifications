@@ -103,7 +103,9 @@ env = dict(
     HOME=str(home),
     XDG_CONFIG_HOME=str(home / ".config"),
     XDG_CACHE_HOME=str(base / "cache"),
-    XDG_STATE_HOME=str(base / "state"),
+    # Spelled with a "." part and a trailing slash, which the helper drops
+    # (pathlib): the card must use the helper's spelling of its images directory.
+    XDG_STATE_HOME=str(base) + "/./state/",
     XDG_RUNTIME_DIR=str(runtime),
     PATH=str(cli) + ":" + os.environ["PATH"],
     QT_QPA_PLATFORM="wayland" if desktop else "offscreen",

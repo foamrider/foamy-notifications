@@ -725,14 +725,15 @@ class HelperTest(unittest.TestCase):
         image = "1000-1-image-" + "a" * 64 + ".png"
         root = str(self.box.root)
         # A trailing slash gives Service a double slash that the helper's path
-        # does not have. pathlib keeps exactly two leading slashes and folds
-        # three or more into one.
+        # does not have. pathlib keeps exactly two leading slashes, folds
+        # three or more into one and drops "." parts.
         for state_home in [
             root + "/st!'()* ate",
             root + "/tilstand ø",
             root + "/trailing/",
             "/" + root + "/two",
             "//" + root + "/three",
+            root + "/./dot",
         ]:
             with self.subTest(state_home=state_home):
                 old = Path(state_home) / "omarchy/notifications"
