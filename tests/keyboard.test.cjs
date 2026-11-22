@@ -44,5 +44,5 @@ test('keyboard focus goes to an output that shows the card, never to a fullscree
  assert.equal(f.s.startKeyboard(''),true);assert.equal(f.s.keyboardKey,'1-1','normal cards hidden everywhere are skipped')
  f.s.keyboardPressed(Qt.Key_Up,'');assert.equal(f.s.keyboardKey,'1-1')
  f.s.preferences.fullscreenCritical=false;f.s.stopKeyboard();assert.equal(f.s.startKeyboard(''),false)
- assert.match(source,/takesKeyboard: service.keyboardMode && service.keyboardScreen === screen.name/)
+ assert.match(source,/takesKeyboard: service.keyboardMode && !!screen && service.keyboardScreen === screen.name/)
 })
