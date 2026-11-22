@@ -7,6 +7,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "../NotificationLogic.js" as Logic
+import "../BrowserIdentity.js" as BrowserIdentity
 import "../Markup.js" as Markup
 import "../kit"
 
@@ -352,10 +353,14 @@ Rectangle {
             elide: Text.ElideRight
           }
           Text {
+            objectName: "notificationBody"
             Layout.fillWidth: true
             visible: text.length > 0
             // Stock 4.5 Markup semantics: decode, escape all, allow b/i/u/s/em/strong/br only.
-            text: Markup.render(Logic.sanitizeBody(root.body, root.app, root.appIcon))
+            text: Markup.render(Logic.sanitizeBody(root.body, BrowserIdentity.browser({
+              app: root.app,
+              appIcon: root.appIcon
+            })))
             textFormat: Text.StyledText
             font.family: root.fontFamily
             font.pixelSize: FoamyStyle.font.title
