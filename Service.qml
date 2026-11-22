@@ -551,6 +551,15 @@ Item {
     notification.closed.connect(function () {
       if (service.liveRefs[snapshot.originalId] !== notification)
         return
+      // A sender can update a notification and withdraw it in one turn of the
+      // event loop, before the deferred refresh has run. Apply the update now,
+      // while the object can still be read. The server is releasing it, so a
+      // refused update must not untrack it here: that reports the close twice.
+      // (Raw pixels never wait: imageChanged detaches them at once.)
+      if (NotificationLogic.notificationWithinLimits(notification))
+        service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
+      else
+        service.reportPersistenceError("Notification update exceeds sender limits")
       delete service.liveRefs[snapshot.originalId]
       delete service.liveKeys[snapshot.originalId]
       var closedKey = NotificationLogic.imageStem(snapshot)

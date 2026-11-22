@@ -230,6 +230,45 @@ def send_buffer(title, alias="image-data", replace=0, file_hint=""):
     ).unpack()[0]
 
 
+def notify_then_close(ident, title, icon, hints):
+    """Send an in-place update and its CloseNotification without waiting for the first reply."""
+    replies = []
+    loop = GLib.MainLoop()
+
+    def finished(connection, result, name):
+        try:
+            connection.call_finish(result)
+            replies.append(name)
+        except GLib.Error as error:
+            replies.append(name + ": " + error.message)
+        if len(replies) == 2:
+            loop.quit()
+
+    update = GLib.Variant(
+        "(susssasa{sv}i)",
+        ("Foamy queue test", ident, icon, title, "Working text", [], dict(hints, urgency=GLib.Variant("y", 2)), 0),
+    )
+    path, interface = "/org/freedesktop/Notifications", "org.freedesktop.Notifications"
+    bus.call(
+        interface, path, interface, "Notify", update, GLib.VariantType.new("(u)"), 0, 3000, None, finished, "notify"
+    )
+    bus.call(
+        interface,
+        path,
+        interface,
+        "CloseNotification",
+        GLib.Variant("(u)", (ident,)),
+        None,
+        0,
+        3000,
+        None,
+        finished,
+        "close",
+    )
+    loop.run()
+    assert replies == ["notify", "close"], replies
+
+
 def serve_events_after_first_crash():
     events = [line.split() for line in serve_events.read_text().splitlines()] if serve_events.exists() else []
     kinds = [kind for kind, _ in events]
@@ -289,7 +328,40 @@ try:
         saved
     )
     ipc("notifications", "dismissAll")
-    wait(lambda: not state()["busy"], "old popup cleanup")
+    wait(lambda: not state()["busy"] and state()["popups"] == 0, "old popup cleanup")
+    # A sender may withdraw a notification right after updating it, without
+    # waiting for the reply, so both calls reach the shell in one turn of its
+    # event loop. The card keeps a valid update, still refuses an oversized
+    # one as a whole, and tells the sender once that it closed.
+    closed = []
+    subscription = bus.signal_subscribe(
+        None,
+        "org.freedesktop.Notifications",
+        "NotificationClosed",
+        "/org/freedesktop/Notifications",
+        None,
+        Gio.DBusSignalFlags.NONE,
+        lambda _connection, _sender, _path, _interface, _member, parameters: closed.append(parameters.unpack()),
+    )
+    for title, icon, hints, kept in [
+        ("Updated before close", "foot", {}, ("Updated before close", "foot")),
+        ("Oversized before close", "x" * 5000, {}, ("Before close", "foot")),
+    ]:
+        ident = send("Before close")
+        wait(lambda: not state()["busy"] and state()["popups"] == 1, "card before close")
+        notify_then_close(ident, title, icon, hints)
+        wait(
+            lambda: state()["nativeTracked"] == state()["tracked"] == 0 and not state()["busy"],
+            "withdrawn card settles",
+        )
+        saved = [json.loads(p.read_text()) for p in (base / "state/foamy-notifications/popups").glob("*-*.json")]
+        assert [(entry["summary"], entry["appIcon"]) for entry in saved] == [kept], saved
+        while GLib.MainContext.default().iteration(False):
+            pass
+        assert [reason for closed_id, reason in closed if closed_id == ident] == [3], closed
+        ipc("notifications", "dismissAll")
+        wait(lambda: not state()["busy"] and state()["popups"] == 0, "withdrawn card cleanup")
+    bus.signal_unsubscribe(subscription)
     started.unlink()
     stall.touch()
     send("Stalled popup write")
@@ -487,7 +559,7 @@ try:
     for unexpected in ["Invalid notification image result", "callback failed", "ReferenceError", "TypeError", "ERROR"]:
         assert not any(unexpected in line for line in lines), output
     print(
-        "PASS: real stalled-worker DND/popup floods, byte/count plateaus, cancellation, oversized intake/replacement rejection, cleanup, raw-pixel release/retention replacements, primitive context backlog and recovery, failed context query, helper crash with restart backoff"
+        "PASS: real stalled-worker DND/popup floods, byte/count plateaus, cancellation, oversized intake/replacement rejection, update then close, cleanup, raw-pixel release/retention replacements, primitive context backlog and recovery, failed context query, helper crash with restart backoff"
     )
     print(
         "DND plateau:",
