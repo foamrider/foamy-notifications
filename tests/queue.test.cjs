@@ -289,6 +289,33 @@ test('a history clear turns deferred archives into deletes so they cannot refill
   assert.equal(s.popupFileQueue[s.popupFileQueue.length - 1].op, 'clear')
 })
 
+test('a history clear the queue refuses changes nothing; once it has room the clear does all of it', () => {
+  const s = fixture()
+  let dismissed = 0, cancelled = 0
+  s.centerActionsChanged = () => {}
+  s.liveKeys = {1:'1000-1'}; s.liveRefs = {1:{tracked:true, dismiss() { dismissed++ }}}
+  s.retainedHistory = {'1000-1':{originalId:1, timestamp:1000}}
+  s.deferredMoves = {'2000-2':'archive'}
+  for (const name of ['deleteDeferredArchives', 'releaseHistoryAction', 'clearHistory']) load(s, name)
+  // A sender flood fills the queue with jobs a clear cannot cancel.
+  for (let i = 0; i < s.popupQueueLimit; i++) s.enqueueHelperJob('delete', {key:'9-' + i})
+  assert.equal(s.clearHistory(), false)
+  assert.deepEqual(Object.keys(s.retainedHistory), ['1000-1'], 'the center lost an action')
+  assert.equal(dismissed, 0)
+  assert.deepEqual({...s.deferredMoves}, {'2000-2':'archive'})
+  // A silenced notification's history write waits in the last slot: the clear
+  // cancels it, which makes the room the clear needs.
+  s.popupFileQueue = s.popupFileQueue.slice(0, -1)
+  s.put('{}', '1000-1', ok => { if (!ok) cancelled++ }, true)
+  assert.equal(s.clearHistory(), true)
+  assert.equal(cancelled, 1)
+  assert.equal(s.popupFileQueue.filter(job => job.historyWrite).length, 0)
+  assert.deepEqual(Object.keys(s.retainedHistory), [])
+  assert.equal(dismissed, 1)
+  assert.deepEqual({...s.deferredMoves}, {'2000-2':'delete'})
+  assert.equal(s.popupFileQueue[s.popupFileQueue.length - 1].op, 'clear')
+})
+
 test('refused moves run as one archive and one delete batch once the queue drains', () => {
   const s = fixture()
   const sent = withHelper(s)

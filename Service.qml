@@ -1856,15 +1856,22 @@ Item {
     var keys = Object.keys(liveKeys).map(function (id) {
       return liveKeys[id]
     })
+    // Cancelling first frees the room the clear needs: each cancelled write
+    // holds a slot and more bytes than the clear, so a clear that cancelled
+    // any write is never refused.
+    cancelPendingWrites(keys, true)
+    // A refused clear leaves the center's actions and the deferred archives
+    // as they were.
+    if (!enqueueHelperJob("clear", {}))
+      return false
     Object.keys(retainedHistory).forEach(function (key) {
       service.releaseHistoryAction(key)
     })
-    cancelPendingWrites(keys, true)
     // A deferred archive would run after the clear and refill history.
     deleteDeferredArchives(function () {
       return true
     })
-    return enqueueHelperJob("clear", {})
+    return true
   }
 
   // Deferred archives (refused by a full queue) run once the queue drains, so
