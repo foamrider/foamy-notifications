@@ -361,7 +361,8 @@ python3 tests/motion.py
 python3 tests/runtime.py
 # The overflow queue: order, timers, replacements, CloseNotification, DND,
 # restart survival, screen space, the hover rule and the hold while hovered,
-# plus the stock IPC contract and no running timer at idle:
+# an output that goes away, plus the stock IPC contract and no running timer
+# at idle:
 python3 tests/overflow-runtime.py
 # Stalled-worker floods, raw 4 MiB buffers, replacements, context backlog,
 # a failing context query, and a helper that dies and restarts with backoff:
