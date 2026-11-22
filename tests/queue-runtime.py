@@ -230,18 +230,22 @@ def send_buffer(title, alias="image-data", replace=0, file_hint=""):
     ).unpack()[0]
 
 
-def notify_then_close(ident, title, icon, hints):
-    """Send an in-place update and its CloseNotification without waiting for the first reply."""
+def notify_then_close(ident, title, icon, hints, first=None):
+    """Send an in-place update and its CloseNotification without waiting for the first reply.
+    With `first`, a new notification with that title goes before them; the server
+    numbers notifications in order, so `ident` is the id it gets."""
     replies = []
     loop = GLib.MainLoop()
+    expected = (["new"] if first else []) + ["notify", "close"]
 
     def finished(connection, result, name):
         try:
-            connection.call_finish(result)
-            replies.append(name)
+            reply = connection.call_finish(result)
+            given = reply.unpack()[0] if name == "new" else ident
+            replies.append(name if given == ident else name + ": the server gave id " + str(given))
         except GLib.Error as error:
             replies.append(name + ": " + error.message)
-        if len(replies) == 2:
+        if len(replies) == len(expected):
             loop.quit()
 
     update = GLib.Variant(
@@ -249,6 +253,12 @@ def notify_then_close(ident, title, icon, hints):
         ("Foamy queue test", ident, icon, title, "Working text", [], dict(hints, urgency=GLib.Variant("y", 2)), 0),
     )
     path, interface = "/org/freedesktop/Notifications", "org.freedesktop.Notifications"
+    if first:
+        new = GLib.Variant(
+            "(susssasa{sv}i)",
+            ("Foamy queue test", 0, "foot", first, "Working text", [], {"urgency": GLib.Variant("y", 2)}, 0),
+        )
+        bus.call(interface, path, interface, "Notify", new, GLib.VariantType.new("(u)"), 0, 3000, None, finished, "new")
     bus.call(
         interface, path, interface, "Notify", update, GLib.VariantType.new("(u)"), 0, 3000, None, finished, "notify"
     )
@@ -266,7 +276,7 @@ def notify_then_close(ident, title, icon, hints):
         "close",
     )
     loop.run()
-    assert replies == ["notify", "close"], replies
+    assert replies == expected, replies
 
 
 def serve_events_after_first_crash():
@@ -355,6 +365,31 @@ try:
             "withdrawn card settles",
         )
         saved = [json.loads(p.read_text()) for p in (base / "state/foamy-notifications/popups").glob("*-*.json")]
+        assert [(entry["summary"], entry["appIcon"]) for entry in saved] == [kept], saved
+        while GLib.MainContext.default().iteration(False):
+            pass
+        assert [reason for closed_id, reason in closed if closed_id == ident] == [3], closed
+        ipc("notifications", "dismissAll")
+        wait(lambda: not state()["busy"] and state()["popups"] == 0, "withdrawn card cleanup")
+    # All three can even reach the shell before the first popup insert, which
+    # waits for the end of its event loop turn: this sender names the new
+    # notification before the reply, as the server numbers them in order. The
+    # saved card keeps the update, or the first text when the update is refused.
+    for title, icon, kept in [
+        ("Updated before insert", "foot", ("Updated before insert", "foot")),
+        ("Oversized before insert", "x" * 5000, ("Before insert", "foot")),
+    ]:
+        ident += 1
+        notify_then_close(ident, title, icon, {}, first="Before insert")
+        wait(
+            lambda: state()["nativeTracked"] == state()["tracked"] == 0 and not state()["busy"],
+            "card withdrawn before its insert settles",
+        )
+        saved = [
+            json.loads(path.read_text())
+            for folder in ("popups", "history")
+            for path in (base / "state/foamy-notifications" / folder).glob("*-" + str(ident) + ".json")
+        ]
         assert [(entry["summary"], entry["appIcon"]) for entry in saved] == [kept], saved
         while GLib.MainContext.default().iteration(False):
             pass
@@ -559,7 +594,7 @@ try:
     for unexpected in ["Invalid notification image result", "callback failed", "ReferenceError", "TypeError", "ERROR"]:
         assert not any(unexpected in line for line in lines), output
     print(
-        "PASS: real stalled-worker DND/popup floods, byte/count plateaus, cancellation, oversized intake/replacement rejection, update then close, cleanup, raw-pixel release/retention replacements, primitive context backlog and recovery, failed context query, helper crash with restart backoff"
+        "PASS: real stalled-worker DND/popup floods, byte/count plateaus, cancellation, oversized intake/replacement rejection, update then close (also before the first insert), cleanup, raw-pixel release/retention replacements, primitive context backlog and recovery, failed context query, helper crash with restart backoff"
     )
     print(
         "DND plateau:",

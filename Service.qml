@@ -546,6 +546,9 @@ Item {
       delete retainedHistory[previousKey]
     liveRefs[snapshot.originalId] = notification
     liveKeys[snapshot.originalId] = NotificationLogic.imageStem(snapshot)
+    // True while the first popup insert below waits for the end of this event
+    // loop turn: until it runs, an update has no row to go to.
+    var insertPending = false
     // Guard the delete: a newer notification may have reused this originalId
     // (freedesktop replaces_id) and taken over the map slot.
     notification.closed.connect(function () {
@@ -555,11 +558,20 @@ Item {
       // event loop, before the deferred refresh has run. Apply the update now,
       // while the object can still be read. The server is releasing it, so a
       // refused update must not untrack it here: that reports the close twice.
-      // (Raw pixels never wait: imageChanged detaches them at once.)
-      if (NotificationLogic.notificationWithinLimits(notification))
-        service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
-      else
+      // (Raw pixels never wait: imageChanged detaches them at once.) Before
+      // the first insert there is no row yet; the insert inserts `snapshot`
+      // and cannot read the object any more, so the update goes into it.
+      var updated = null
+      if (!NotificationLogic.notificationWithinLimits(notification))
         service.reportPersistenceError("Notification update exceeds sender limits")
+      else if (insertPending)
+        updated = NotificationLogic.replacementSnapshot(notification, snapshot.originalId, snapshot.timestamp)
+      else
+        service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
+      if (updated && NotificationLogic.popupRowChanged(snapshot, updated)) {
+        Object.assign(snapshot, updated)
+        service.persistPopupFile(snapshot)
+      }
       delete service.liveRefs[snapshot.originalId]
       delete service.liveKeys[snapshot.originalId]
       var closedKey = NotificationLogic.imageStem(snapshot)
@@ -607,7 +619,9 @@ Item {
     watchForUpdates(notification, snapshot)
     // Qt.callLater avoids "QV4::Object::insertMember" crashes when a
     // Repeater is mid-incubation while we mutate its model.
+    insertPending = true
     Qt.callLater(function () {
+      insertPending = false
       var place = removePopupsByOriginalId(snapshot.originalId, NotificationLogic.popupFileName(snapshot))
       popupModel.insert(0, snapshot)
       service.inheritPlace(snapshot, place)
