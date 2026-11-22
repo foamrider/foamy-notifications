@@ -723,10 +723,12 @@ class HelperTest(unittest.TestCase):
         # The card shows a converted image only under the prefix that
         # NotificationLogic.normalizedImage builds from Service's imagesDir.
         image = "1000-1-image-" + "a" * 64 + ".png"
-        # A trailing slash gives Service a double slash that the helper's path does not have.
-        for spelling in ["st!'()* ate", "tilstand ø", "trailing/"]:
-            with self.subTest(spelling=spelling):
-                state_home = str(self.box.root) + "/" + spelling
+        root = str(self.box.root)
+        # A trailing slash gives Service a double slash that the helper's path
+        # does not have. pathlib keeps exactly two leading slashes and folds
+        # three or more into one.
+        for state_home in [root + "/st!'()* ate", root + "/tilstand ø", root + "/trailing/", "/" + root + "/two", "//" + root + "/three"]:
+            with self.subTest(state_home=state_home):
                 old = Path(state_home) / "omarchy/notifications"
                 (old / "images").mkdir(parents=True)
                 (old / "images" / image).write_bytes(b"png")

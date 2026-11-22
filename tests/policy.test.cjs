@@ -90,6 +90,10 @@ test('raw providers never render; explicit local image hints remain usable',()=>
  assert.equal(L.normalizedImage(normalized,'/tmp/images/'),normalized)
  // XDG_STATE_HOME or HOME with a trailing slash; the helper's URI has single slashes.
  assert.equal(L.normalizedImage(normalized,'/tmp//images/'),normalized)
+ // The helper keeps exactly two leading slashes, as pathlib does, and folds three or more into one.
+ const twoSlashes=normalized.replace('file:///','file:////')
+ assert.equal(L.normalizedImage(twoSlashes,'//tmp/images/'),twoSlashes)
+ assert.equal(L.normalizedImage(normalized,'///tmp/images/'),normalized)
  for(const bad of ['file:///tmp/original.jpg','image://qsimage/123',normalized.replace('1000-1','../1000-1'),normalized+'.jpg'])
   assert.equal(L.normalizedImage(bad,'/tmp/images/'),'')
 })
