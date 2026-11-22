@@ -38,6 +38,11 @@ test = (
 (app / "fallback.svg").write_text(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#ed4247"/></svg>'
 )
+# An icon under a directory whose name contains a browser name ("opera").
+(app / "operator").mkdir()
+(app / "operator/icon.svg").write_text(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#5f9ea0"/></svg>'
+)
 (app / "preview.svg").write_text(
     '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#5f9ea0"/><rect x="40" y="40" width="560" height="280" fill="#334455"/></svg>'
 )
@@ -76,4 +81,4 @@ status, output = testhost.run(
 print(output)
 hostenv.check(env, output, testhost.calls(base))
 # completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
-assert status == 0 and "UI_RESULT 21 passed 0 failed" in output
+assert status == 0 and "UI_RESULT 26 passed 0 failed" in output

@@ -279,11 +279,15 @@ try:
     wait(lambda: state()["tracked"] == 0, "oversized replacement releases live source")
     assert state()["queuedJobs"] == 0
     # The card stays, and the oversized icon is never stored, not even cut.
+    # The refused update is not applied in part either: its new title arrives
+    # before its icon, and the saved card keeps the old title.
     wait(lambda: not state()["busy"], "oversized replacement settles")
     refused = state()
     assert refused["popups"] == 1 and refused["lastError"] == "Notification update exceeds sender limits", refused
     saved = [json.loads(p.read_text()) for p in (base / "state/foamy-notifications/popups").glob("*-*.json")]
-    assert [entry["appIcon"] for entry in saved] == ["foot"], saved
+    assert [(entry["summary"], entry["appIcon"]) for entry in saved] == [("Before oversized replacement", "foot")], (
+        saved
+    )
     ipc("notifications", "dismissAll")
     wait(lambda: not state()["busy"], "old popup cleanup")
     started.unlink()

@@ -62,7 +62,7 @@ test('snapshots keep primitive live actions and restore never exposes dead callb
  assert.equal(L.popupEntry(snap,1).actionsJson,'[]');assert.equal(L.popupEntry(snap,1).desktopEntry,'app');
 });
 test('sender markup never manufactures an image tag and command arguments stay structured',()=>{
- const M=require('./qml-js.cjs')('Markup.js'), body=(b)=>M.render(L.sanitizeBody(b,'Chat',''));
+ const M=require('./qml-js.cjs')('Markup.js'), body=(b)=>M.render(L.sanitizeBody(b,''));
  assert.equal(body('<img src="https://example.invalid/x">'),'');
  // Stock 4.5 allowlist: unknown tags survive as escaped text, never as live markup.
  for(const b of ['<im<img src="x">g src="x">','<x\n<img src="x">','<font color="#000">hidden</font>','<h1>big</h1>','<a href="https://x.test">link</a>'])

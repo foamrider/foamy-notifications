@@ -312,7 +312,7 @@ Item {
   // An omarchy-notification-send --action button. Its argv runs like the click
   // command: handling is persisted first, because the command may restart the shell.
   function runExecAction(group, index) {
-    var actions = Security.parseExecActions(group.execActions)
+    var actions = NotificationLogic.parseExecActions(group.execActions)
     if (!actions || !(index >= 0 && index < actions.length)) {
       finishAction(group.key, "This action is no longer available.")
       return
@@ -695,11 +695,18 @@ Item {
     function refresh() {
       service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
     }
+    // The server writes an update one property at a time and signals each
+    // one. Refresh once, after the last: the sender limits then judge the
+    // whole update, so a refused one leaves no part of it on the card or on
+    // disk. Qt.callLater runs the same function once per event loop turn.
+    function refreshAfterUpdate() {
+      Qt.callLater(refresh)
+    }
 
     for (var i = 0; i < updateSignals.length; i++) {
       var signal = notification[updateSignals[i]]
       if (signal && typeof signal.connect === "function")
-        signal.connect(refresh)
+        signal.connect(refreshAfterUpdate)
     }
   }
 
@@ -1740,7 +1747,6 @@ Item {
     var safeSnapshot = Features.redact(placed)
     var persistable = NotificationLogic.persistablePopup(safeSnapshot, imagesDir)
     var version = ++nextImageWriteVersion
-    imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
     var accepted = enqueueHelperJob("write", {
       entry: persistable.entry,
       copies: persistable.copies,
@@ -1750,8 +1756,11 @@ Item {
         image: String(safeSnapshot.image || "")
       }
     }, null, NotificationLogic.imageStem(snapshot))
-    if (!accepted)
-      delete imageWriteVersions[NotificationLogic.imageStem(snapshot)]
+    // Only an accepted write claims the card's image version: after a refused
+    // one, the result of an earlier write still queued for this card stays
+    // valid. The helper replies later, never inside enqueueHelperJob.
+    if (accepted)
+      imageWriteVersions[NotificationLogic.imageStem(snapshot)] = version
     return accepted
   }
 
@@ -1847,15 +1856,22 @@ Item {
     var keys = Object.keys(liveKeys).map(function (id) {
       return liveKeys[id]
     })
+    // Cancelling first frees the room the clear needs: each cancelled write
+    // holds a slot and more bytes than the clear, so a clear that cancelled
+    // any write is never refused.
+    cancelPendingWrites(keys, true)
+    // A refused clear leaves the center's actions and the deferred archives
+    // as they were.
+    if (!enqueueHelperJob("clear", {}))
+      return false
     Object.keys(retainedHistory).forEach(function (key) {
       service.releaseHistoryAction(key)
     })
-    cancelPendingWrites(keys, true)
     // A deferred archive would run after the clear and refill history.
     deleteDeferredArchives(function () {
       return true
     })
-    return enqueueHelperJob("clear", {})
+    return true
   }
 
   // Deferred archives (refused by a full queue) run once the queue drains, so
@@ -3311,6 +3327,10 @@ Item {
           id: card
           required property string entryJson
           readonly property var modelData: JSON.parse(entryJson)
+          // Any change to the group gives a new modelData; the string only
+          // changes with the actions, so an open "More actions" menu stays
+          // open when, for example, a duplicate joins the group.
+          readonly property string actionsJson: modelData.actionsJson || "[]"
           property bool retired: false
           property real entranceOffset: 0
           transform: Translate {
@@ -3370,7 +3390,7 @@ Item {
           urgency: modelData.urgency
           timestamp: modelData.timestamp
           count: modelData.keys.length
-          actions: JSON.parse(modelData.actionsJson || "[]")
+          actions: JSON.parse(actionsJson)
           offers: service.offersFor(modelData)
           copiedCode: service.clipboardCopiedKey === modelData.key ? service.clipboardSecret : ""
           snoozeAvailable: true
