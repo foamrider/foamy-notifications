@@ -695,11 +695,18 @@ Item {
     function refresh() {
       service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
     }
+    // The server writes an update one property at a time and signals each
+    // one. Refresh once, after the last: the sender limits then judge the
+    // whole update, so a refused one leaves no part of it on the card or on
+    // disk. Qt.callLater runs the same function once per event loop turn.
+    function refreshAfterUpdate() {
+      Qt.callLater(refresh)
+    }
 
     for (var i = 0; i < updateSignals.length; i++) {
       var signal = notification[updateSignals[i]]
       if (signal && typeof signal.connect === "function")
-        signal.connect(refresh)
+        signal.connect(refreshAfterUpdate)
     }
   }
 
