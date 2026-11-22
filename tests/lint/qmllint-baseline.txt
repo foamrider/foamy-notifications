@@ -193,21 +193,7 @@ components/NotificationCard.qml: block-scope-var-declaration: var declaration in
 components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var topAngle = -Math.PI + j * Math.PI / 48
 components/NotificationCard.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var topInner = r + thickness * Math.cos(topAngle)
 components/NotificationCard.qml: missing-property: Member "background" not found on type "QObject" | readonly property color surface: Commons.Color.notifications.background
-components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
-components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
-components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
-components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
-components/NotificationCard.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
-components/NotificationCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-components/NotificationCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-components/NotificationCard.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
 components/NotificationCard.qml: missing-property: Member "text" not found on type "QObject" | readonly property color ink: Commons.Color.notifications.text
-components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
-components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
-components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
-components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
-components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
-components/NotificationCard.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
 components/NotificationCard.qml: unqualified: Unqualified access | Layout.columnSpan: index === root.footerActions.length - 1 && index % 2 === 0 ? footer.columns : 1
 components/NotificationCard.qml: unqualified: Unqualified access | Layout.columnSpan: index === root.footerActions.length - 1 && index % 2 === 0 ? footer.columns : 1
 components/NotificationCard.qml: unqualified: Unqualified access | border.color: Util.alpha(root.ink, 0.2)
@@ -260,7 +246,6 @@ components/NotificationStack.qml: block-scope-var-declaration: var declaration i
 components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var next = JSON.stringify(group)
 components/NotificationStack.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var serialized = entries.get(i).entryJson
 components/NotificationStack.qml: missing-property: Member "background" not found on type "QObject" | readonly property color surface: Commons.Color.notifications.background
-components/NotificationStack.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
 components/NotificationStack.qml: missing-property: Member "text" not found on type "QObject" | readonly property color ink: Commons.Color.notifications.text
 components/NotificationStack.qml: unqualified: Unqualified access | height: root.waiting > 0 && root.count > 0 ? waitingNote.height + root.spacing : 0
 components/NotificationStack.qml: unqualified: Unqualified access | height: root.waiting > 0 && root.count > 0 ? waitingNote.height + root.spacing : 0
