@@ -6,12 +6,22 @@ import subprocess
 import sys
 import time
 import unittest
-from urllib.parse import quote
+from pathlib import Path
 
 from helperproc import Sandbox, prefix
 
 LIMIT = 131072
 FOCUS = 'hl.dsp.focus({ window = "address:'
+QML_JS = Path(__file__).with_name("qml-js.cjs")
+
+
+def card_image(uri, images_dir):
+    """What the card's NotificationLogic.normalizedImage keeps of an image URI."""
+    script = "process.stdout.write(require(process.argv[1])('NotificationLogic.js').normalizedImage(process.argv[2], process.argv[3]))"
+    result = subprocess.run(
+        ["node", "-e", script, str(QML_JS), uri, images_dir], capture_output=True, text=True, timeout=10, check=True
+    )
+    return result.stdout
 
 
 class HelperTest(unittest.TestCase):
@@ -696,21 +706,34 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(self.box.saved("900-2", history=True)["image"], moved.as_uri())
 
     def test_image_uris_match_the_card_prefix_for_any_state_path(self):
-        # NotificationLogic.normalizedImage builds its prefix with encodeURIComponent,
-        # which leaves !'()* as they are; quote() with those as safe gives the same text.
-        self.box.state = self.box.root / "st!'()* ate"
-        old = self.box.state / "omarchy/notifications"
-        (old / "images").mkdir(parents=True)
+        # The card shows a converted image only under the prefix that
+        # NotificationLogic.normalizedImage builds from Service's imagesDir.
         image = "1000-1-image-" + "a" * 64 + ".png"
-        (old / "images" / image).write_bytes(b"png")
-        (old / "1000-1.json").write_text(
-            json.dumps(
-                {"timestamp": 1000, "originalId": 1, "summary": "Live", "image": (old / "images" / image).as_uri()}
-            )
-        )
-        self.box.ok("migrate", {})
-        card_prefix = "file://" + "/".join(quote(part, safe="!'()*") for part in str(self.box.images).split("/"))
-        self.assertEqual(self.box.saved("1000-1")["image"], card_prefix + "/" + image)
+        for spelling in ["st!'()* ate", "tilstand ø"]:
+            with self.subTest(spelling=spelling):
+                state_home = str(self.box.root) + "/" + spelling
+                old = Path(state_home) / "omarchy/notifications"
+                (old / "images").mkdir(parents=True)
+                (old / "images" / image).write_bytes(b"png")
+                (old / "1000-1.json").write_text(
+                    json.dumps(
+                        {
+                            "timestamp": 1000,
+                            "originalId": 1,
+                            "summary": "Live",
+                            "image": (old / "images" / image).as_uri(),
+                        }
+                    )
+                )
+                env = dict(self.box.env, XDG_STATE_HOME=state_home)
+                result = subprocess.run(
+                    prefix() + ["migrate"], input=b"{}", capture_output=True, env=env, timeout=10, cwd=self.box.root
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                uri = json.loads((Path(state_home) / "foamy-notifications/popups/1000-1.json").read_text())["image"]
+                self.assertTrue(uri.endswith("/" + image), uri)
+                # Service.qml: stateDir is XDG_STATE_HOME + "/foamy-notifications/", imagesDir adds "images/".
+                self.assertEqual(card_image(uri, state_home + "/foamy-notifications/images/"), uri)
 
 
 if __name__ == "__main__":
