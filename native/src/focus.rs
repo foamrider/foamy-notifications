@@ -2,7 +2,6 @@
 //! (`context`) through `hyprctl`, as the Python helper did it.
 
 use std::io::Read;
-use std::net::Ipv6Addr;
 use std::time::Duration;
 
 use foamy_helper::child::Bounded;
@@ -188,85 +187,33 @@ fn leading_url(text: &[char]) -> Option<String> {
     (length > 0).then(|| text[..start + length].iter().collect())
 }
 
-fn invalid_ipv6() -> Error {
-    Error::Value("Invalid IPv6 URL".into())
-}
-
-/// urlsplit's `_check_bracketed_host`: an IPv6 address (with an optional
-/// zone) or an IPvFuture literal.
-fn check_bracketed_host(host: &str) -> Result<(), Error> {
-    if let Some(rest) = host.strip_prefix(['v', 'V']) {
-        let (digits, tail) = rest.split_once('.').unwrap_or(("", ""));
-        if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_hexdigit()) || tail.is_empty() {
-            return Err(Error::Value("IPvFuture address is invalid".into()));
-        }
-        return Ok(());
-    }
-    let address = host.split_once('%').map_or(host, |(address, _)| address);
-    if address.parse::<Ipv6Addr>().is_err() {
-        return Err(Error::Value(format!(
-            "'{host}' does not appear to be an IPv4 or IPv6 address"
-        )));
-    }
-    Ok(())
-}
-
-/// `urlparse(url).hostname or ''` for an `http(s)://` URL, with urlsplit's
-/// bracket checks (which raise).
-fn url_hostname(url: &str) -> Result<String, Error> {
-    let url: String = url
-        .chars()
-        .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
-        .collect();
-    let rest = url.split_once(':').map_or("", |(_, rest)| rest);
-    let Some(rest) = rest.strip_prefix("//") else {
-        return Ok(String::new());
-    };
+/// The host of an `http(s)://` link when it is a plain hostname; `''` for
+/// credentials, a port, an IP literal or anything else, as
+/// `BrowserIdentity.hostname` decides. A different port is a different site,
+/// so the host alone must not pick its window.
+fn url_hostname(url: &str) -> String {
+    let rest = url.split_once("://").map_or("", |(_, rest)| rest);
     let netloc = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
-    if netloc.contains('[') != netloc.contains(']') {
-        return Err(invalid_ipv6());
-    }
-    let hostinfo = netloc.rsplit_once('@').map_or(netloc, |(_, host)| host);
-    let bracketed_netloc = netloc.contains('[');
-    let host = if let Some((before, bracketed)) = hostinfo.split_once('[') {
-        let (host, port) = bracketed.split_once(']').unwrap_or((bracketed, ""));
-        if !before.is_empty() || (!port.is_empty() && !port.starts_with(':')) {
-            return Err(invalid_ipv6());
-        }
-        check_bracketed_host(host)?;
-        host
+    if hostname_line(netloc) {
+        netloc.to_ascii_lowercase()
     } else {
-        let host = hostinfo.split_once(':').map_or(hostinfo, |(host, _)| host);
-        if bracketed_netloc {
-            check_bracketed_host(host)?;
-        }
-        host
-    };
-    let (name, zone) = host
-        .split_once('%')
-        .map_or((host, None), |(name, zone)| (name, Some(zone)));
-    Ok(match zone {
-        Some(zone) => format!("{}%{zone}", name.to_lowercase()),
-        None => name.to_lowercase(),
-    })
+        String::new()
+    }
 }
 
 /// The browser origin a notification body starts with: a bare hostname on
 /// the first line (Vivaldi) or a leading link's host; `''` otherwise.
-pub fn origin_of(body: &Value) -> Result<String, Error> {
+pub fn origin_of(body: &Value) -> String {
     let Value::String(body) = body else {
-        return Ok(String::new());
+        return String::new();
     };
     let text = body.trim_start_matches(is_space);
     let first = text.split('\n').next().unwrap_or("").trim_matches(is_space);
     if hostname_line(first) {
-        return Ok(first.to_ascii_lowercase());
+        return first.to_ascii_lowercase();
     }
     let chars: Vec<char> = text.chars().collect();
-    match leading_url(&chars) {
-        Some(url) => url_hostname(&url),
-        None => Ok(String::new()),
-    }
+    leading_url(&chars).map_or(String::new(), |url| url_hostname(&url))
 }
 
 fn object(value: &Value) -> Result<&Map<String, Value>, Error> {
@@ -283,6 +230,11 @@ fn class_of(client: &Value) -> Result<String, Error> {
     Ok(casefold(&py_str(client.get("class").unwrap_or(&json!("")))))
 }
 
+/// The app-name words of a Chromium-family sender.
+const BROWSERS: [&str; 7] = [
+    "chrome", "chromium", "vivaldi", "brave", "edge", "msedge", "opera",
+];
+
 fn miss(reason: &'static str, message: &'static str) -> Error {
     Error::Focus { reason, message }
 }
@@ -293,11 +245,13 @@ pub fn select_window(data: &Map<String, Value>, clients: &Value) -> Result<Strin
     let app = casefold(&py_str(data.get("app").unwrap_or(&empty)));
     let entry = py_str(data.get("desktopEntry").unwrap_or(&empty));
     let desktop = casefold(entry.strip_suffix(".desktop").unwrap_or(&entry));
-    let browser = ["chrom", "vivaldi", "brave", "edge", "opera"]
-        .iter()
-        .any(|x| app.contains(x));
+    // Whole words, as BrowserIdentity.js matches them: "Ledger Live" or
+    // "Cooperate" are native apps, not browsers.
+    let browser = app
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|word| BROWSERS.contains(&word));
     let origin = if browser {
-        origin_of(data.get("body").unwrap_or(&empty))?
+        origin_of(data.get("body").unwrap_or(&empty))
     } else {
         String::new()
     };
@@ -567,7 +521,7 @@ mod tests {
     use super::*;
 
     fn origin(body: &str) -> String {
-        origin_of(&json!(body)).unwrap()
+        origin_of(&json!(body))
     }
 
     #[test]
@@ -581,22 +535,43 @@ mod tests {
             origin("<a href=\"https://Teams.Microsoft.com/\">t</a>"),
             "teams.microsoft.com"
         );
-        assert_eq!(origin("<a\thref='http://x.example:80/'>"), "x.example");
+        assert_eq!(origin("<a\thref='http://x.example/'>"), "x.example");
         assert_eq!(
             origin("<a x href=\"https://a.example/\" href=\"https://b.example/\">"),
             "b.example"
         );
-        assert_eq!(origin("<a href=\"https://a>b.example/\">"), "a>b.example");
-        assert_eq!(origin("https://user@h.example:1/x y"), "h.example");
-        assert_eq!(origin("https://[::1]:80/"), "::1");
-        assert!(origin_of(&json!("https://[::1/")).is_err());
-        assert!(origin_of(&json!("https://[nope]/")).is_err());
+        assert_eq!(origin("https://h.example?q#f"), "h.example");
+        // Only a plain hostname is a site, as BrowserIdentity.hostname decides.
+        assert_eq!(origin("<a href=\"https://a>b.example/\">"), "");
+        assert_eq!(origin("<a\thref='http://x.example:80/'>"), "");
+        assert_eq!(origin("https://user@h.example:1/x y"), "");
+        assert_eq!(origin("https://user@h.example/"), "");
+        assert_eq!(origin("https://h.example@evil.invalid/"), "");
+        assert_eq!(origin("https://[::1]:80/"), "");
+        assert_eq!(origin("https://[::1/"), "");
+        assert_eq!(origin("https://[nope]/"), "");
+        assert_eq!(origin("<a href='https://h.ex\tample/'>"), "");
+        assert_eq!(origin("https://h.ex\tample/"), "h.ex");
         assert_eq!(origin("httpx://a.example"), "");
         assert_eq!(origin("https://"), "");
         assert_eq!(origin("<a href=\"https://a.example/\""), "");
         assert_eq!(origin("x.com/path"), "");
         assert_eq!(origin("a-.com"), "");
         assert_eq!(origin("1.2"), "");
-        assert_eq!(origin_of(&json!(5)).unwrap(), "");
+        assert_eq!(origin_of(&json!(5)), "");
+    }
+
+    #[test]
+    fn browser_names_are_whole_words() {
+        let clients = json!([
+            {"class": "ledger live", "address": "0x1"},
+            {"class": "chrome-ledger.com__-Default", "address": "0x2"},
+        ]);
+        let pick = |app: &str| {
+            let data = json!({"app": app, "body": "ledger.com\nUpdate"});
+            select_window(data.as_object().unwrap(), &clients).unwrap()
+        };
+        assert_eq!(pick("Ledger Live"), "0x1");
+        assert_eq!(pick("Google-Chrome"), "0x2");
     }
 }

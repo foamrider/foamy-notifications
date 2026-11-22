@@ -8,8 +8,9 @@
 //! `foamy-notifications-helper <op>` with the umask 077, where `<op>` is:
 //!
 //! - `serve`: the long-lived worker (`Service.qml`). It first creates
-//!   `$XDG_STATE_HOME/foamy-notifications/{,popups,history,images}` (default
-//!   `~/.local/state`, a set variable is used as is), mode 0700 (chmod'ed).
+//!   `$XDG_STATE_HOME/foamy-notifications/{,popups,history,images}`
+//!   (`~/.local/state` when the variable is unset or empty), mode 0700
+//!   (chmod'ed).
 //!   Then each standard input line of at most 135168 bytes (131072 + 4096,
 //!   newline included) is one job `{"id": …, "op": "<op>", "data": {…}}`
 //!   and gets one reply line `{"id": …, "ok": bool, "out": "<what the op
@@ -66,8 +67,11 @@
 //!   "snoozes"}` from `omarchy/notifications.json`, else `quiet.json`).
 //!   Prints `{"migrated": true, "moved": n}` or `{"migrated": false}`.
 //! - `focus {app, desktopEntry, body, mappings}`: reads `hyprctl -j clients`
-//!   and picks exactly one window: for a Chromium-family sender whose body
-//!   starts with a hostname line or a link, the `mappings` window class or a
+//!   and picks exactly one window: for a Chromium-family sender (an app
+//!   name with the word `chrome`, `chromium`, `vivaldi`, `brave`, `edge`,
+//!   `msedge` or `opera`) whose body starts with a hostname line or a link
+//!   to a plain hostname (no credentials, port or IP address), the
+//!   `mappings` window class or a
 //!   `chrome-|vivaldi-|msedge-|brave-<origin>__*` class; otherwise the
 //!   desktop entry or app as class (exact, casefolded), then as a substring
 //!   or an `org.omarchy.agent` window title. Then
