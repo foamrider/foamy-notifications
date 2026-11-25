@@ -242,6 +242,5 @@ finally:
     log.close()
     print("Evidence:", base)
     hostenv.check(env, (base / "runtime.log").read_text(), testhost.calls(base))
-# A desktop run is made for its capture (sharing.png), so it keeps it.
-if not desktop:
-    testhost.passed(base)
+# Only a desktop run captures the sharing prompt; passed() keeps that capture.
+testhost.passed(base, [app / "sharing.png"])

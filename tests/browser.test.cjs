@@ -23,7 +23,9 @@ test('only a browser leading origin identifies a website', () => {
   for (const body of ['Message https://example.com', 'Message\nexample.com', 'example.com extra text', 'https://user@example.com', 'https://example.com:443/', '<a href="javascript:alert(1)">x</a>', 'bad..example.com', 'a'.repeat(64)+'.com'])
     assert.equal(B.hostname(row(body)), '', body)
   assert.equal(B.hostname({app:'Chat',body:'example.com\nMessage'}), '')
-  assert.equal(B.hostname({app:'Firefox',body:'https://example.com/\nMessage'}), 'example.com')
+  // Firefox sends the page's own body, with no origin: its first line is not the site.
+  for (const row of [{app:'Firefox',body:'https://example.com/\nMessage'},{app:'Browser',desktopEntry:'firefox',body:'example.com\nMessage'}])
+    assert.equal(B.hostname(row), '', JSON.stringify(row))
 })
 
 test('favicon and browser grouping settings validate without changing duplicate semantics', () => {

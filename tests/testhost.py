@@ -143,14 +143,36 @@ def calls(base):
     return "\n".join(hostenv.calls(base))
 
 
-def passed(base):
+def passed(base, captures=()):
     """The end of a run that passed: remove the run's own directory `base`
-    (made by tempfile.mkdtemp), so that passing runs leave nothing in /tmp,
-    whose quota the tests of all agents share. A failed run never gets here
-    and keeps its directory for diagnosis. shutil.rmtree removes the links
-    in it (to the plugin and the host shell); it does not follow them."""
-    shutil.rmtree(base)
-    print("Passed; removed", base)
+    (made by tempfile.mkdtemp), so that passing runs leave little in /tmp,
+    whose quota the tests of all agents share. A visual test names its PNG
+    `captures`, because they are the evidence of the run: the ones it took
+    stay where the test printed them, and everything else goes. A failed
+    run never gets here and keeps its directory for diagnosis. The links in
+    `base` (to the plugin and the host shell) are removed, never followed."""
+    base = Path(base)
+    keep = {Path(capture) for capture in captures if Path(capture).is_file()}
+    if not keep:
+        shutil.rmtree(base)
+        print("Passed; removed", base)
+        return
+    prune(base, keep)
+    print("Passed; kept", len(keep), "PNG captures and removed the rest of", base)
+
+
+def prune(folder, keep):
+    """Remove everything in `folder` but the files in `keep`. Only a real
+    directory that holds one of them is entered; a link is removed itself."""
+    for path in folder.iterdir():
+        if path in keep:
+            continue
+        if path.is_symlink() or not path.is_dir():
+            path.unlink()
+        elif any(path in capture.parents for capture in keep):
+            prune(path, keep)
+        else:
+            shutil.rmtree(path)
 
 
 def session(script, timeout, *args, display=False):

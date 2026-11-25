@@ -21,6 +21,9 @@ test('offers detect codes and meeting links without mistaking origins or build n
  const link=features.offers({app:'Mail',summary:'Review',body:'See https://example.com/pr/1.'})
  assert.equal(link.link,'https://example.com/pr/1');assert.equal(link.meeting,false)
  assert.equal(features.offers({app:'Mail',summary:'Review',body:'See https://user:pw@example.com/'}).link,'')
+ // Firefox sends the page's own body: a link on its first line belongs to the message.
+ const firefox=features.offers({app:'Firefox',desktopEntry:'firefox',summary:'Standup',body:'https://meet.google.com/abc-defg-hij\nJoin now'})
+ assert.equal(firefox.link,'https://meet.google.com/abc-defg-hij');assert.equal(firefox.meeting,true)
 })
 test('redaction keeps identity but removes secrets from every persisted string and image hint',()=>{
  const row={timestamp:123,originalId:2,app:'482913',appIcon:'/tmp/482913.png',summary:'Your verification code',body:'482913',execArgv:'["open","482913"]',image:'/tmp/482913.png',actionsJson:'[]'}
@@ -38,6 +41,7 @@ test('external destinations reject command schemes, credentials, controls and en
 test('snoozes expire and are bounded; source names come from leading browser identity only',()=>{
  assert.equal(features.source({app:'Vivaldi',body:'https://teams.microsoft.com\nHello'}),'web:teams.microsoft.com')
  assert.equal(features.source({app:'Chat',body:'https://teams.microsoft.com'}),'app:Chat')
+ assert.equal(features.source({app:'Firefox',desktopEntry:'firefox',body:'status.example.com\nis down'}),'app:Firefox')
  assert.deepEqual(JSON.parse(JSON.stringify(features.quietState({'*':2000,'app:Chat':3000,'app:Expired':999,'../escape':2000,'app:Far':100000000},1000))),{'*':2000,'app:Chat':3000})
  assert.equal(features.isSharing({'media.class':'Video/Source','media.name':'xdph-streaming-1'}),true)
  assert.equal(features.isSharing({'media.class':'Video/Source','media.name':'Camera'}),false)

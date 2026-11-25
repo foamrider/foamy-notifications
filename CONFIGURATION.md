@@ -218,6 +218,9 @@ The plugin uses a browser notification's leading website origin to select its
 web-app window. It accepts a leading HTTP(S) URL or link, and a bare hostname
 on its own first line, as supplied by Vivaldi. It does not treat links inside
 the message as app identity. This lookup is shared with Notification Center.
+Firefox sends only the page's own text, without an origin, so a Firefox
+notification names no website: its snooze applies to Firefox, and a link on
+its first line is offered as a button like any other link.
 
 For a Chromium-family browser (Vivaldi, Chrome, Chromium, Brave, Edge), a click
 on a notification that names its website focuses that website's app window
@@ -397,6 +400,12 @@ FOAMY_TEST_DESKTOP=1 python3 tests/features-runtime.py --desktop
 # Everything above that suite.sh runs (layer):
 FOAMY_TEST_DESKTOP=1 tests/validate.sh
 ```
+
+The render, browser-ui, motion and images-ui tests (and layer and
+features-runtime `--desktop`) save PNG captures of what they draw, as visual
+evidence. After a pass they keep only these captures, in the folder they
+print, and remove the rest of their directory in `/tmp`. After a failure they
+keep everything, for diagnosis.
 
 The render test uses the real card with synthetic data at wide and narrow widths,
 and fails when a text leaves the card or spills out of its box, or a binding error is logged.

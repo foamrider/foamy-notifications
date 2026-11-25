@@ -216,3 +216,5 @@ finally:
     proc.stop()
     log.close()
     print("Native evidence:", base)
+# Service.qml saves the captures, so they lie in the copy of the plugin, beside its own PNGs.
+testhost.passed(base, [app / "plugin/entrance.png", app / "plugin/exit.png"])
