@@ -15,7 +15,7 @@ for name in ("Commons", "Ui"):
 # The plugin's kit/ (FoamyI18n, FoamyStyle, …) and the files the card imports.
 (app / "kit").symlink_to(source / "kit", target_is_directory=True)
 (app / "i18n").symlink_to(source / "i18n", target_is_directory=True)
-for name in ("Markup.js", "BrowserIdentity.js"):
+for name in ("Markup.js", "BrowserIdentity.js", "Features.js", "Detect.js", "Security.js"):
     (app / name).symlink_to(source / name)
 (app / "qmldir").write_text("")
 (app / "components").symlink_to(source / "components", target_is_directory=True)
@@ -25,6 +25,7 @@ test = (
     .read_text()
     .replace('import "../components"', 'import "components"')
     .replace('import "../NotificationLogic.js"', 'import "NotificationLogic.js"')
+    .replace('import "../Features.js"', 'import "Features.js"')
     .replace(
         "Item {\n  width:",
         "Item {\n  id: testRoot\n  property bool ready: false\n  Timer { interval: 400; running: true; onTriggered: testRoot.ready=true }\n  width:",
@@ -81,5 +82,5 @@ status, output = testhost.run(
 print(output)
 hostenv.check(env, output, testhost.calls(base))
 # completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
-assert status == 0 and "UI_RESULT 27 passed 0 failed" in output
+assert status == 0 and "UI_RESULT 28 passed 0 failed" in output
 testhost.passed(base)

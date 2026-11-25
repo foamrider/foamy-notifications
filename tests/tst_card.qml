@@ -2,6 +2,7 @@ import QtQuick
 import QtTest
 import "../components"
 import "../NotificationLogic.js" as Logic
+import "../Features.js" as Features
 
 Item {
   width: 500
@@ -331,6 +332,31 @@ Item {
       card.desktopEntry = data.desktopEntry || ""
       card.body = data.body
       compare(findChild(card, "notificationBody").text, data.shown)
+    }
+    // Firefox sends the page's own body, with no origin line: a meeting link
+    // on its first line belongs to the message and gets its button.
+    function test_firefox_leading_meeting_link_gets_its_button() {
+      var row = {
+        app: "Firefox",
+        desktopEntry: "firefox",
+        summary: "Standup",
+        body: "https://meet.google.com/abc-defg-hij\nJoin now"
+      }
+      card.app = row.app
+      card.desktopEntry = row.desktopEntry
+      card.summary = row.summary
+      card.body = row.body
+      card.actions = []
+      // As the service passes them (offersFor).
+      card.offers = Features.offers(row)
+      waitForRendering(card)
+      var link = findChild(card, "notificationOpenLink")
+      verify(link, "the meeting link has no button")
+      compare(link.text, "Join meeting")
+      mouseClick(link)
+      compare(feature.count, 1)
+      compare(feature.signalArguments[0][0], "link")
+      compare(feature.signalArguments[0][1], "https://meet.google.com/abc-defg-hij")
     }
     function test_timeout_indicator_is_bounded_optional_and_does_not_resize() {
       waitForRendering(card)

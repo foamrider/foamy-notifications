@@ -218,6 +218,9 @@ The plugin uses a browser notification's leading website origin to select its
 web-app window. It accepts a leading HTTP(S) URL or link, and a bare hostname
 on its own first line, as supplied by Vivaldi. It does not treat links inside
 the message as app identity. This lookup is shared with Notification Center.
+Firefox sends only the page's own text, without an origin, so a Firefox
+notification names no website: its snooze applies to Firefox, and a link on
+its first line is offered as a button like any other link.
 
 For a Chromium-family browser (Vivaldi, Chrome, Chromium, Brave, Edge), a click
 on a notification that names its website focuses that website's app window
