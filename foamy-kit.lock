@@ -1,8 +1,8 @@
 # foamy-kit.lock: written by foamy-kit sync.sh; do not edit.
 # Hashes are of each file's body (the file without its stamp line);
 # notices, REVIEW.md and kit/i18n-texts.json are hashed whole. tests/kit-check.sh verifies them.
-version 0.14.0
-source d9804f5f10a1790d4c1eebab320ede681fe6889a
+version 0.14.1
+source f9bb9f43d206424e7554ab82cc5b97507f458ebc
 components FoamyI18n,FoamyIpc,FoamyMotion,FoamyNative,FoamyPalette,FoamyPeerIpc,FoamyStyle
 5079c3e4ecd2ca5399dff48f64327729d8e84916a4c73fbcb9e0491b16014990  .github/workflows/checks.yml
 98bd9e4430551129a6f4c309ee8ba59b66514db5ca1d4c5b7151ec308f6d632b  .github/workflows/verify-native.yml
@@ -25,7 +25,7 @@ a4bc7f02a0306d8440f7c20b801f1ffd6318dc4d1bc252732b5840d559d11bf3  kit/native/nat
 90b1a10f5f5005c94031f36fef0ad3d8e705cf4e13372dd8362ef4579e0a93df  kit/node-loader.cjs
 cc09938553bbcd7ec8c894a1bba41b1e8e20db875b5713d41f04419e5675d8dc  kit/qmldir
 3d657fb3ee8f6f57c5d15c125ffe6dee501b81e2b41cac673c7cc08c1e542ed4  kit/rust/foamy-helper/Cargo.toml
-b572966db8ecb2f77c2abdd130281b643cd4c81b8878e2cab6f300eb4cd87270  kit/rust/foamy-helper/src/child.rs
+5592404e3c4e7163e2f415b7a176ff06d9638d3fd2a0080079905c703395e9d1  kit/rust/foamy-helper/src/child.rs
 9596fa6fae4438602442c80654aaddef2acb4018795ceaa53a1753d3bbaa8b02  kit/rust/foamy-helper/src/favicon.rs
 0d3c31eb230b7c49d9e0ae45886d6add219f6ba988a0337a719d926255149c03  kit/rust/foamy-helper/src/favicon/sqlite.rs
 09ec5f0307887c7c36715b9ed0410b5eb793c72e182ac53995a9de1680b17a58  kit/rust/foamy-helper/src/favicon/tests.rs
@@ -38,7 +38,7 @@ b572966db8ecb2f77c2abdd130281b643cd4c81b8878e2cab6f300eb4cd87270  kit/rust/foamy
 8cc6c7d05a7d5fc2795b19a3d3f2765f574272ea3ee097027293c3d5f5cccf5a  kit/rust/foamy-helper/src/net.rs
 f33c8ff3e6f096dfbeb42f3bf5ddadd2834b7359f021da210ad8f0bea9c30cf3  kit/rust/foamy-helper/src/process.rs
 177670beb2ecd87d0f3dbcc74c67741990f779b2f1ccd15afce3f6f1893d318e  kit/rust/foamy-helper/src/sandbox.rs
-47198aad9597eec308c7e61b9cb3633907ff431511ea8e475dd50d1d93c3dce7  kit/rust/foamy-helper/src/sandbox/tests.rs
+18a0d61fae84a6508627d702d3fda5c53cc61210d9926c4f7aab88a8909a17cb  kit/rust/foamy-helper/src/sandbox/tests.rs
 1f90a4df7260b1c57e6dd972ca68fc82191f94cc8a1e47082e4f26154c0e24aa  kit/rust/foamy-helper/src/tls.rs
 0aab5b4b47dd8c8530849b0c9540e4c945789e58661f12480d832348786aee6e  kit/rust/release.toml
 824921f5001a1e69101a6dd998f21bee83fe155c3d1ad82aa376aef6d6fbebb4  kit/tooling/validate.py
