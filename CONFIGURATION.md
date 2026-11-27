@@ -367,6 +367,10 @@ python3 tests/runtime.py
 # an output that goes away, plus the stock IPC contract and no running timer
 # at idle:
 python3 tests/overflow-runtime.py
+# The shipped popup windows on two offscreen outputs: which output shows
+# which cards and the waiting count, and no binding loop or TypeError in the
+# log while cards show, go and the windows unmap:
+python3 tests/windows-runtime.py
 # Stalled-worker floods, raw 4 MiB buffers, replacements, context backlog,
 # a failing context query, and a helper that dies and restarts with backoff:
 python3 tests/queue-runtime.py
@@ -412,8 +416,9 @@ and fails when a text leaves the card or spills out of its box, or a binding err
 The runtime and queue tests use the installed PyGObject/Gio bindings to send raw
 pixel buffers without command-line size limits. They exercise actual notification
 D-Bus traffic on a private bus and temporary home directory. Qt's offscreen platform cannot create layer-shell surfaces, so
-that test omits only the popup windows. Complete Wayland placement, hover, and
-fullscreen behavior must also be checked in a desktop session.
+these tests leave out the popup windows; the windows test runs them as plain
+windows on two offscreen outputs. Complete Wayland placement,
+hover, and fullscreen behavior must also be checked in a desktop session.
 
 ### Omarchy 4.5 additions
 
