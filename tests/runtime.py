@@ -114,7 +114,7 @@ card_delegate = (
     full_service[card_start:card_end]
     .replace("NotificationCard {", "Cards.NotificationCard {")
     .replace("service.", "notifications.")
-    .replace("popupWindow.screen", '({ name: "TEST-1" })')
+    .replace("popupWindow.screenName", '"TEST-1"')
     # Count the shipped card's remaining-time changes: the per-frame clock check reads them.
     .replace(
         "Cards.NotificationCard {",

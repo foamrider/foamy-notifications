@@ -47,6 +47,7 @@ fit = extract("      function fitCards() {", "      Item {")
 handlers = extract("        onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)", "        delegate:")
 # What the window and its stack read from the window's output.
 selected = extract("      readonly property bool selected:", "\n")
+screen_name = extract("      readonly property string screenName:", "\n")
 keyboard = extract("      readonly property bool takesKeyboard:", "\n")
 groups = extract("        groups: service.displayGroups.filter(", "        waiting:")
 
@@ -72,6 +73,7 @@ ShellRoot {
  Item { id: popupWindow; width: 500; height: 900
   property var screen: ({ name: "TEST-1" })
 SELECTED
+SCREEN_NAME
 KEYBOARD
 FIT
   Cards.NotificationStack { id: popupColumn; x: 20; y: 20; width: 420; spacing: 8
@@ -158,6 +160,7 @@ HANDLERS
  }
 }
 """.replace("SELECTED", local(selected))
+    .replace("SCREEN_NAME", local(screen_name))
     .replace("KEYBOARD", local(keyboard))
     .replace("GROUPS", local(groups))
     .replace("FIT", local(fit))
@@ -891,6 +894,10 @@ try:
     errors = [line for line in (base / "runtime.log").read_text()[logged:].splitlines() if "Error" in line]
     assert not errors, errors[:3]
     ipc("overflow-test", "setScreen", "TEST-1")
+    wait(
+        lambda: window_state() == {"selected": True, "keyboard": True, "groups": 1},
+        "the output that came back shows its card and owns the keyboard again",
+    )
     assert ipc("notifications", "keyboard") == "off"
     reset()
     print("PASS: the window of an output that went away shows no card, takes no keyboard and logs no binding error")

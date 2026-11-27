@@ -45,7 +45,7 @@ else
 fi
 
 if ((ci || fast)); then
-  skip "the Quickshell runtime tests (render, ui, browser-ui, motion, i18n, preferences-, features-, runtime, overflow- and queue-runtime, images-ui, layer)"
+  skip "the Quickshell runtime tests (render, ui, browser-ui, motion, i18n, preferences-, features-, runtime, overflow-, windows- and queue-runtime, images-ui, layer)"
   exit $status
 fi
 # Quickshell must not load an AppImage's bundled libraries (an editor's).
@@ -60,6 +60,7 @@ run python3 tests/preferences-runtime.py
 run python3 tests/features-runtime.py
 run python3 tests/runtime.py
 run python3 tests/overflow-runtime.py
+run python3 tests/windows-runtime.py
 run python3 tests/queue-runtime.py
 if command -v magick >/dev/null && command -v file >/dev/null; then
   run python3 tests/images-ui.py
