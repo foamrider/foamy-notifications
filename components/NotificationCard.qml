@@ -52,6 +52,7 @@ Rectangle {
   // The theme's [notifications] colours, foamy 1px border.
   readonly property color surface: Commons.Color.notifications.background
   readonly property color ink: Commons.Color.notifications.text
+  readonly property color headerFill: Qt.tint(root.surface, Util.alpha(root.ink, 0.055))
   // Keyboard mode (`omarchy-shell notifications keyboard`): this card has the cursor.
   property bool selected: false
   // Every button in draw/number order (NotificationLogic.deeds).
@@ -91,7 +92,8 @@ Rectangle {
       }
     })
   }
-  readonly property color copiedColor: FoamyPalette.success
+  // Drawn on the footer button's fill; measured on the hovered one, its strongest.
+  readonly property color copiedColor: FoamyPalette.onSurface(FoamyPalette.success, Qt.tint(root.surface, Util.alpha(root.ink, 0.10)))
   readonly property bool hovered: hover.hovered || actionsExpanded || snoozeExpanded || selected
   readonly property bool hasTitle: summary.trim().length > 0
   readonly property string smallIcon: {
@@ -157,7 +159,7 @@ Rectangle {
         height: Math.max(parent.height, topLeftRadius * 2)
         topLeftRadius: Math.max(0, root.radius - root.border.width)
         topRightRadius: topLeftRadius
-        color: Qt.tint(root.surface, Util.alpha(root.ink, 0.055))
+        color: root.headerFill
       }
       RowLayout {
         id: header
@@ -193,13 +195,14 @@ Rectangle {
             visible: status === Image.Ready
           }
           Text {
+            objectName: "notificationGlyph"
             anchors.centerIn: parent
             visible: icon.status !== Image.Ready && faviconIcon.status !== Image.Ready
             text: root.glyph || "\u{f009a}"
             textFormat: Text.PlainText
             font.family: root.glyphFamily
             font.pixelSize: FoamyStyle.font.title
-            color: root.urgency === 2 ? Commons.Color.urgent : Commons.Color.accent
+            color: root.urgency === 2 ? FoamyPalette.onSurface(Commons.Color.urgent, root.headerFill) : Commons.Color.accent
           }
         }
         Text {
@@ -412,11 +415,13 @@ Rectangle {
         }
       }
       Text {
+        objectName: "notificationError"
         Layout.fillWidth: true
         visible: root.error.length > 0
         text: FoamyI18n.t(root.error)
         textFormat: Text.PlainText
-        color: Commons.Color.urgent
+        // On the card's fill, which a critical notification tints red.
+        color: FoamyPalette.onSurface(FoamyPalette.error, root.color)
         font.family: root.fontFamily
         font.pixelSize: FoamyStyle.font.bodySmall
         wrapMode: Text.Wrap

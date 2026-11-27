@@ -3,6 +3,7 @@ import QtTest
 import "../components"
 import "../NotificationLogic.js" as Logic
 import "../Features.js" as Features
+import "../kit"
 
 Item {
   width: 500
@@ -95,6 +96,7 @@ Item {
     function cleanup() {
       card.error = ""
       card.copiedCode = ""
+      card.urgency = 1
       if (qtest_results.failed)
         console.log("FAILED_CASE", qtest_results.functionName)
     }
@@ -158,6 +160,23 @@ Item {
       mouseClick(link, link.width / 2, link.height / 2, Qt.RightButton)
       compare(hidden.count, before + 1)
       compare(feature.count, 1)
+    }
+    // ui.py runs in a dark theme with a dim red (2.70:1 on its background):
+    // the error line and a critical card's glyph must still read at 4.5:1
+    // on the fill each is drawn on.
+    function test_status_colours_read_on_their_fill() {
+      card.urgency = 2
+      card.actions = []
+      card.error = "Clipboard is busy. Try again."
+      waitForRendering(card)
+      verify(FoamyPalette.contrastRatio(FoamyPalette.error, card.color) < 4.5, "the theme's red already reads; the check proves nothing")
+      var error = findChild(card, "notificationError")
+      verify(error.visible)
+      verify(FoamyPalette.contrastRatio(error.color, card.color) >= 4.5, "error line " + error.color + " on " + card.color)
+      // The glyph sits on the header's own fill, the header's first child.
+      var glyph = findChild(card, "notificationGlyph"), headerFill = findChild(card, "notificationHeader").children[0].color
+      verify(glyph.visible)
+      verify(FoamyPalette.contrastRatio(glyph.color, headerFill) >= 4.5, "critical glyph " + glyph.color + " on " + headerFill)
     }
     function test_footer_wraps_without_losing_actions() {
       card.width = 280

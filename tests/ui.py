@@ -1,6 +1,7 @@
 """Run QtTest input tests inside Quickshell, which embeds its QML plugins."""
 
 import os
+import shutil
 from pathlib import Path
 import tempfile
 import testhost
@@ -26,6 +27,7 @@ test = (
     .replace('import "../components"', 'import "components"')
     .replace('import "../NotificationLogic.js"', 'import "NotificationLogic.js"')
     .replace('import "../Features.js"', 'import "Features.js"')
+    .replace('import "../kit"', 'import "kit"')
     .replace(
         "Item {\n  width:",
         "Item {\n  id: testRoot\n  property bool ready: false\n  Timer { interval: 400; running: true; onTriggered: testRoot.ready=true }\n  width:",
@@ -53,6 +55,11 @@ ShellRoot { FloatingWindow { visible: true; implicitWidth: 500; implicitHeight: 
 """)
 home = base / "home"
 home.mkdir()
+# The kit's dark theme with a dim red: the status colour checks need a red
+# that does not read raw (test_status_colours_read_on_their_fill).
+theme = home / ".local/state/omarchy/current/theme"
+theme.mkdir(parents=True)
+shutil.copyfile(testhost.KIT / "tests/fixtures/themes/dim-red.toml", theme / "colors.toml")
 runtime = base / "runtime"
 runtime.mkdir(mode=0o700)
 # Register generated view types beside the explicit singleton in this fixture.
@@ -82,5 +89,5 @@ status, output = testhost.run(
 print(output)
 hostenv.check(env, output, testhost.calls(base))
 # completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
-assert status == 0 and "UI_RESULT 28 passed 0 failed" in output
+assert status == 0 and "UI_RESULT 29 passed 0 failed" in output
 testhost.passed(base)
