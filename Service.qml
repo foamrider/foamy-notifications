@@ -3291,18 +3291,18 @@ Item {
       // An output can go away (a display that sleeps or is unplugged) before
       // Variants destroys its window, whose screen is null until then: that
       // window selects nothing, shows nothing and takes no keyboard.
-      readonly property bool selected: !!screen && service.targetMonitors.indexOf(screen.name) >= 0
-      // The stack's groups read the output's name, not `screen`: the window
+      // What depends on the output reads its name, not `screen`: the window
       // signals screenChanged when it maps, and it maps because the stack got
       // its first group, which made that binding run again inside its own
       // write (a binding loop). The name does not change when it maps.
       readonly property string screenName: screen ? screen.name : ""
+      readonly property bool selected: screenName !== "" && service.targetMonitors.indexOf(screenName) >= 0
       // Keep the surface mapped until the final card finishes fading out.
       visible: selected && (popupColumn.groups.length > 0 || popupColumn.implicitHeight > 0)
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
       // The output that actually shows the selected card owns the keyboard.
-      readonly property bool takesKeyboard: service.keyboardMode && !!screen && service.keyboardScreen === screen.name
+      readonly property bool takesKeyboard: service.keyboardMode && screenName !== "" && service.keyboardScreen === screenName
       WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
