@@ -1,8 +1,8 @@
 # foamy-kit.lock: written by foamy-kit sync.sh; do not edit.
 # Hashes are of each file's body (the file without its stamp line);
 # notices, REVIEW.md and kit/i18n-texts.json are hashed whole. tests/kit-check.sh verifies them.
-version 0.15.2
-source 0d8b998426867de17327abad1fa8e1665f176fcc
+version 0.16.0
+source ee85a48cbc81eeadca3ec1019d3e4754e7221f0a
 components FoamyI18n,FoamyIpc,FoamyMotion,FoamyNative,FoamyPalette,FoamyPeerIpc,FoamyStyle
 5079c3e4ecd2ca5399dff48f64327729d8e84916a4c73fbcb9e0491b16014990  .github/workflows/checks.yml
 98bd9e4430551129a6f4c309ee8ba59b66514db5ca1d4c5b7151ec308f6d632b  .github/workflows/verify-native.yml
