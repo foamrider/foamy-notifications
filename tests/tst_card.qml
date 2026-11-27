@@ -161,9 +161,9 @@ Item {
       compare(hidden.count, before + 1)
       compare(feature.count, 1)
     }
-    // ui.py runs in a dark theme with a dim red (2.70:1 on its background):
-    // the error line and a critical card's glyph must still read at 4.5:1
-    // on the fill each is drawn on.
+    // ui.py runs this file in a dark theme with a dim red (2.70:1 on its
+    // background): the error line and a critical card's glyph and edge must
+    // still read at 4.5:1 on the fill each is drawn on.
     function test_status_colours_read_on_their_fill() {
       card.urgency = 2
       card.actions = []
@@ -175,8 +175,36 @@ Item {
       verify(FoamyPalette.contrastRatio(error.color, card.color) >= 4.5, "error line " + error.color + " on " + card.color)
       // The glyph sits on the header's own fill, the header's first child.
       var glyph = findChild(card, "notificationGlyph"), headerFill = findChild(card, "notificationHeader").children[0].color
+      verify(FoamyPalette.contrastRatio(FoamyPalette.urgent, headerFill) < 4.5, "the theme's urgent colour already reads; the check proves nothing")
       verify(glyph.visible)
       verify(FoamyPalette.contrastRatio(glyph.color, headerFill) >= 4.5, "critical glyph " + glyph.color + " on " + headerFill)
+      // The critical edge, as painted, reads on each fill it crosses: the
+      // header and the card's fill, and with actions a hovered footer button.
+      var edge = findChild(card, "notificationUrgentEdge")
+      verify(edge.visible)
+      waitForRendering(card)
+      var drawn = grabImage(card).pixel(1, card.height / 2)
+      verify(FoamyPalette.contrastRatio(drawn, headerFill) >= 4.5, "critical edge " + drawn + " on the header " + headerFill)
+      verify(FoamyPalette.contrastRatio(drawn, card.color) >= 4.5, "critical edge " + drawn + " on the card " + card.color)
+      card.actions = [
+        {
+          identifier: "read",
+          text: "Mark read"
+        }
+      ]
+      var button = findChild(card, "notificationAction")
+      mouseMove(button, button.width / 2, button.height / 2)
+      tryVerify(function () {
+        return button.hovered
+      })
+      waitForRendering(card)
+      var footerFill = button.background.color
+      verify(FoamyPalette.contrastRatio(FoamyPalette.urgent, footerFill) < 4.5, "the theme's urgent colour already reads on the footer")
+      drawn = grabImage(card).pixel(1, card.height / 2)
+      verify(FoamyPalette.contrastRatio(drawn, footerFill) >= 4.5, "critical edge " + drawn + " on a hovered footer button " + footerFill)
+      verify(FoamyPalette.contrastRatio(drawn, headerFill) >= 4.5, "critical edge " + drawn + " on the header " + headerFill)
+      verify(FoamyPalette.contrastRatio(drawn, card.color) >= 4.5, "critical edge " + drawn + " on the card " + card.color)
+      mouseMove(card, -10, -10)
     }
     function test_footer_wraps_without_losing_actions() {
       card.width = 280

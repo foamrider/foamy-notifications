@@ -8,86 +8,97 @@ import testhost
 from testhost import hostenv
 
 source = Path(__file__).resolve().parents[1]
-base = Path(tempfile.mkdtemp(prefix="foamy-notifications-ui-"))
-app = base / "app"
-app.mkdir()
-for name in ("Commons", "Ui"):
-    (app / name).symlink_to(hostenv.root() / "shell" / name, target_is_directory=True)
-# The plugin's kit/ (FoamyI18n, FoamyStyle, …) and the files the card imports.
-(app / "kit").symlink_to(source / "kit", target_is_directory=True)
-(app / "i18n").symlink_to(source / "i18n", target_is_directory=True)
-for name in ("Markup.js", "BrowserIdentity.js", "Features.js", "Detect.js", "Security.js"):
-    (app / name).symlink_to(source / name)
-(app / "qmldir").write_text("")
-(app / "components").symlink_to(source / "components", target_is_directory=True)
-(app / "NotificationLogic.js").symlink_to(source / "NotificationLogic.js")
-test = (
-    (source / "tests/tst_card.qml")
-    .read_text()
-    .replace('import "../components"', 'import "components"')
-    .replace('import "../NotificationLogic.js"', 'import "NotificationLogic.js"')
-    .replace('import "../Features.js"', 'import "Features.js"')
-    .replace('import "../kit"', 'import "kit"')
-    .replace(
-        "Item {\n  width:",
-        "Item {\n  id: testRoot\n  property bool ready: false\n  Timer { interval: 400; running: true; onTriggered: testRoot.ready=true }\n  width:",
+
+
+def run_cards(test_file, theme, count):
+    """Run the QtTest file tests/<test_file> in the theme file `theme`; `count`
+    is how many pass."""
+    base = Path(tempfile.mkdtemp(prefix="foamy-notifications-ui-"))
+    app = base / "app"
+    app.mkdir()
+    for name in ("Commons", "Ui"):
+        (app / name).symlink_to(hostenv.root() / "shell" / name, target_is_directory=True)
+    # The plugin's kit/ (FoamyI18n, FoamyStyle, …) and the files the card imports.
+    (app / "kit").symlink_to(source / "kit", target_is_directory=True)
+    (app / "i18n").symlink_to(source / "i18n", target_is_directory=True)
+    for name in ("Markup.js", "BrowserIdentity.js", "Features.js", "Detect.js", "Security.js"):
+        (app / name).symlink_to(source / name)
+    (app / "qmldir").write_text("")
+    (app / "components").symlink_to(source / "components", target_is_directory=True)
+    (app / "NotificationLogic.js").symlink_to(source / "NotificationLogic.js")
+    test = (
+        (source / "tests" / test_file)
+        .read_text()
+        .replace('import "../components"', 'import "components"')
+        .replace('import "../NotificationLogic.js"', 'import "NotificationLogic.js"')
+        .replace('import "../Features.js"', 'import "Features.js"')
+        .replace('import "../kit"', 'import "kit"')
+        .replace(
+            "Item {\n  width:",
+            "Item {\n  id: testRoot\n  property bool ready: false\n  Timer { interval: 400; running: true; onTriggered: testRoot.ready=true }\n  width:",
+        )
+        .replace("when: windowShown", "when: testRoot.ready")
     )
-    .replace("when: windowShown", "when: testRoot.ready")
-)
-(app / "CardTests.qml").write_text(test)
-(app / "avatar.svg").write_text(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="16" fill="#5f9ea0"/></svg>'
-)
-(app / "fallback.svg").write_text(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#ed4247"/></svg>'
-)
-# An icon under a directory whose name contains a browser name ("opera").
-(app / "operator").mkdir()
-(app / "operator/icon.svg").write_text(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#5f9ea0"/></svg>'
-)
-(app / "preview.svg").write_text(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#5f9ea0"/><rect x="40" y="40" width="560" height="280" fill="#334455"/></svg>'
-)
-(app / "shell.qml").write_text("""import QtQuick
+    (app / "CardTests.qml").write_text(test)
+    (app / "avatar.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="16" fill="#5f9ea0"/></svg>'
+    )
+    (app / "fallback.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#ed4247"/></svg>'
+    )
+    # An icon under a directory whose name contains a browser name ("opera").
+    (app / "operator").mkdir()
+    (app / "operator/icon.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#5f9ea0"/></svg>'
+    )
+    (app / "preview.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#5f9ea0"/><rect x="40" y="40" width="560" height="280" fill="#334455"/></svg>'
+    )
+    (app / "shell.qml").write_text("""import QtQuick
 import Quickshell
 ShellRoot { FloatingWindow { visible: true; implicitWidth: 500; implicitHeight: 400; CardTests {} } }
 """)
-home = base / "home"
-home.mkdir()
-# The kit's dark theme with a dim red: the status colour checks need a red
-# that does not read raw (test_status_colours_read_on_their_fill).
-theme = home / ".local/state/omarchy/current/theme"
-theme.mkdir(parents=True)
-shutil.copyfile(testhost.KIT / "tests/fixtures/themes/dim-red.toml", theme / "colors.toml")
-runtime = base / "runtime"
-runtime.mkdir(mode=0o700)
-# Register generated view types beside the explicit singleton in this fixture.
-with (app / "qmldir").open("a") as registry:
-    for qml in app.glob("*.qml"):
-        if qml.name[0].isupper():
-            registry.write(f"{qml.stem} 1.0 {qml.name}\n")
+    home = base / "home"
+    home.mkdir()
+    theme_dir = home / ".local/state/omarchy/current/theme"
+    theme_dir.mkdir(parents=True)
+    shutil.copyfile(theme, theme_dir / "colors.toml")
+    runtime = base / "runtime"
+    runtime.mkdir(mode=0o700)
+    # Register generated view types beside the explicit singleton in this fixture.
+    with (app / "qmldir").open("a") as registry:
+        for qml in app.glob("*.qml"):
+            if qml.name[0].isupper():
+                registry.write(f"{qml.stem} 1.0 {qml.name}\n")
 
-# A private config: on 4.5 the shell language is $XDG_CONFIG_HOME/omarchy/language.
-env = dict(
-    os.environ,
-    HOME=str(home),
-    XDG_CONFIG_HOME=str(home / ".config"),
-    XDG_STATE_HOME=str(home / ".local/state"),
-    XDG_RUNTIME_DIR=str(runtime),
-    QT_QPA_PLATFORM="offscreen",
-    QT_QUICK_BACKEND="software",
-    QT_QPA_PLATFORMTHEME="basic",
-    QT_STYLE_OVERRIDE="Fusion",
-)
-for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
-    env.pop(key, None)
-testhost.make(base, app, env)
-status, output = testhost.run(
-    ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 60
-)
-print(output)
-hostenv.check(env, output, testhost.calls(base))
-# completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
-assert status == 0 and "UI_RESULT 29 passed 0 failed" in output
-testhost.passed(base)
+    # A private config: on 4.5 the shell language is $XDG_CONFIG_HOME/omarchy/language.
+    env = dict(
+        os.environ,
+        HOME=str(home),
+        XDG_CONFIG_HOME=str(home / ".config"),
+        XDG_STATE_HOME=str(home / ".local/state"),
+        XDG_RUNTIME_DIR=str(runtime),
+        QT_QPA_PLATFORM="offscreen",
+        QT_QUICK_BACKEND="software",
+        QT_QPA_PLATFORMTHEME="basic",
+        QT_STYLE_OVERRIDE="Fusion",
+    )
+    for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
+        env.pop(key, None)
+    testhost.make(base, app, env)
+    status, output = testhost.run(
+        ["dbus-run-session", "--", "quickshell", "-p", str(app), "--no-color"], env, base / "qs.log", 60
+    )
+    print(output)
+    hostenv.check(env, output, testhost.calls(base))
+    # completedChanged runs before QtTest counts cleanupTestCase: tests plus init.
+    assert status == 0 and f"UI_RESULT {count} passed 0 failed" in output, test_file
+    testhost.passed(base)
+
+
+# Each file in the theme its status-colour checks need, where the raw colour
+# does not read: the kit's dark theme with a dim red (2.70:1 on its
+# background), and the kit's light preview theme, whose green reads 2.55:1
+# on a hovered footer button.
+run_cards("tst_card.qml", testhost.KIT / "tests/fixtures/themes/dim-red.toml", 29)
+run_cards("tst_card_light.qml", testhost.KIT / "preview/themes/light.toml", 2)

@@ -53,6 +53,8 @@ Rectangle {
   readonly property color surface: Commons.Color.notifications.background
   readonly property color ink: Commons.Color.notifications.text
   readonly property color headerFill: Qt.tint(root.surface, Util.alpha(root.ink, 0.055))
+  readonly property color footerFill: Qt.tint(root.surface, Util.alpha(root.ink, 0.055))
+  readonly property color footerHoverFill: Qt.tint(root.surface, Util.alpha(root.ink, 0.10))
   // Keyboard mode (`omarchy-shell notifications keyboard`): this card has the cursor.
   property bool selected: false
   // Every button in draw/number order (NotificationLogic.deeds).
@@ -93,7 +95,7 @@ Rectangle {
     })
   }
   // Drawn on the footer button's fill; measured on the hovered one, its strongest.
-  readonly property color copiedColor: FoamyPalette.onSurface(FoamyPalette.success, Qt.tint(root.surface, Util.alpha(root.ink, 0.10)))
+  readonly property color copiedColor: FoamyPalette.onSurface(FoamyPalette.success, root.footerHoverFill)
   readonly property bool hovered: hover.hovered || actionsExpanded || snoozeExpanded || selected
   readonly property bool hasTitle: summary.trim().length > 0
   readonly property string smallIcon: {
@@ -488,7 +490,7 @@ Rectangle {
     background: Rectangle {
       bottomLeftRadius: footerButton.roundLeft ? Math.max(0, root.radius - 1) : 0
       bottomRightRadius: footerButton.roundRight ? Math.max(0, root.radius - 1) : 0
-      color: Qt.tint(root.surface, Util.alpha(root.ink, footerButton.hovered ? 0.10 : 0.055))
+      color: footerButton.hovered ? root.footerHoverFill : root.footerFill
       Rectangle {
         anchors.top: parent.top
         width: parent.width
@@ -631,10 +633,19 @@ Rectangle {
   }
   Canvas {
     id: urgentEdge
+    objectName: "notificationUrgentEdge"
     visible: root.urgency === 2
     width: Math.max(curveRadius + 1, Style.space(3))
     height: root.height
-    property color accent: Commons.Color.urgent
+    // One colour for the whole stripe, readable on the strictest fill it
+    // crosses: the header, the card's red tint and a hovered footer button.
+    property color accent: {
+      var fills = root.footerActions.length > 0 ? [root.headerFill, root.color, root.footerHoverFill] : [root.headerFill, root.color]
+      var strictest = fills.reduce(function (a, b) {
+        return FoamyPalette.contrastRatio(Commons.Color.urgent, a) <= FoamyPalette.contrastRatio(Commons.Color.urgent, b) ? a : b
+      })
+      return FoamyPalette.onSurface(Commons.Color.urgent, strictest)
+    }
     property real curveRadius: Math.min(root.radius, root.width / 2, root.height / 2)
     onAccentChanged: requestPaint()
     onCurveRadiusChanged: requestPaint()

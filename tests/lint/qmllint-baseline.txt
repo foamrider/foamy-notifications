@@ -141,8 +141,8 @@ components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tin
 components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, actionButton.hovered ? 0.1 : 0.04))
 components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, featureButton.hovered || featureButton.activeFocus ? 0.12 : 0.04))
 components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, featureButton.hovered || featureButton.activeFocus ? 0.12 : 0.04))
-components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, footerButton.hovered ? 0.10 : 0.055))
-components/NotificationCard.qml: unqualified: Unqualified access | color: Qt.tint(root.surface, Util.alpha(root.ink, footerButton.hovered ? 0.10 : 0.055))
+components/NotificationCard.qml: unqualified: Unqualified access | color: footerButton.hovered ? root.footerHoverFill : root.footerFill
+components/NotificationCard.qml: unqualified: Unqualified access | color: footerButton.hovered ? root.footerHoverFill : root.footerFill
 components/NotificationCard.qml: unqualified: Unqualified access | color: Util.alpha(root.ink, 0.15)
 components/NotificationCard.qml: unqualified: Unqualified access | color: Util.alpha(root.ink, 0.15)
 components/NotificationCard.qml: unqualified: Unqualified access | color: footerButton.copied ? root.copiedColor : root.ink
