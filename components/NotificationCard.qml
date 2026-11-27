@@ -386,7 +386,8 @@ Rectangle {
             required property int modelData
             objectName: "notificationSnooze" + modelData
             text: modelData < 60 ? FoamyI18n.t("%1 min", FoamyI18n.number(modelData)) : FoamyI18n.t("%1 h", FoamyI18n.number(modelData / 60))
-            width: Math.min(implicitWidth, parent.width)
+            // The Flow unparents its buttons while the card is destroyed.
+            width: Math.min(implicitWidth, parent ? parent.width : implicitWidth)
             onClicked: {
               root.snoozeExpanded = false
               root.featureRequested("snooze", String(modelData))
