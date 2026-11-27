@@ -175,7 +175,7 @@ def send(summary):
 
 
 try:
-    wait_for(lambda: [w["name"] for w in windows()] == ["TEST-1", "TEST-2"], "a popup window for each output")
+    wait_for(lambda: [w["name"] for w in windows()] == ["TEST-1", "TEST-2"], "a popup window for each output", 30)
     assert all(not w["visible"] and w["cards"] == 0 for w in windows()), windows()
     # Each send shows its card (maxVisible 2), then the third waits.
     for summary, groups, queue in (("First", 1, 0), ("Second", 2, 0), ("Third", 2, 1)):

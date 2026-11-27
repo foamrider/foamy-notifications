@@ -894,6 +894,10 @@ try:
     errors = [line for line in (base / "runtime.log").read_text()[logged:].splitlines() if "Error" in line]
     assert not errors, errors[:3]
     ipc("overflow-test", "setScreen", "TEST-1")
+    wait(
+        lambda: window_state() == {"selected": True, "keyboard": True, "groups": 1},
+        "the output that came back shows its card and owns the keyboard again",
+    )
     assert ipc("notifications", "keyboard") == "off"
     reset()
     print("PASS: the window of an output that went away shows no card, takes no keyboard and logs no binding error")

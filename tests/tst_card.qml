@@ -192,6 +192,7 @@ Item {
           text: "Mark read"
         }
       ]
+      waitForRendering(card)
       var button = findChild(card, "notificationAction")
       mouseMove(button, button.width / 2, button.height / 2)
       tryVerify(function () {
