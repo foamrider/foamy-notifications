@@ -1,8 +1,8 @@
 # foamy-kit.lock: written by foamy-kit sync.sh; do not edit.
 # Hashes are of each file's body (the file without its stamp line);
 # notices, REVIEW.md and kit/i18n-texts.json are hashed whole. tests/kit-check.sh verifies them.
-version 0.14.1
-source f9bb9f43d206424e7554ab82cc5b97507f458ebc
+version 0.15.1
+source a7c1c2d5e277116163713b417ea137a69a98af4a
 components FoamyI18n,FoamyIpc,FoamyMotion,FoamyNative,FoamyPalette,FoamyPeerIpc,FoamyStyle
 5079c3e4ecd2ca5399dff48f64327729d8e84916a4c73fbcb9e0491b16014990  .github/workflows/checks.yml
 98bd9e4430551129a6f4c309ee8ba59b66514db5ca1d4c5b7151ec308f6d632b  .github/workflows/verify-native.yml
@@ -16,7 +16,7 @@ a541e98f164e6c2e83b493341e50b128ba539dc4f32cf2253fb688731a513c3c  kit/FoamyI18nT
 72e0502f9cd35ca638b6af1c5e3e5411738a161cff2ed18f5751e11e9365f48c  kit/FoamyIpcResolver.js
 ac985fdddb1be105d4ca5590c31fb7972e55cf5b05a792ef618a80afda25980f  kit/FoamyMotion.qml
 0e877660044748bd8926a24de47ee8f6f194e085fb20b794e0621b039eda1eb4  kit/FoamyNative.js
-873a308000022a89bd2ea2a137c02ff17b4a357c236456974807251a1ee35748  kit/FoamyPalette.qml
+ef4882d76a20b9a897c574e949d0a94292d57265201d15ec86bc93bdb15edc05  kit/FoamyPalette.qml
 551330bdcaa04e8f39138b3fb011675e5742d1c007586f7341d738307bc6c2ad  kit/FoamyPeerIpc.qml
 e0aa535543b7c0116594af27e1ea2eb8573cd85289f9f95b2f698a38d29a62a2  kit/FoamyStyle.qml
 4ca96fe007e5748a4510345e61d6ce86d38013d35714d466ea400d89aad8a49c  kit/i18n-texts.json
