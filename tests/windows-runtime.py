@@ -3,10 +3,13 @@
 The other runtime tests replace the windows with an Item. Here the whole
 Service.qml runs with its Variants of windows on two offscreen outputs; only
 the layer-shell PanelWindow becomes a FloatingWindow (offscreen Qt has no
-layer shell) and its layer-shell settings go. Destroying a card once logged
-"TypeError: Cannot read property 'width' of null" from each snooze button.
-This test sends real notifications, lets them expire, and checks what each
-window shows and that the log has no such warning."""
+layer shell) and its layer-shell settings go. A real window maps when its
+stack gets the first card and signals screenChanged then; that once made the
+stack's `groups` binding run inside its own write ("Binding loop detected for
+property groups"). Destroying a card once logged "TypeError: Cannot read
+property 'width' of null" from each snooze button. This test sends real
+notifications, lets them expire, and checks what each window shows and that
+the log has neither warning."""
 
 import json
 import os
@@ -221,9 +224,11 @@ try:
         "every card expired and the windows unmapped",
         timeout=20,
     )
-    warnings = [line for line in log_path.read_text().splitlines() if "TypeError" in line]
+    warnings = [line for line in log_path.read_text().splitlines() if "Binding loop" in line or "TypeError" in line]
     assert not warnings, "the popup windows logged:\n" + "\n".join(warnings[:6])
-    print("PASS: each output's window shows its cards and the waiting count, maps and unmaps with no TypeError")
+    print(
+        "PASS: each output's window shows its cards and the waiting count, maps and unmaps with no binding loop or TypeError"
+    )
 finally:
     process.stop()
     log.close()

@@ -3292,6 +3292,11 @@ Item {
       // Variants destroys its window, whose screen is null until then: that
       // window selects nothing, shows nothing and takes no keyboard.
       readonly property bool selected: !!screen && service.targetMonitors.indexOf(screen.name) >= 0
+      // The stack's groups read the output's name, not `screen`: the window
+      // signals screenChanged when it maps, and it maps because the stack got
+      // its first group, which made that binding run again inside its own
+      // write (a binding loop). The name does not change when it maps.
+      readonly property string screenName: screen ? screen.name : ""
       // Keep the surface mapped until the final card finishes fading out.
       visible: selected && (popupColumn.groups.length > 0 || popupColumn.implicitHeight > 0)
       WlrLayershell.namespace: "omarchy-notifications"
@@ -3340,7 +3345,7 @@ Item {
         width: Math.max(1, Math.min(Style.space(service.preferences.width), popupWindow.width - anchors.rightMargin - Style.space(8)))
         spacing: Style.space(8)
         groups: service.displayGroups.filter(function (group) {
-          return !!popupWindow.screen && service.showsGroupOn(popupWindow.screen.name, group)
+          return popupWindow.screenName !== "" && service.showsGroupOn(popupWindow.screenName, group)
         })
         waiting: service.waitingGroups.length
         onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)

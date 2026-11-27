@@ -47,6 +47,7 @@ fit = extract("      function fitCards() {", "      Item {")
 handlers = extract("        onImplicitHeightChanged: Qt.callLater(popupWindow.fitCards)", "        delegate:")
 # What the window and its stack read from the window's output.
 selected = extract("      readonly property bool selected:", "\n")
+screen_name = extract("      readonly property string screenName:", "\n")
 keyboard = extract("      readonly property bool takesKeyboard:", "\n")
 groups = extract("        groups: service.displayGroups.filter(", "        waiting:")
 
@@ -72,6 +73,7 @@ ShellRoot {
  Item { id: popupWindow; width: 500; height: 900
   property var screen: ({ name: "TEST-1" })
 SELECTED
+SCREEN_NAME
 KEYBOARD
 FIT
   Cards.NotificationStack { id: popupColumn; x: 20; y: 20; width: 420; spacing: 8
@@ -158,6 +160,7 @@ HANDLERS
  }
 }
 """.replace("SELECTED", local(selected))
+    .replace("SCREEN_NAME", local(screen_name))
     .replace("KEYBOARD", local(keyboard))
     .replace("GROUPS", local(groups))
     .replace("FIT", local(fit))
