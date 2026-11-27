@@ -3340,7 +3340,7 @@ Item {
         id: popupColumn
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && !!popupWindow.screen && popupWindow.screen.name === service.sharingPromptScreen ? service.sharingPromptHeight + Style.space(8) : 0)
+        anchors.topMargin: popupWindow.placement.margins.top + Style.space(8) + (service.sharingOfferPending && popupWindow.screenName !== "" && popupWindow.screenName === service.sharingPromptScreen ? service.sharingPromptHeight + Style.space(8) : 0)
         anchors.rightMargin: popupWindow.placement.margins.right + Style.space(8)
         width: Math.max(1, Math.min(Style.space(service.preferences.width), popupWindow.width - anchors.rightMargin - Style.space(8)))
         spacing: Style.space(8)
@@ -3442,7 +3442,7 @@ Item {
           function publishHover() {
             if (!modelData)
               return
-            var next = (popupWindow.screen ? popupWindow.screen.name : "") + "|" + modelData.key
+            var next = popupWindow.screenName + "|" + modelData.key
             // A duplicate can change the representative key without replacing this card.
             if (registeredHoverKey && registeredHoverKey !== next)
               delete service.hoveredKeys[registeredHoverKey]
