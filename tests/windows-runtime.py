@@ -8,8 +8,8 @@ stack gets the first card and signals screenChanged then; that once made the
 stack's `groups` binding run inside its own write ("Binding loop detected for
 property groups"). Destroying a card once logged "TypeError: Cannot read
 property 'width' of null" from each snooze button. This test sends real
-notifications, lets them expire, and checks what each window shows and that
-the log has neither warning."""
+notifications, dismisses two and lets the third expire, and checks what each
+window shows and that the log has neither warning."""
 
 import json
 import os
@@ -77,41 +77,17 @@ runtime = base / "runtime"
 runtime.mkdir(mode=0o700)
 config = home / ".config/omarchy"
 config.mkdir(parents=True)
-(config / "shell.json").write_text(
-    json.dumps({"plugins": [{"id": "foamy.notifications", "maxVisible": 2, "normalTimeoutSec": 2}]})
-)
-bin_dir = base / "bin"
-bin_dir.mkdir()
+# The cards stay (120 s, the longest) until the window checks are done.
+settings = {"id": "foamy.notifications", "maxVisible": 2, "normalTimeoutSec": 120}
+
+
+def configure(**values):
+    settings.update(values)
+    (config / "shell.json").write_text(json.dumps({"plugins": [settings]}))
+
+
+configure()
 outputs = [("TEST-1", 0), ("TEST-2", 1920)]
-context = base / "context.json"
-context.write_text(
-    json.dumps(
-        {
-            "clients": [],
-            "monitors": [
-                {
-                    "name": name,
-                    "x": x,
-                    "y": 0,
-                    "width": 1920,
-                    "height": 1080,
-                    "scale": 1,
-                    "focused": x == 0,
-                    "activeWorkspace": {"id": 1},
-                }
-                for name, x in outputs
-            ],
-            "cursorpos": {"x": 100, "y": 100},
-        }
-    )
-)
-(bin_dir / "hyprctl").write_text(
-    "#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n"
-    f"data=json.loads(Path({str(context)!r}).read_text())\n"
-    "command=next((arg for arg in sys.argv[1:] if arg in data),None)\n"
-    "print(json.dumps(data[command]) if command else 'ok')\n"
-)
-(bin_dir / "hyprctl").chmod(0o755)
 screens = base / "screens.json"
 screens.write_text(
     json.dumps(
@@ -144,7 +120,6 @@ env = dict(
     QT_STYLE_OVERRIDE="Fusion",
 )
 testhost.make(base, app, env, session_bus=os.environ["DBUS_SESSION_BUS_ADDRESS"])
-env["PATH"] = str(bin_dir) + ":" + env["PATH"]
 log_path = base / "runtime.log"
 log = log_path.open("w")
 process = hostenv.ProcessGroup(["quickshell", "-p", str(app), "--no-color"], env=env, stdout=log, stderr=log)
@@ -164,11 +139,13 @@ def windows():
 
 
 def wait_for(predicate, message, timeout=10):
+    """The first true value `predicate` returns."""
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         try:
-            if predicate():
-                return
+            result = predicate()
+            if result:
+                return result
         except (ValueError, RuntimeError, subprocess.TimeoutExpired):
             pass
         time.sleep(0.1)
@@ -177,6 +154,12 @@ def wait_for(predicate, message, timeout=10):
 
 def state():
     return json.loads(ipc("foamy.notifications", "state"))
+
+
+def shows(groups, queue):
+    """One state() snapshot, when it shows `groups` cards and `queue` wait."""
+    snapshot = state()
+    return snapshot if (len(snapshot["groups"]), len(snapshot["queue"])) == (groups, queue) else None
 
 
 def send(summary):
@@ -194,13 +177,16 @@ def send(summary):
 try:
     wait_for(lambda: [w["name"] for w in windows()] == ["TEST-1", "TEST-2"], "a popup window for each output")
     assert all(not w["visible"] and w["cards"] == 0 for w in windows()), windows()
-    for summary in ("First", "Second", "Third"):
+    # Each send shows its card (maxVisible 2), then the third waits.
+    for summary, groups, queue in (("First", 1, 0), ("Second", 2, 0), ("Third", 2, 1)):
         send(summary)
-        time.sleep(0.3)
-    # The focused output shows the service's cards, in its order, and the
-    # count of the one that waits (maxVisible 2); the other shows nothing.
-    wait_for(lambda: len(state()["groups"]) == 2 and len(state()["queue"]) == 1, "two cards show and one waits")
-    shown = [group["key"] for group in state()["groups"]]
+        snapshot = wait_for(
+            lambda groups=groups, queue=queue: shows(groups, queue), f"{summary}: {groups} cards show and {queue} waits"
+        )
+    # The first output (the default monitor "focused" with no compositor)
+    # shows the service's cards, in its order, and the count of the one that
+    # waits; the other shows nothing.
+    shown = [group["key"] for group in snapshot["groups"]]
     wait_for(
         lambda: (
             windows()
@@ -211,8 +197,13 @@ try:
         ),
         "TEST-1 shows " + repr(shown) + " with one waiting, TEST-2 nothing",
     )
-    # They expire (normalTimeoutSec 2), the waiting one shows and expires too:
-    # every card is destroyed and the window unmaps.
+    # The two on screen are dismissed; the waiting one then shows and expires
+    # (normalTimeoutSec 1 by now): every card is destroyed and the window
+    # unmaps.
+    configure(normalTimeoutSec=1)
+    wait_for(lambda: state()["settings"]["normalTimeoutSec"] == 1, "normalTimeoutSec 1")
+    for summary in ("First", "Second"):
+        assert ipc("notifications", "dismiss", summary) == "ok", summary + " was not on screen"
     wait_for(
         lambda: (
             windows()
@@ -221,7 +212,7 @@ try:
                 {"name": "TEST-2", "visible": False, "groups": [], "cards": 0, "waiting": 0},
             ]
         ),
-        "every card expired and the windows unmapped",
+        "every card went and the windows unmapped",
         timeout=20,
     )
     warnings = [line for line in log_path.read_text().splitlines() if "Binding loop" in line or "TypeError" in line]
